@@ -23,9 +23,10 @@ import (
 )
 
 type App struct {
-	db     *gorm.DB
-	plex   *plexgo.PlexAPI
-	router *chi.Mux
+	db      *gorm.DB
+	plex    *plexgo.PlexAPI
+	plexURL string
+	router  *chi.Mux
 }
 
 func NewApp() (*App, error) {
@@ -40,15 +41,17 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	plexURL := os.Getenv("PLEX_URL")
 	plex := plexgo.New(
 		plexgo.WithSecurity(os.Getenv("PLEX_TOKEN")),
-		plexgo.WithServerURL(os.Getenv("PLEX_URL")),
+		plexgo.WithServerURL(plexURL),
 	)
 
 	app := &App{
-		db:     db,
-		plex:   plex,
-		router: chi.NewRouter(),
+		db:      db,
+		plex:    plex,
+		plexURL: plexURL,
+		router:  chi.NewRouter(),
 	}
 
 	app.setupRoutes()
@@ -168,28 +171,54 @@ func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Reco
 
 	// Categorize movies
 	for _, item := range items.Object.MediaContainer.Metadata {
+		var year int
+		if item.Year != nil {
+			year = *item.Year
+		}
+
+		var rating float64
+		if item.Rating != nil {
+			rating = float64(*item.Rating) / 10.0
+		}
+
+		var runtime int
+		if item.Duration != nil {
+			runtime = *item.Duration / 60000 // Convert milliseconds to minutes
+		}
+
+		var viewCount int
+		if item.ViewCount != nil {
+			viewCount = *item.ViewCount
+		}
+
+		// Convert genre slice to strings
+		genres := make([]string, len(item.Genre))
+		for i, g := range item.Genre {
+			genres[i] = string(g)
+		}
+
 		movie := models.Movie{
 			Title:     item.Title,
-			Year:      item.Year,
-			Rating:    float64(item.Rating) / 10.0, // Plex ratings are typically 0-100
-			Genre:     strings.Join(item.Genre, ", "),
-			Runtime:   item.Duration / 60000, // Convert milliseconds to minutes
-			PosterURL: fmt.Sprintf("%s%s", a.plex.ServerURL, item.Thumb),
+			Year:      year,
+			Rating:    rating,
+			Genre:     strings.Join(genres, ", "),
+			Runtime:   runtime,
+			PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
 			Source:    "plex",
-			Seen:      item.ViewCount > 0,
+			Seen:      viewCount > 0,
 		}
 
 		// Categorize based on genres
-		for _, genre := range item.Genre {
-			genre = strings.ToLower(genre)
+		for _, genreStr := range genres {
+			genreLower := strings.ToLower(genreStr)
 			switch {
-			case strings.Contains(genre, "comedy"):
+			case strings.Contains(genreLower, "comedy"):
 				movie.Type = "funny"
 				funnyMovies = append(funnyMovies, movie)
-			case strings.Contains(genre, "action") || strings.Contains(genre, "adventure"):
+			case strings.Contains(genreLower, "action") || strings.Contains(genreLower, "adventure"):
 				movie.Type = "action"
 				actionMovies = append(actionMovies, movie)
-			case strings.Contains(genre, "drama"):
+			case strings.Contains(genreLower, "drama"):
 				movie.Type = "drama"
 				dramaMovies = append(dramaMovies, movie)
 			}
@@ -270,7 +299,7 @@ func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Reco
 				Rating:    float64(item.Rating) / 10.0,
 				Genre:     strings.Join(item.Genre, ", "),
 				Episodes:  item.LeafCount,
-				PosterURL: fmt.Sprintf("%s%s", a.plex.ServerURL, item.Thumb),
+				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
 				Source:    "plex",
 			}
 			unwatchedAnime = append(unwatchedAnime, anime)
@@ -327,7 +356,7 @@ func (a *App) generateTVShowRecommendations(ctx context.Context, rec *models.Rec
 				Rating:    float64(item.Rating) / 10.0,
 				Genre:     strings.Join(item.Genre, ", "),
 				Seasons:   item.ChildCount,
-				PosterURL: fmt.Sprintf("%s%s", a.plex.ServerURL, item.Thumb),
+				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
 				Source:    "plex",
 			}
 			unwatchedShows = append(unwatchedShows, show)
