@@ -198,14 +198,11 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		ctx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-		defer cancel()
-
 		today := time.Now().Truncate(24 * time.Hour)
 
 		var count int64
-		if err := db.WithContext(ctx).Model(&models.Recommendation{}).Where("date = ?", today).Count(&count).Error; err != nil {
-			slog.ErrorContext(ctx, "Failed to check existing recommendation", slog.Any("error", err))
+		if err := db.WithContext(req.Context()).Model(&models.Recommendation{}).Where("date = ?", today).Count(&count).Error; err != nil {
+			slog.ErrorContext(req.Context(), "Failed to check existing recommendation", slog.Any("error", err))
 			renderError(w, "Failed to check existing recommendation.", http.StatusInternalServerError)
 			return
 		}
@@ -215,7 +212,10 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
+		// Create a new background context with a timeout for the recommendation generation
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		go func() {
+			defer cancel()
 			rec := &models.Recommendation{Date: today}
 			if err := r.GenerateRecommendations(ctx, rec); err != nil {
 				slog.ErrorContext(ctx, "Failed to generate recommendation", slog.Any("error", err))
@@ -228,10 +228,10 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
-		ctx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-		defer cancel()
-
+		// Create a new background context with a timeout for the cache update
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		go func() {
+			defer cancel()
 			if err := p.UpdateCache(ctx); err != nil {
 				slog.ErrorContext(ctx, "Failed to update cache", slog.Any("error", err))
 			}
