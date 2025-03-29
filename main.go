@@ -14,7 +14,6 @@ import (
 
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/operations"
-	"github.com/LukeHagar/plexgo/models/shared"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/icco/recommender/models"
@@ -132,7 +131,7 @@ func (a *App) generateRecommendations(ctx context.Context, rec *models.Recommend
 	return nil
 }
 
-func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Recommendation, libraries []shared.Directory) error {
+func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Recommendation, libraries []operations.GetAllLibrariesDirectory) error {
 	var movieLibraryKey string
 	for _, lib := range libraries {
 		if lib.Type == "movie" {
@@ -161,7 +160,7 @@ func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Reco
 
 	var unwatchedMovies []models.Movie
 	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount == 0 {
+		if item.ViewCount != nil && *item.ViewCount == 0 {
 			var year int
 			if item.Year != nil {
 				year = *item.Year
@@ -179,7 +178,9 @@ func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Reco
 
 			var genres []string
 			for _, g := range item.Genre {
-				genres = append(genres, g.Tag)
+				if g.Tag != nil {
+					genres = append(genres, *g.Tag)
+				}
 			}
 
 			movie := models.Movie{
@@ -212,7 +213,7 @@ func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Reco
 	return nil
 }
 
-func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Recommendation, libraries []shared.Directory) error {
+func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Recommendation, libraries []operations.GetAllLibrariesDirectory) error {
 	var animeLibraryKey string
 	for _, lib := range libraries {
 		if strings.Contains(strings.ToLower(lib.Title), "anime") {
@@ -241,7 +242,7 @@ func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Reco
 
 	var unwatchedAnime []models.Anime
 	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount == 0 {
+		if item.ViewCount != nil && *item.ViewCount == 0 {
 			var year int
 			if item.Year != nil {
 				year = *item.Year
@@ -259,7 +260,9 @@ func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Reco
 
 			var genres []string
 			for _, g := range item.Genre {
-				genres = append(genres, g.Tag)
+				if g.Tag != nil {
+					genres = append(genres, *g.Tag)
+				}
 			}
 
 			anime := models.Anime{
@@ -292,7 +295,7 @@ func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Reco
 	return nil
 }
 
-func (a *App) generateTVShowRecommendations(ctx context.Context, rec *models.Recommendation, libraries []shared.Directory) error {
+func (a *App) generateTVShowRecommendations(ctx context.Context, rec *models.Recommendation, libraries []operations.GetAllLibrariesDirectory) error {
 	var tvLibraryKey string
 	for _, lib := range libraries {
 		if lib.Type == "show" && !strings.Contains(strings.ToLower(lib.Title), "anime") {
@@ -321,7 +324,7 @@ func (a *App) generateTVShowRecommendations(ctx context.Context, rec *models.Rec
 
 	var unwatchedTVShows []models.TVShow
 	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount == 0 {
+		if item.ViewCount != nil && *item.ViewCount == 0 {
 			var year int
 			if item.Year != nil {
 				year = *item.Year
@@ -339,7 +342,9 @@ func (a *App) generateTVShowRecommendations(ctx context.Context, rec *models.Rec
 
 			var genres []string
 			for _, g := range item.Genre {
-				genres = append(genres, g.Tag)
+				if g.Tag != nil {
+					genres = append(genres, *g.Tag)
+				}
 			}
 
 			tvShow := models.TVShow{
@@ -420,160 +425,4 @@ func GenerateTags(ctx context.Context, text string) ([]string, error) {
 	log.Printf("tags: %+v", tags)
 
 	return nil, nil
-}
-
-func generateMovieRecommendations(ctx context.Context, client *plexgo.PlexGo, movieLibraryKey string) ([]models.Movie, error) {
-	// Convert library key to int
-	key, err := strconv.Atoi(movieLibraryKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid library key: %v", err)
-	}
-
-	// Get all movies from the library
-	request := operations.GetLibraryItemsRequest{
-		SectionKey: key,
-		Tag:        "all",
-	}
-	items, err := client.Library.GetLibraryItems(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get movies: %v", err)
-	}
-
-	// Filter unwatched movies
-	var unwatchedMovies []models.Movie
-	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			// Convert duration from milliseconds to minutes
-			var runtime int
-			if item.Duration != nil {
-				runtime = *item.Duration / (1000 * 60)
-			}
-
-			// Convert genres to string slice
-			genres := make([]string, len(item.Genre))
-			for i, g := range item.Genre {
-				if g.Tag != nil {
-					genres[i] = *g.Tag
-				}
-			}
-
-			movie := models.Movie{
-				Title:     item.Title,
-				Year:      *item.Year,
-				Rating:    item.Rating,
-				Genre:     strings.Join(genres, ", "),
-				Runtime:   runtime,
-				PosterURL: *item.Thumb,
-				Source:    "plex",
-			}
-			unwatchedMovies = append(unwatchedMovies, movie)
-		}
-	}
-
-	// Return 3 random movies
-	return getRandomItems(unwatchedMovies, 3), nil
-}
-
-func generateAnimeRecommendations(ctx context.Context, client *plexgo.PlexGo, animeLibraryKey string) ([]models.Anime, error) {
-	// Convert library key to int
-	key, err := strconv.Atoi(animeLibraryKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid library key: %v", err)
-	}
-
-	// Get all anime from the library
-	request := operations.GetLibraryItemsRequest{
-		SectionKey: key,
-		Tag:        "all",
-	}
-	items, err := client.Library.GetLibraryItems(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get anime: %v", err)
-	}
-
-	// Filter unwatched anime
-	var unwatchedAnime []models.Anime
-	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			// Convert genres to string slice
-			genres := make([]string, len(item.Genre))
-			for i, g := range item.Genre {
-				if g.Tag != nil {
-					genres[i] = *g.Tag
-				}
-			}
-
-			anime := models.Anime{
-				Title:     item.Title,
-				Year:      *item.Year,
-				Rating:    item.Rating,
-				Genre:     strings.Join(genres, ", "),
-				Episodes:  *item.LeafCount,
-				PosterURL: *item.Thumb,
-				Source:    "plex",
-			}
-			unwatchedAnime = append(unwatchedAnime, anime)
-		}
-	}
-
-	// Return 3 random anime
-	return getRandomItems(unwatchedAnime, 3), nil
-}
-
-func generateTVShowRecommendations(ctx context.Context, client *plexgo.PlexGo, tvLibraryKey string) ([]models.TVShow, error) {
-	// Convert library key to int
-	key, err := strconv.Atoi(tvLibraryKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid library key: %v", err)
-	}
-
-	// Get all TV shows from the library
-	request := operations.GetLibraryItemsRequest{
-		SectionKey: key,
-		Tag:        "all",
-	}
-	items, err := client.Library.GetLibraryItems(ctx, request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get TV shows: %v", err)
-	}
-
-	// Filter unwatched TV shows
-	var unwatchedTVShows []models.TVShow
-	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			// Convert genres to string slice
-			genres := make([]string, len(item.Genre))
-			for i, g := range item.Genre {
-				if g.Tag != nil {
-					genres[i] = *g.Tag
-				}
-			}
-
-			tvShow := models.TVShow{
-				Title:     item.Title,
-				Year:      *item.Year,
-				Rating:    item.Rating,
-				Genre:     strings.Join(genres, ", "),
-				Seasons:   *item.ChildCount,
-				PosterURL: *item.Thumb,
-				Source:    "plex",
-			}
-			unwatchedTVShows = append(unwatchedTVShows, tvShow)
-		}
-	}
-
-	// Return 3 random TV shows
-	return getRandomItems(unwatchedTVShows, 3), nil
-}
-
-func getRandomItems[T any](items []T, count int) []T {
-	if len(items) <= count {
-		return items
-	}
-
-	rand.Shuffle(len(items), func(i, j int) {
-		items[i], items[j] = items[j], items[i]
-	})
-
-	return items[:count]
 }
