@@ -74,6 +74,7 @@ func NewApp() (*App, error) {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
+	slog.SetDefault(logger) // Set as default logger
 
 	app := &App{
 		db:      db,
@@ -104,8 +105,9 @@ func (a *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	result := a.db.Where("date = ?", today).First(&rec)
 	if result.Error != nil {
 		a.logger.Info("No recommendation found for today", slog.String("date", today.Format("2006-01-02")))
+		rec = models.Recommendation{Date: today}
 		tmpl := template.Must(template.ParseFiles("templates/home.html"))
-		if err := tmpl.Execute(w, models.Recommendation{}); err != nil {
+		if err := tmpl.Execute(w, rec); err != nil {
 			a.logger.Error("Failed to execute template", slog.Any("error", err))
 			http.Error(w, fmt.Sprintf("Failed to render page: %v", err), http.StatusInternalServerError)
 			return
@@ -167,49 +169,52 @@ func (a *App) handleDate(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCron(w http.ResponseWriter, r *http.Request) {
 	a.logger.Info("Starting cron job")
 
-	// First, update the Plex cache
-	a.logger.Debug("Updating Plex cache")
-	if err := a.updatePlexCache(r.Context()); err != nil {
-		a.logger.Error("Failed to update Plex cache", slog.Any("error", err))
-		http.Error(w, fmt.Sprintf("Failed to update Plex cache: %v", err), http.StatusInternalServerError)
-		return
-	}
-	a.logger.Info("Successfully updated Plex cache")
+	// Start the work in a goroutine
+	go func() {
+		// Create a new context for the background work
+		ctx := context.Background()
 
-	// Check if we already have a recommendation for today
-	var existingRec models.Recommendation
-	today := time.Now().Truncate(24 * time.Hour)
+		// First, update the Plex cache
+		a.logger.Debug("Updating Plex cache")
+		if err := a.updatePlexCache(ctx); err != nil {
+			a.logger.Error("Failed to update Plex cache", slog.Any("error", err))
+			return
+		}
+		a.logger.Info("Successfully updated Plex cache")
 
-	result := a.db.Where("date = ?", today).First(&existingRec)
-	if result.Error == nil {
-		a.logger.Info("Recommendation already exists for today", slog.String("date", today.Format("2006-01-02")))
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Recommendation already exists for today"))
-		return
-	}
+		// Check if we already have a recommendation for today
+		var existingRec models.Recommendation
+		today := time.Now().Truncate(24 * time.Hour)
 
-	// Create new recommendation
-	a.logger.Debug("Generating new recommendations", slog.String("date", today.Format("2006-01-02")))
-	rec := models.Recommendation{Date: today}
-	if err := a.generateRecommendations(r.Context(), &rec); err != nil {
-		a.logger.Error("Failed to generate recommendations", slog.Any("error", err))
-		http.Error(w, fmt.Sprintf("Failed to generate recommendations: %v", err), http.StatusInternalServerError)
-		return
-	}
+		result := a.db.Where("date = ?", today).First(&existingRec)
+		if result.Error == nil {
+			a.logger.Info("Recommendation already exists for today", slog.String("date", today.Format("2006-01-02")))
+			return
+		}
 
-	if err := a.db.Create(&rec).Error; err != nil {
-		a.logger.Error("Failed to save recommendation",
-			slog.Any("error", err),
-			slog.Int("recommendation_id", int(rec.ID)))
-		http.Error(w, fmt.Sprintf("Failed to save recommendation: %v", err), http.StatusInternalServerError)
-		return
-	}
+		// Create new recommendation
+		a.logger.Debug("Generating new recommendations", slog.String("date", today.Format("2006-01-02")))
+		rec := models.Recommendation{Date: today}
+		if err := a.generateRecommendations(ctx, &rec); err != nil {
+			a.logger.Error("Failed to generate recommendations", slog.Any("error", err))
+			return
+		}
 
-	a.logger.Info("Successfully generated new recommendations",
-		slog.Int("recommendation_id", int(rec.ID)),
-		slog.String("date", today.Format("2006-01-02")))
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Successfully generated new recommendations"))
+		if err := a.db.Create(&rec).Error; err != nil {
+			a.logger.Error("Failed to save recommendation",
+				slog.Any("error", err),
+				slog.Int("recommendation_id", int(rec.ID)))
+			return
+		}
+
+		a.logger.Info("Successfully generated new recommendations",
+			slog.Int("recommendation_id", int(rec.ID)),
+			slog.String("date", today.Format("2006-01-02")))
+	}()
+
+	// Return immediately
+	w.WriteHeader(http.StatusAccepted)
+	w.Write([]byte("Cron job started"))
 }
 
 func (a *App) generateRecommendations(ctx context.Context, rec *models.Recommendation) error {
