@@ -1,0 +1,27 @@
+Based on the user's preferences and the available content, please recommend:
+
+Movies:
+- One funny movie they haven't seen
+- One action or drama movie they haven't seen
+- One movie they have seen before that they might enjoy revisiting
+
+Anime:
+- Three anime series they haven't seen, considering their genre preferences and rating patterns
+
+TV Shows:
+- Three TV shows they haven't seen, focusing on their preferred genres and themes
+
+For each recommendation, please provide:
+1. The title and year
+2. A brief explanation of why it matches their preferences
+3. Similar content they've enjoyed
+4. Key themes or elements that might appeal to them
+
+Available Content:
+{{.Content}}
+
+User Preferences:
+{{.Preferences}}
+
+Previous Recommendations:
+{{.PreviousRecommendations}} 

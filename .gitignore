@@ -31,3 +31,8 @@ go.work.sum
 .vscode/
 *.swp
 *.swo
+
+# Ignore all files in lib/recommender except prompts
+lib/recommender/*
+!lib/recommender/prompts/
+!lib/recommender/recommender.go

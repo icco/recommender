@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"text/template"
 
 	"log/slog"
 
@@ -20,6 +22,12 @@ type Recommender struct {
 	logger *slog.Logger
 }
 
+type RecommendationContext struct {
+	Content                 string
+	Preferences             string
+	PreviousRecommendations string
+}
+
 func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) *Recommender {
 	return &Recommender{
 		db:     db,
@@ -28,8 +36,81 @@ func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) *Recommender {
 	}
 }
 
+func (r *Recommender) loadPromptTemplate(name string) (*template.Template, error) {
+	content, err := os.ReadFile(filepath.Join("lib/recommender/prompts", name))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read prompt template %s: %w", name, err)
+	}
+	return template.New(name).Parse(string(content))
+}
+
+func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPreference, error) {
+	var prefs models.UserPreference
+	if err := r.db.First(&prefs).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Create default preferences if none exist
+			prefs = models.UserPreference{
+				FavoriteGenres: []string{"Action", "Drama", "Comedy"},
+				Themes:         []string{"Character Development", "Storytelling"},
+				Moods:          []string{"Thought-provoking", "Entertaining"},
+				ContentLengths: []string{"Medium"},
+				TimePeriods:    []string{"Modern", "Classic"},
+				Languages:      []string{"English", "Japanese"},
+				Sources:        []string{"Plex", "Anilist"},
+			}
+			if err := r.db.Create(&prefs).Error; err != nil {
+				return nil, fmt.Errorf("failed to create default preferences: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to get user preferences: %w", err)
+		}
+	}
+	return &prefs, nil
+}
+
+func (r *Recommender) getRecentRatings(ctx context.Context) ([]models.UserRating, error) {
+	var ratings []models.UserRating
+	if err := r.db.Order("watched_at desc").Limit(10).Find(&ratings).Error; err != nil {
+		return nil, fmt.Errorf("failed to get recent ratings: %w", err)
+	}
+	return ratings, nil
+}
+
+func (r *Recommender) formatContent(items interface{}) string {
+	var content strings.Builder
+	switch v := items.(type) {
+	case []models.PlexMovie:
+		content.WriteString("Movies:\n")
+		for _, m := range v {
+			content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s\n", m.Title, m.Year, m.Rating, m.Genre))
+		}
+	case []models.PlexAnime:
+		content.WriteString("Anime:\n")
+		for _, a := range v {
+			content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s\n", a.Title, a.Year, a.Rating, a.Genre))
+		}
+	case []models.PlexTVShow:
+		content.WriteString("TV Shows:\n")
+		for _, t := range v {
+			content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s\n", t.Title, t.Year, t.Rating, t.Genre))
+		}
+	}
+	return content.String()
+}
+
 func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.Recommendation) error {
 	r.logger.Debug("Starting recommendation generation")
+
+	// Get user preferences and recent ratings
+	prefs, err := r.getUserPreferences(ctx)
+	if err != nil {
+		return err
+	}
+
+	ratings, err := r.getRecentRatings(ctx)
+	if err != nil {
+		return err
+	}
 
 	// Get Plex libraries
 	res, err := r.plex.GetAPI().Library.GetAllLibraries(ctx)
@@ -59,33 +140,52 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 	}
 	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
 
+	// Load prompt templates
+	systemTmpl, err := r.loadPromptTemplate("system.txt")
+	if err != nil {
+		return err
+	}
+
+	recommendationTmpl, err := r.loadPromptTemplate("recommendation.txt")
+	if err != nil {
+		return err
+	}
+
+	// Prepare context for templates
+	ctxData := RecommendationContext{
+		Content: fmt.Sprintf("%s\n%s\n%s",
+			r.formatContent(unwatchedMovies),
+			r.formatContent(unwatchedAnime),
+			r.formatContent(unwatchedTVShows)),
+		Preferences: fmt.Sprintf("Favorite Genres: %v\nThemes: %v\nMoods: %v\nContent Lengths: %v\nTime Periods: %v\nLanguages: %v\nSources: %v",
+			prefs.FavoriteGenres, prefs.Themes, prefs.Moods, prefs.ContentLengths, prefs.TimePeriods, prefs.Languages, prefs.Sources),
+		PreviousRecommendations: r.formatPreviousRecommendations(ratings),
+	}
+
+	// Generate system prompt
+	var systemPrompt strings.Builder
+	if err := systemTmpl.Execute(&systemPrompt, nil); err != nil {
+		return fmt.Errorf("failed to generate system prompt: %w", err)
+	}
+
+	// Generate recommendation prompt
+	var recommendationPrompt strings.Builder
+	if err := recommendationTmpl.Execute(&recommendationPrompt, ctxData); err != nil {
+		return fmt.Errorf("failed to generate recommendation prompt: %w", err)
+	}
+
 	// Use OpenAI to generate recommendations
 	r.logger.Debug("Generating recommendations with OpenAI")
 	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
-	// Prepare content for OpenAI
-	var content string
-	content += "Movies:\n"
-	for _, m := range unwatchedMovies {
-		content += fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s\n", m.Title, m.Year, m.Rating, m.Genre)
-	}
-	content += "\nAnime:\n"
-	for _, a := range unwatchedAnime {
-		content += fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s\n", a.Title, a.Year, a.Rating, a.Genre)
-	}
-	content += "\nTV Shows:\n"
-	for _, t := range unwatchedTVShows {
-		content += fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s\n", t.Title, t.Year, t.Rating, t.Genre)
-	}
-
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
-			Content: "You are a media recommendation expert. Based on the provided unwatched content, select the most interesting and diverse recommendations. Consider ratings, genres, and overall appeal. Select up to 3 items from each category.",
+			Content: systemPrompt.String(),
 		},
 		{
 			Role:    openai.ChatMessageRoleUser,
-			Content: content,
+			Content: recommendationPrompt.String(),
 		},
 	}
 
@@ -122,6 +222,18 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 	}
 
 	return nil
+}
+
+func (r *Recommender) formatPreviousRecommendations(ratings []models.UserRating) string {
+	var content strings.Builder
+	content.WriteString("Recent Ratings:\n")
+	for _, rating := range ratings {
+		content.WriteString(fmt.Sprintf("- %s (Rating: %d) - %s\n", rating.ContentType, rating.Rating, rating.Review))
+		if len(rating.Tags) > 0 {
+			content.WriteString(fmt.Sprintf("  Tags: %v\n", rating.Tags))
+		}
+	}
+	return content.String()
 }
 
 // matchRecommendations matches OpenAI recommendations with content items

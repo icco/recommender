@@ -123,3 +123,42 @@ type PlexTVShow struct {
 func (t PlexTVShow) IsWatched() bool {
 	return t.Watched
 }
+
+type UserPreference struct {
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	// Favorite genres across all media types
+	FavoriteGenres []string `gorm:"type:text[]"`
+	// Preferred themes and topics
+	Themes []string `gorm:"type:text[]"`
+	// Preferred mood (e.g., light-hearted, serious, thought-provoking)
+	Moods []string `gorm:"type:text[]"`
+	// Preferred content length (short, medium, long)
+	ContentLengths []string `gorm:"type:text[]"`
+	// Preferred decades or time periods
+	TimePeriods []string `gorm:"type:text[]"`
+	// Preferred languages
+	Languages []string `gorm:"type:text[]"`
+	// Preferred content sources
+	Sources []string `gorm:"type:text[]"`
+}
+
+type UserRating struct {
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	// Reference to the content (movie, anime, or TV show)
+	ContentType string // "movie", "anime", or "tvshow"
+	ContentID   uint
+	// Rating (1-5)
+	Rating int
+	// Review text
+	Review string
+	// Date watched
+	WatchedAt time.Time
+	// Tags for themes, genres, etc.
+	Tags []string `gorm:"type:text[]"`
+	// Similar content IDs (for RAG system)
+	SimilarContent []uint `gorm:"type:integer[]"`
+}
