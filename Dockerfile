@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24.1-alpine AS builder
 
 WORKDIR /app
 
@@ -28,7 +28,6 @@ RUN apk add --no-cache sqlite && \
 
 # Copy the binary and templates from builder
 COPY --from=builder /app/recommender .
-COPY --from=builder /app/templates ./templates
 
 # Set environment variables
 ENV DB_PATH=/data/recommender.db
