@@ -43,19 +43,6 @@ func renderError(w http.ResponseWriter, message string, status int) {
 	}
 }
 
-// RequireAuth middleware ensures the request is authenticated
-func RequireAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		if token == "" {
-			renderError(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		// TODO: Implement proper token validation
-		next.ServeHTTP(w, r)
-	})
-}
-
 func HandleHome(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)

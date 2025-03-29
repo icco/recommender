@@ -123,12 +123,9 @@ func (a *App) setupRoutes() {
 	a.router.Get("/date", handlers.HandleDates(a.db, a.recommender))
 	a.router.Get("/date/{date}", handlers.HandleDate(a.db, a.recommender))
 
-	// Cron routes (protected)
-	a.router.Group(func(r chi.Router) {
-		r.Use(handlers.RequireAuth)
-		r.Get("/cron/recommend", handlers.HandleCron(a.db, a.recommender))
-		r.Get("/cron/cache", handlers.HandleCache(a.db, a.plex))
-	})
+	// Cron routes
+	a.router.Get("/cron/recommend", handlers.HandleCron(a.db, a.recommender))
+	a.router.Get("/cron/cache", handlers.HandleCache(a.db, a.plex))
 }
 
 func main() {
