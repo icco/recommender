@@ -1,4 +1,4 @@
-package recommender
+package recommend
 
 import (
 	"context"
@@ -59,7 +59,7 @@ func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, err
 }
 
 func (r *Recommender) loadPromptTemplate(name string) (*template.Template, error) {
-	content, err := os.ReadFile(filepath.Join("lib/recommender/prompts", name))
+	content, err := os.ReadFile(filepath.Join("lib/recommend/prompts", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read prompt template %s: %w", name, err)
 	}

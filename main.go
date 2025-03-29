@@ -14,7 +14,7 @@ import (
 	"github.com/icco/recommender/lib/db"
 	"github.com/icco/recommender/lib/health"
 	"github.com/icco/recommender/lib/plex"
-	"github.com/icco/recommender/lib/recommender"
+	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -23,7 +23,7 @@ import (
 type App struct {
 	db          *gorm.DB
 	plex        *plex.Client
-	recommender *recommender.Recommender
+	recommender *recommend.Recommender
 	router      *chi.Mux
 	logger      *slog.Logger
 }
@@ -73,7 +73,7 @@ func NewApp() (*App, error) {
 	}
 
 	plexClient := plex.NewClient(plexURL, plexToken, logger)
-	recommender, err := recommender.New(gormDB, plexClient, logger)
+	recommender, err := recommend.New(gormDB, plexClient, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create recommender: %w", err)
 	}

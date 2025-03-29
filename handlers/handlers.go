@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/icco/recommender/lib/plex"
-	"github.com/icco/recommender/lib/recommender"
+	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/validation"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
@@ -43,7 +43,7 @@ func renderError(w http.ResponseWriter, message string, status int) {
 	}
 }
 
-func HandleHome(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
+func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
@@ -77,7 +77,7 @@ func HandleHome(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 	}
 }
 
-func HandleDate(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
+func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
@@ -119,7 +119,7 @@ func HandleDate(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 	}
 }
 
-func HandleDates(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
+func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
@@ -196,7 +196,7 @@ func HandleDates(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 	}
 }
 
-func HandleCron(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
+func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()

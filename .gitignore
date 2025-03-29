@@ -32,7 +32,7 @@ go.work.sum
 *.swp
 *.swo
 
-# Ignore all files in lib/recommender except prompts
-lib/recommender/*
-!lib/recommender/prompts/
-!lib/recommender/recommender.go
+# Ignore all files in lib/recommend except prompts
+lib/recommend/*
+!lib/recommend/prompts/
+!lib/recommend/recommend.go
