@@ -5,9 +5,10 @@ Recommender that uses a mixture of data from my watch history, my ratings, what 
 The app is built using the following technologies:
 
  - Go
- - Chi
- - Gorm
- - SQLite
+ - Chi v5 for routing
+ - Gorm for ORM
+ - SQLite for storage
+ - log/slog for all logs in json
 
 The homepage recommends me the following: 
 
@@ -69,22 +70,6 @@ recommender/
 This uses an ensemble of prompts to query OpenAI and Gemini to get recommendations.
 
 ## Running the Service
-
-### Prerequisites
-
-- Docker and Docker Compose installed
-- Plex server URL and token
-- OpenAI API key
-
-### Environment Variables
-
-Create a `.env` file in the project root with the following variables:
-
-```env
-PLEX_URL=your_plex_server_url
-PLEX_TOKEN=your_plex_token
-OPENAI_API_KEY=your_openai_api_key
-```
 
 ### Running with Docker Compose
 
