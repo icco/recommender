@@ -2,52 +2,112 @@ package models
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type Recommendation struct {
-	gorm.Model
-	Date    time.Time
-	Movies  []Movie
-	Anime   []Anime
-	TVShows []TVShow
+	ID        uint      `gorm:"primarykey"`
+	Date      time.Time `gorm:"uniqueIndex"`
+	Movies    []Movie   `gorm:"many2many:recommendation_movies;"`
+	Anime     []Anime   `gorm:"many2many:recommendation_anime;"`
+	TVShows   []TVShow  `gorm:"many2many:recommendation_tvshows;"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Movie struct {
-	gorm.Model
-	RecommendationID uint
-	Title            string
-	Year             int
-	Rating           float64
-	Genre            string
-	Runtime          int
-	PosterURL        string
-	Source           string // "plex", "letterboxd", etc.
-	Seen             bool
-	Type             string // "funny", "action", "drama", "seen"
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	Runtime   int
+	PosterURL string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Anime struct {
-	gorm.Model
-	RecommendationID uint
-	Title            string
-	Year             int
-	Rating           float64
-	Genre            string
-	Episodes         int
-	PosterURL        string
-	Source           string // "anilist", "plex", etc.
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	Episodes  int
+	PosterURL string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type TVShow struct {
-	gorm.Model
-	RecommendationID uint
-	Title            string
-	Year             int
-	Rating           float64
-	Genre            string
-	Seasons          int
-	PosterURL        string
-	Source           string // "plex", "traktv", etc.
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	Seasons   int
+	PosterURL string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type PlexCache struct {
+	ID        uint `gorm:"primarykey"`
+	UpdatedAt time.Time
+	Movies    []PlexMovie  `gorm:"many2many:plex_cache_movies;"`
+	Anime     []PlexAnime  `gorm:"many2many:plex_cache_anime;"`
+	TVShows   []PlexTVShow `gorm:"many2many:plex_cache_tvshows;"`
+}
+
+type PlexMovie struct {
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	Runtime   int
+	PosterURL string
+	Watched   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (m PlexMovie) IsWatched() bool {
+	return m.Watched
+}
+
+type PlexAnime struct {
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	Episodes  int
+	PosterURL string
+	Watched   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (a PlexAnime) IsWatched() bool {
+	return a.Watched
+}
+
+type PlexTVShow struct {
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	Seasons   int
+	PosterURL string
+	Watched   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (t PlexTVShow) IsWatched() bool {
+	return t.Watched
 }
