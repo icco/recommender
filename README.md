@@ -27,6 +27,8 @@ it displays the following:
  - The genre
  - The runtime
 
+It generates a new recommendation every day. It stores the recommendations in a SQLite database. You can view past recomendations by going to other date pages.
+
 ## Data Sources
 
  - My Plex library
