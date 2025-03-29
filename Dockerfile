@@ -19,7 +19,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main .
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.21
 
 WORKDIR /app
 
