@@ -2,6 +2,8 @@ package recommend
 
 import (
 	"context"
+	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +19,9 @@ import (
 	"google.golang.org/api/option"
 	"gorm.io/gorm"
 )
+
+//go:embed prompts/*.txt
+var promptFS embed.FS
 
 type Recommender struct {
 	db     *gorm.DB
@@ -59,7 +64,12 @@ func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, err
 }
 
 func (r *Recommender) loadPromptTemplate(name string) (*template.Template, error) {
-	content, err := os.ReadFile(filepath.Join("lib/recommend/prompts", name))
+	// Sanitize the name to prevent directory traversal
+	if !strings.HasSuffix(name, ".txt") {
+		return nil, fmt.Errorf("invalid template name: %s", name)
+	}
+
+	content, err := promptFS.ReadFile(filepath.Join("prompts", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read prompt template %s: %w", name, err)
 	}
@@ -69,7 +79,7 @@ func (r *Recommender) loadPromptTemplate(name string) (*template.Template, error
 func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPreference, error) {
 	var prefs models.UserPreference
 	if err := r.db.First(&prefs).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Create default preferences if none exist
 			prefs = models.UserPreference{
 				FavoriteGenres: []string{"Action", "Drama", "Comedy"},
