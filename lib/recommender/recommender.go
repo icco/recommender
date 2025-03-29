@@ -24,6 +24,7 @@ type Recommender struct {
 	logger *slog.Logger
 	openai *openai.Client
 	gemini *genai.Client
+	cache  map[string]*models.Recommendation
 }
 
 type RecommendationContext struct {
@@ -53,6 +54,7 @@ func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, err
 		logger: logger,
 		openai: openaiClient,
 		gemini: geminiClient,
+		cache:  make(map[string]*models.Recommendation),
 	}, nil
 }
 
@@ -121,6 +123,14 @@ func (r *Recommender) formatContent(items interface{}) string {
 func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.Recommendation) error {
 	r.logger.Debug("Starting recommendation generation")
 
+	// Check cache first
+	cacheKey := rec.Date.Format("2006-01-02")
+	if cached, exists := r.cache[cacheKey]; exists {
+		*rec = *cached
+		r.logger.Info("Using cached recommendations", slog.String("date", cacheKey))
+		return nil
+	}
+
 	// Get user preferences and recent ratings
 	prefs, err := r.getUserPreferences(ctx)
 	if err != nil {
@@ -160,13 +170,23 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 	}
 	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
 
-	// Load prompt templates
-	systemTmpl, err := r.loadPromptTemplate("system.txt")
+	// Load model-specific prompt templates
+	openaiSystemTmpl, err := r.loadPromptTemplate("system_openai.txt")
 	if err != nil {
 		return err
 	}
 
-	recommendationTmpl, err := r.loadPromptTemplate("recommendation.txt")
+	openaiRecommendationTmpl, err := r.loadPromptTemplate("recommendation_openai.txt")
+	if err != nil {
+		return err
+	}
+
+	geminiSystemTmpl, err := r.loadPromptTemplate("system_gemini.txt")
+	if err != nil {
+		return err
+	}
+
+	geminiRecommendationTmpl, err := r.loadPromptTemplate("recommendation_gemini.txt")
 	if err != nil {
 		return err
 	}
@@ -182,16 +202,26 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 		PreviousRecommendations: r.formatPreviousRecommendations(ratings),
 	}
 
-	// Generate system prompt
-	var systemPrompt strings.Builder
-	if err := systemTmpl.Execute(&systemPrompt, nil); err != nil {
-		return fmt.Errorf("failed to generate system prompt: %w", err)
+	// Generate OpenAI prompts
+	var openaiSystemPrompt strings.Builder
+	if err := openaiSystemTmpl.Execute(&openaiSystemPrompt, nil); err != nil {
+		return fmt.Errorf("failed to generate OpenAI system prompt: %w", err)
 	}
 
-	// Generate recommendation prompt
-	var recommendationPrompt strings.Builder
-	if err := recommendationTmpl.Execute(&recommendationPrompt, ctxData); err != nil {
-		return fmt.Errorf("failed to generate recommendation prompt: %w", err)
+	var openaiRecommendationPrompt strings.Builder
+	if err := openaiRecommendationTmpl.Execute(&openaiRecommendationPrompt, ctxData); err != nil {
+		return fmt.Errorf("failed to generate OpenAI recommendation prompt: %w", err)
+	}
+
+	// Generate Gemini prompts
+	var geminiSystemPrompt strings.Builder
+	if err := geminiSystemTmpl.Execute(&geminiSystemPrompt, nil); err != nil {
+		return fmt.Errorf("failed to generate Gemini system prompt: %w", err)
+	}
+
+	var geminiRecommendationPrompt strings.Builder
+	if err := geminiRecommendationTmpl.Execute(&geminiRecommendationPrompt, ctxData); err != nil {
+		return fmt.Errorf("failed to generate Gemini recommendation prompt: %w", err)
 	}
 
 	// Prepare unwatched content
@@ -202,12 +232,12 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 	}
 
 	// Generate recommendations from both OpenAI and Gemini
-	openaiRecs, err := r.generateOpenAIRecommendations(ctx, systemPrompt.String(), recommendationPrompt.String(), unwatched)
+	openaiRecs, err := r.generateOpenAIRecommendations(ctx, openaiSystemPrompt.String(), openaiRecommendationPrompt.String(), unwatched)
 	if err != nil {
 		return fmt.Errorf("failed to get OpenAI recommendations: %w", err)
 	}
 
-	geminiRecs, err := r.generateGeminiRecommendations(ctx, systemPrompt.String(), recommendationPrompt.String(), unwatched)
+	geminiRecs, err := r.generateGeminiRecommendations(ctx, geminiSystemPrompt.String(), geminiRecommendationPrompt.String(), unwatched)
 	if err != nil {
 		return fmt.Errorf("failed to get Gemini recommendations: %w", err)
 	}
@@ -270,29 +300,26 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 		return fmt.Errorf("failed to save recommendation: %w", err)
 	}
 
+	// Cache the recommendations
+	r.cache[cacheKey] = rec
 	return nil
 }
 
 func (r *Recommender) generateOpenAIRecommendations(ctx context.Context, systemPrompt, userPrompt string, unwatched UnwatchedContent) (*models.Recommendation, error) {
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: systemPrompt,
+	resp, err := r.openai.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model: openai.GPT3Dot5Turbo,
+			Messages: []openai.ChatCompletionMessage{
+				{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
+				{Role: openai.ChatMessageRoleUser, Content: userPrompt},
+			},
+			Temperature: 0.7,
+			MaxTokens:   1000,
 		},
-		{
-			Role:    openai.ChatMessageRoleUser,
-			Content: userPrompt,
-		},
-	}
-
-	req := openai.ChatCompletionRequest{
-		Model:    openai.GPT4,
-		Messages: messages,
-	}
-
-	resp, err := r.openai.CreateChatCompletion(ctx, req)
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get OpenAI recommendations: %w", err)
+		return nil, fmt.Errorf("failed to get OpenAI completion: %w", err)
 	}
 
 	// Parse OpenAI response and match with our content
@@ -306,13 +333,9 @@ func (r *Recommender) generateOpenAIRecommendations(ctx context.Context, systemP
 
 func (r *Recommender) generateGeminiRecommendations(ctx context.Context, systemPrompt, userPrompt string, unwatched UnwatchedContent) (*models.Recommendation, error) {
 	model := r.gemini.GenerativeModel("gemini-pro")
-
-	// Combine system and user prompts
-	fullPrompt := fmt.Sprintf("%s\n\n%s", systemPrompt, userPrompt)
-
-	resp, err := model.GenerateContent(ctx, genai.Text(fullPrompt))
+	resp, err := model.GenerateContent(ctx, genai.Text(systemPrompt+"\n\n"+userPrompt))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Gemini recommendations: %w", err)
+		return nil, fmt.Errorf("failed to get Gemini completion: %w", err)
 	}
 
 	// Parse Gemini response and match with our content
@@ -325,14 +348,22 @@ func (r *Recommender) generateGeminiRecommendations(ctx context.Context, systemP
 }
 
 func (r *Recommender) formatPreviousRecommendations(ratings []models.UserRating) string {
+	if len(ratings) == 0 {
+		return "No previous recommendations"
+	}
+
 	var content strings.Builder
 	content.WriteString("Recent Ratings:\n")
-	for _, rating := range ratings {
-		content.WriteString(fmt.Sprintf("- %s (Rating: %d) - %s\n", rating.ContentType, rating.Rating, rating.Review))
-		if len(rating.Tags) > 0 {
-			content.WriteString(fmt.Sprintf("  Tags: %v\n", rating.Tags))
-		}
+
+	// Only include the 5 most recent ratings
+	for i := 0; i < len(ratings) && i < 5; i++ {
+		rating := ratings[i]
+		content.WriteString(fmt.Sprintf("- %s (%s) - Rating: %d/5\n",
+			rating.ContentType,
+			rating.WatchedAt.Format("2006-01-02"),
+			rating.Rating))
 	}
+
 	return content.String()
 }
 

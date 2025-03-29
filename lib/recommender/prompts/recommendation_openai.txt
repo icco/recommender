@@ -1,0 +1,29 @@
+Recommend the following content:
+
+Movies:
+- 1 funny unwatched movie
+- 1 action/drama unwatched movie
+- 1 rewatchable movie
+
+Anime:
+- 3 unwatched series matching preferences
+
+TV Shows:
+- 3 unwatched shows matching preferences
+
+For each recommendation:
+1. Title and year
+2. Brief explanation of preference match
+3. Similar content reference
+4. Key appealing elements
+
+Available Content:
+{{.Content}}
+
+User Preferences:
+{{.Preferences}}
+
+Recent History:
+{{.PreviousRecommendations}}
+
+Format your response with clear section headers and bullet points. 
