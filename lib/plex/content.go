@@ -29,13 +29,16 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 		}
 
 		movie := models.PlexMovie{
-			Title:     item.Title,
-			Year:      getIntValue(item.Year),
-			Rating:    getFloatValue(item.Rating),
-			Genre:     getGenres(item.Genre),
-			Runtime:   getIntValue(item.Duration) / 60000,
-			PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-			Watched:   watched,
+			BaseMedia: models.BaseMedia{
+				Title:     item.Title,
+				Year:      getIntValue(item.Year),
+				Rating:    getFloatValue(item.Rating),
+				Genre:     getGenres(item.Genre),
+				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+				Source:    "plex",
+			},
+			Runtime: getIntValue(item.Duration) / 60000,
+			Watched: watched,
 		}
 		movies = append(movies, movie)
 	}
@@ -65,13 +68,16 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 		}
 
 		animeItem := models.PlexAnime{
-			Title:     item.Title,
-			Year:      getIntValue(item.Year),
-			Rating:    getFloatValue(item.Rating),
-			Genre:     getGenres(item.Genre),
-			Episodes:  getIntValue(item.LeafCount),
-			PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-			Watched:   watched,
+			BaseMedia: models.BaseMedia{
+				Title:     item.Title,
+				Year:      getIntValue(item.Year),
+				Rating:    getFloatValue(item.Rating),
+				Genre:     getGenres(item.Genre),
+				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+				Source:    "plex",
+			},
+			Episodes: getIntValue(item.LeafCount),
+			Watched:  watched,
 		}
 		anime = append(anime, animeItem)
 	}
@@ -101,13 +107,16 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 		}
 
 		tvShow := models.PlexTVShow{
-			Title:     item.Title,
-			Year:      getIntValue(item.Year),
-			Rating:    getFloatValue(item.Rating),
-			Genre:     getGenres(item.Genre),
-			Seasons:   getIntValue(item.ChildCount),
-			PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-			Watched:   watched,
+			BaseMedia: models.BaseMedia{
+				Title:     item.Title,
+				Year:      getIntValue(item.Year),
+				Rating:    getFloatValue(item.Rating),
+				Genre:     getGenres(item.Genre),
+				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+				Source:    "plex",
+			},
+			Seasons: getIntValue(item.ChildCount),
+			Watched: watched,
 		}
 		tvShows = append(tvShows, tvShow)
 	}

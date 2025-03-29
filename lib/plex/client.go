@@ -123,13 +123,15 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 	for _, item := range items.Object.MediaContainer.Metadata {
 		if item.ViewCount != nil && *item.ViewCount == 0 {
 			movie := models.Movie{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				Runtime:   getIntValue(item.Duration) / 60000,
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
+				BaseMedia: models.BaseMedia{
+					Title:     item.Title,
+					Year:      getIntValue(item.Year),
+					Rating:    getFloatValue(item.Rating),
+					Genre:     getGenres(item.Genre),
+					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+					Source:    "plex",
+				},
+				Runtime: getIntValue(item.Duration) / 60000,
 			}
 			unwatchedMovies = append(unwatchedMovies, movie)
 		}
@@ -156,13 +158,15 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 	for _, item := range items.Object.MediaContainer.Metadata {
 		if item.ViewCount != nil && *item.ViewCount == 0 {
 			anime := models.Anime{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				Episodes:  getIntValue(item.LeafCount),
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
+				BaseMedia: models.BaseMedia{
+					Title:     item.Title,
+					Year:      getIntValue(item.Year),
+					Rating:    getFloatValue(item.Rating),
+					Genre:     getGenres(item.Genre),
+					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+					Source:    "plex",
+				},
+				Episodes: getIntValue(item.LeafCount),
 			}
 			unwatchedAnime = append(unwatchedAnime, anime)
 		}
@@ -189,13 +193,15 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 	for _, item := range items.Object.MediaContainer.Metadata {
 		if item.ViewCount != nil && *item.ViewCount == 0 {
 			tvShow := models.TVShow{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				Seasons:   getIntValue(item.ChildCount),
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
+				BaseMedia: models.BaseMedia{
+					Title:     item.Title,
+					Year:      getIntValue(item.Year),
+					Rating:    getFloatValue(item.Rating),
+					Genre:     getGenres(item.Genre),
+					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+					Source:    "plex",
+				},
+				Seasons: getIntValue(item.ChildCount),
 			}
 			unwatchedTVShows = append(unwatchedTVShows, tvShow)
 		}

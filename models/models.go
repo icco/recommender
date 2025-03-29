@@ -4,6 +4,38 @@ import (
 	"time"
 )
 
+// MediaItem represents the common interface for all media types
+type MediaItem interface {
+	GetID() uint
+	GetTitle() string
+	GetYear() int
+	GetRating() float64
+	GetGenre() string
+	GetPosterURL() string
+	GetSource() string
+}
+
+// BaseMedia contains common fields for all media types
+type BaseMedia struct {
+	ID        uint   `gorm:"primarykey"`
+	Title     string `gorm:"uniqueIndex"`
+	Year      int
+	Rating    float64
+	Genre     string
+	PosterURL string
+	Source    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (b BaseMedia) GetID() uint          { return b.ID }
+func (b BaseMedia) GetTitle() string     { return b.Title }
+func (b BaseMedia) GetYear() int         { return b.Year }
+func (b BaseMedia) GetRating() float64   { return b.Rating }
+func (b BaseMedia) GetGenre() string     { return b.Genre }
+func (b BaseMedia) GetPosterURL() string { return b.PosterURL }
+func (b BaseMedia) GetSource() string    { return b.Source }
+
 type Recommendation struct {
 	ID        uint      `gorm:"primarykey"`
 	Date      time.Time `gorm:"uniqueIndex"`
@@ -15,16 +47,8 @@ type Recommendation struct {
 }
 
 type Movie struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
-	Year      int
-	Rating    float64
-	Genre     string
-	Runtime   int
-	PosterURL string
-	Source    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	BaseMedia
+	Runtime int
 }
 
 func (m Movie) GetTitle() string {
@@ -32,16 +56,8 @@ func (m Movie) GetTitle() string {
 }
 
 type Anime struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
-	Year      int
-	Rating    float64
-	Genre     string
-	Episodes  int
-	PosterURL string
-	Source    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	BaseMedia
+	Episodes int
 }
 
 func (a Anime) GetTitle() string {
@@ -49,16 +65,8 @@ func (a Anime) GetTitle() string {
 }
 
 type TVShow struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
-	Year      int
-	Rating    float64
-	Genre     string
-	Seasons   int
-	PosterURL string
-	Source    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	BaseMedia
+	Seasons int
 }
 
 func (t TVShow) GetTitle() string {
@@ -74,16 +82,9 @@ type PlexCache struct {
 }
 
 type PlexMovie struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
-	Year      int
-	Rating    float64
-	Genre     string
-	Runtime   int
-	PosterURL string
-	Watched   bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	BaseMedia
+	Runtime int
+	Watched bool
 }
 
 func (m PlexMovie) IsWatched() bool {
@@ -91,16 +92,9 @@ func (m PlexMovie) IsWatched() bool {
 }
 
 type PlexAnime struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
-	Year      int
-	Rating    float64
-	Genre     string
-	Episodes  int
-	PosterURL string
-	Watched   bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	BaseMedia
+	Episodes int
+	Watched  bool
 }
 
 func (a PlexAnime) IsWatched() bool {
@@ -108,16 +102,9 @@ func (a PlexAnime) IsWatched() bool {
 }
 
 type PlexTVShow struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
-	Year      int
-	Rating    float64
-	Genre     string
-	Seasons   int
-	PosterURL string
-	Watched   bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	BaseMedia
+	Seasons int
+	Watched bool
 }
 
 func (t PlexTVShow) IsWatched() bool {
