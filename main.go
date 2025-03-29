@@ -41,7 +41,7 @@ func NewApp() (*App, error) {
 
 	// Create JSON logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: slog.LevelDebug,
 	}))
 	slog.SetDefault(logger) // Set as default logger
 

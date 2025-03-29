@@ -196,16 +196,29 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		startTime := time.Now()
+		slog.Info("Starting recommendation cron job",
+			slog.Time("start_time", startTime),
+			slog.String("remote_addr", req.RemoteAddr),
+		)
+
 		today := time.Now().Truncate(24 * time.Hour)
 
 		var count int64
 		if err := db.WithContext(req.Context()).Model(&models.Recommendation{}).Where("date = ?", today).Count(&count).Error; err != nil {
-			slog.ErrorContext(req.Context(), "Failed to check existing recommendation", slog.Any("error", err))
+			slog.ErrorContext(req.Context(), "Failed to check existing recommendation",
+				slog.Any("error", err),
+				slog.Time("date", today),
+			)
 			renderError(w, "Failed to check existing recommendation.", http.StatusInternalServerError)
 			return
 		}
 
 		if count > 0 {
+			slog.Info("Recommendation already exists for today",
+				slog.Time("date", today),
+				slog.Int64("count", count),
+			)
 			if _, err := fmt.Fprintf(w, "Recommendation already exists for %s\n", today.Format("2006-01-02")); err != nil {
 				slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
 				renderError(w, "Failed to write response.", http.StatusInternalServerError)
@@ -218,9 +231,31 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		go func() {
 			defer cancel()
+			slog.Info("Starting recommendation generation in background",
+				slog.Time("date", today),
+				slog.Duration("timeout", 5*time.Minute),
+			)
 			rec := &models.Recommendation{Date: today}
+
+			slog.Debug("Initializing recommendation generation",
+				slog.Time("date", today),
+			)
+
 			if err := r.GenerateRecommendations(ctx, rec); err != nil {
-				slog.ErrorContext(ctx, "Failed to generate recommendation", slog.Any("error", err))
+				slog.ErrorContext(ctx, "Failed to generate recommendation",
+					slog.Any("error", err),
+					slog.Time("date", today),
+				)
+			} else {
+				slog.Info("Successfully generated recommendation",
+					slog.Time("date", today),
+					slog.Duration("duration", time.Since(startTime)),
+				)
+				slog.Debug("Recommendation details",
+					slog.Int("movies_count", len(rec.Movies)),
+					slog.Int("anime_count", len(rec.Anime)),
+					slog.Int("tvshows_count", len(rec.TVShows)),
+				)
 			}
 		}()
 
@@ -234,12 +269,49 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		startTime := time.Now()
+		slog.Info("Starting cache update cron job",
+			slog.Time("start_time", startTime),
+			slog.String("remote_addr", req.RemoteAddr),
+		)
+
 		// Create a new background context with a timeout for the cache update
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		go func() {
 			defer cancel()
+			slog.Info("Starting cache update in background",
+				slog.Duration("timeout", 5*time.Minute),
+			)
+
+			slog.Debug("Initializing cache update process")
+
 			if err := p.UpdateCache(ctx); err != nil {
-				slog.ErrorContext(ctx, "Failed to update cache", slog.Any("error", err))
+				slog.ErrorContext(ctx, "Failed to update cache",
+					slog.Any("error", err),
+					slog.Duration("duration", time.Since(startTime)),
+				)
+			} else {
+				slog.Info("Successfully updated cache",
+					slog.Duration("duration", time.Since(startTime)),
+				)
+
+				// Log cache statistics
+				var movieCount, animeCount, tvShowCount int64
+				if err := db.WithContext(ctx).Model(&models.PlexMovie{}).Count(&movieCount).Error; err != nil {
+					slog.ErrorContext(ctx, "Failed to get movie count", slog.Any("error", err))
+				}
+				if err := db.WithContext(ctx).Model(&models.PlexAnime{}).Count(&animeCount).Error; err != nil {
+					slog.ErrorContext(ctx, "Failed to get anime count", slog.Any("error", err))
+				}
+				if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Count(&tvShowCount).Error; err != nil {
+					slog.ErrorContext(ctx, "Failed to get TV show count", slog.Any("error", err))
+				}
+
+				slog.Debug("Cache update statistics",
+					slog.Int64("movies_count", movieCount),
+					slog.Int64("anime_count", animeCount),
+					slog.Int64("tvshows_count", tvShowCount),
+				)
 			}
 		}()
 
