@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +31,17 @@ type App struct {
 }
 
 func NewApp() (*App, error) {
-	db, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{})
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "data/recommender.db"
+	}
+
+	// Ensure the directory exists
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	}
+
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -42,8 +53,17 @@ func NewApp() (*App, error) {
 	}
 
 	plexURL := os.Getenv("PLEX_URL")
+	if plexURL == "" {
+		return nil, fmt.Errorf("PLEX_URL environment variable is required")
+	}
+
+	plexToken := os.Getenv("PLEX_TOKEN")
+	if plexToken == "" {
+		return nil, fmt.Errorf("PLEX_TOKEN environment variable is required")
+	}
+
 	plex := plexgo.New(
-		plexgo.WithSecurity(os.Getenv("PLEX_TOKEN")),
+		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
 	)
 
@@ -73,26 +93,41 @@ func (a *App) handleHome(w http.ResponseWriter, r *http.Request) {
 
 	result := a.db.Where("date = ?", today).First(&rec)
 	if result.Error != nil {
+		log.Printf("No recommendation found for today, creating new one: %v", result.Error)
 		// Create new recommendation
 		rec = models.Recommendation{Date: today}
 		if err := a.generateRecommendations(r.Context(), &rec); err != nil {
-			http.Error(w, "Failed to generate recommendations", http.StatusInternalServerError)
+			log.Printf("Failed to generate recommendations: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to generate recommendations: %v", err), http.StatusInternalServerError)
 			return
 		}
-		a.db.Create(&rec)
+		if err := a.db.Create(&rec).Error; err != nil {
+			log.Printf("Failed to save recommendation: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to save recommendation: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Load the full recommendation with all relations
-	a.db.Preload("Movies").Preload("Anime").Preload("TVShows").First(&rec, rec.ID)
+	if err := a.db.Preload("Movies").Preload("Anime").Preload("TVShows").First(&rec, rec.ID).Error; err != nil {
+		log.Printf("Failed to load recommendation with relations: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to load recommendation: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	tmpl := template.Must(template.ParseFiles("templates/home.html"))
-	tmpl.Execute(w, rec)
+	if err := tmpl.Execute(w, rec); err != nil {
+		log.Printf("Failed to execute template: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to render page: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (a *App) handleDate(w http.ResponseWriter, r *http.Request) {
 	dateStr := chi.URLParam(r, "date")
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
+		log.Printf("Invalid date format: %v", err)
 		http.Error(w, "Invalid date format", http.StatusBadRequest)
 		return
 	}
@@ -100,14 +135,23 @@ func (a *App) handleDate(w http.ResponseWriter, r *http.Request) {
 	var rec models.Recommendation
 	result := a.db.Where("date = ?", date).First(&rec)
 	if result.Error != nil {
+		log.Printf("Recommendation not found for date %s: %v", dateStr, result.Error)
 		http.Error(w, "Recommendation not found", http.StatusNotFound)
 		return
 	}
 
-	a.db.Preload("Movies").Preload("Anime").Preload("TVShows").First(&rec, rec.ID)
+	if err := a.db.Preload("Movies").Preload("Anime").Preload("TVShows").First(&rec, rec.ID).Error; err != nil {
+		log.Printf("Failed to load recommendation with relations: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to load recommendation: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	tmpl := template.Must(template.ParseFiles("templates/home.html"))
-	tmpl.Execute(w, rec)
+	if err := tmpl.Execute(w, rec); err != nil {
+		log.Printf("Failed to execute template: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to render page: %v", err), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (a *App) generateRecommendations(ctx context.Context, rec *models.Recommendation) error {
