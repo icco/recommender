@@ -94,7 +94,20 @@ func (a *App) setupRoutes() {
 	// Middleware
 	a.router.Use(middleware.RequestID)
 	a.router.Use(middleware.RealIP)
-	a.router.Use(middleware.Logger)
+	a.router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			next.ServeHTTP(w, r)
+			duration := time.Since(start)
+			a.logger.Info("HTTP request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("remote_addr", r.RemoteAddr),
+				slog.String("user_agent", r.UserAgent()),
+				slog.Duration("duration", duration),
+			)
+		})
+	})
 	a.router.Use(middleware.Recoverer)
 	a.router.Use(middleware.Timeout(60 * time.Second))
 	a.router.Use(middleware.Compress(5))
