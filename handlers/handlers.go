@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
 	"html/template"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/icco/recommender/handlers/templates"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/validation"
@@ -18,11 +18,8 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:embed templates/*.html
-var templateFS embed.FS
-
 func parseTemplates(files ...string) (*template.Template, error) {
-	return template.ParseFS(templateFS, files...)
+	return template.ParseFS(templates.FS, files...)
 }
 
 type errorData struct {

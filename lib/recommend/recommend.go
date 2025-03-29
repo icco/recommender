@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -14,6 +13,7 @@ import (
 
 	"cloud.google.com/go/vertexai/genai"
 	"github.com/icco/recommender/lib/plex"
+	"github.com/icco/recommender/lib/recommend/prompts"
 	"github.com/icco/recommender/models"
 	openai "github.com/sashabaranov/go-openai"
 	"google.golang.org/api/option"
@@ -63,17 +63,18 @@ func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, err
 	}, nil
 }
 
-func (r *Recommender) loadPromptTemplate(name string) (*template.Template, error) {
-	// Sanitize the name to prevent directory traversal
-	if !strings.HasSuffix(name, ".txt") {
-		return nil, fmt.Errorf("invalid template name: %s", name)
+func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, error) {
+	content, err := prompts.FS.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read prompt file %s: %w", filename, err)
 	}
 
-	content, err := promptFS.ReadFile(filepath.Join("prompts", name))
+	tmpl, err := template.New(filename).Parse(string(content))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read prompt template %s: %w", name, err)
+		return nil, fmt.Errorf("failed to parse prompt template %s: %w", filename, err)
 	}
-	return template.New(name).Parse(string(content))
+
+	return tmpl, nil
 }
 
 func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPreference, error) {
