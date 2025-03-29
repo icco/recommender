@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"log/slog"
 
@@ -212,6 +213,10 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 
 // UpdateCache updates the Plex cache by fetching all libraries and their items
 func (c *Client) UpdateCache(ctx context.Context) error {
+	// Create a new context with a timeout of 30 seconds
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	// Get all libraries
 	libraries, err := c.GetAllLibraries(ctx)
 	if err != nil {
