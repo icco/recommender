@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// Health represents the health check response structure.
+// It includes the overall status, timestamp, and database health information.
 type Health struct {
 	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
@@ -20,6 +22,9 @@ type Health struct {
 	} `json:"db"`
 }
 
+// Check returns an HTTP handler that performs health checks on the application.
+// It verifies the database connection and returns the health status.
+// The handler returns a JSON response with the health information.
 func Check(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -53,6 +58,8 @@ func Check(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// writeHealth writes the health check response to the HTTP response writer.
+// It takes a response writer, health information, and HTTP status code.
 func writeHealth(w http.ResponseWriter, health Health, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

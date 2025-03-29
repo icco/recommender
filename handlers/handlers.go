@@ -18,6 +18,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// parseTemplates parses HTML templates from the embedded filesystem.
+// It takes a variadic list of template file paths and returns a parsed template
+// or an error if parsing fails.
 func parseTemplates(files ...string) (*template.Template, error) {
 	return template.ParseFS(templates.FS, files...)
 }
@@ -26,6 +29,8 @@ type errorData struct {
 	Message string
 }
 
+// renderError renders an error page using the error template.
+// It takes a response writer, error message, and HTTP status code.
 func renderError(w http.ResponseWriter, message string, status int) {
 	tmpl, err := parseTemplates("templates/base.html", "templates/error.html")
 	if err != nil {
@@ -41,6 +46,28 @@ func renderError(w http.ResponseWriter, message string, status int) {
 	}
 }
 
+// renderTemplate renders a template with the given data and handles errors.
+// It takes a response writer, template files, and data to render.
+// Returns true if rendering was successful, false otherwise.
+func renderTemplate(w http.ResponseWriter, ctx context.Context, files []string, data interface{}) bool {
+	tmpl, err := parseTemplates(files...)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to parse template", slog.Any("error", err))
+		renderError(w, "Something went wrong while loading the page.", http.StatusInternalServerError)
+		return false
+	}
+
+	if err := tmpl.Execute(w, data); err != nil {
+		slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
+		renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
+
+// HandleHome serves the home page with today's recommendations.
+// It takes a database connection and recommender instance, and returns an HTTP handler.
 func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
@@ -60,21 +87,13 @@ func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		tmpl, err := parseTemplates("templates/base.html", "templates/home.html")
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to parse template", slog.Any("error", err))
-			renderError(w, "Something went wrong while loading the page.", http.StatusInternalServerError)
-			return
-		}
-
-		if err := tmpl.Execute(w, rec); err != nil {
-			slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
-			renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
-			return
-		}
+		renderTemplate(w, ctx, []string{"templates/base.html", "templates/home.html"}, rec)
 	}
 }
 
+// HandleDate serves recommendations for a specific date.
+// It takes a database connection and recommender instance, and returns an HTTP handler.
+// The date should be provided in the URL path parameter.
 func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
@@ -82,41 +101,47 @@ func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 		date := chi.URLParam(req, "date")
 		if date == "" {
+			slog.ErrorContext(ctx, "Missing date parameter")
 			validation.WriteError(w, fmt.Errorf("date parameter is required"), http.StatusBadRequest)
 			return
 		}
 
 		// Validate date format
 		if err := validation.ValidateDate(date); err != nil {
+			slog.ErrorContext(ctx, "Invalid date format", slog.String("date", date), slog.Any("error", err))
 			validation.WriteError(w, err, http.StatusBadRequest)
 			return
 		}
 
-		parsedDate, _ := time.Parse("2006-01-02", date)
+		parsedDate, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to parse date", slog.String("date", date), slog.Any("error", err))
+			validation.WriteError(w, fmt.Errorf("invalid date format: %w", err), http.StatusBadRequest)
+			return
+		}
 
 		var rec models.Recommendation
 		result := db.WithContext(ctx).Where("date = ?", parsedDate).First(&rec)
 		if result.Error != nil {
-			slog.ErrorContext(ctx, "Failed to get recommendation", slog.Any("error", result.Error))
-			renderError(w, "We couldn't find recommendations for this date.", http.StatusNotFound)
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+				slog.InfoContext(ctx, "No recommendation found for date", slog.String("date", date))
+				renderError(w, "We couldn't find recommendations for this date.", http.StatusNotFound)
+			} else {
+				slog.ErrorContext(ctx, "Database error while fetching recommendation",
+					slog.String("date", date),
+					slog.Any("error", result.Error))
+				renderError(w, "We encountered an error while fetching recommendations. Please try again later.", http.StatusInternalServerError)
+			}
 			return
 		}
 
-		tmpl, err := parseTemplates("templates/base.html", "templates/home.html")
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to parse template", slog.Any("error", err))
-			renderError(w, "Something went wrong while loading the page.", http.StatusInternalServerError)
-			return
-		}
-
-		if err := tmpl.Execute(w, rec); err != nil {
-			slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
-			renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
-			return
-		}
+		renderTemplate(w, ctx, []string{"templates/base.html", "templates/home.html"}, rec)
 	}
 }
 
+// HandleDates serves a paginated list of dates with recommendations.
+// It takes a database connection and recommender instance, and returns an HTTP handler.
+// Pagination parameters can be provided via query parameters 'page' and 'size'.
 func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
@@ -165,13 +190,6 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		tmpl, err := parseTemplates("templates/base.html", "templates/dates.html")
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to parse template", slog.Any("error", err))
-			renderError(w, "Something went wrong while loading the page.", http.StatusInternalServerError)
-			return
-		}
-
 		data := struct {
 			Dates      []time.Time
 			Page       int
@@ -186,14 +204,13 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			TotalPages: int((total + int64(pageSize) - 1) / int64(pageSize)),
 		}
 
-		if err := tmpl.Execute(w, data); err != nil {
-			slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
-			renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
-			return
-		}
+		renderTemplate(w, ctx, []string{"templates/base.html", "templates/dates.html"}, data)
 	}
 }
 
+// HandleCron handles the recommendation generation cron job.
+// It takes a database connection and recommender instance, and returns an HTTP handler.
+// The job runs asynchronously and generates recommendations for the current day.
 func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
@@ -267,6 +284,9 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 	}
 }
 
+// HandleCache handles the Plex cache update cron job.
+// It takes a database connection and Plex client instance, and returns an HTTP handler.
+// The job runs asynchronously and updates the cache of available media.
 func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
