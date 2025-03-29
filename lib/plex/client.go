@@ -67,7 +67,7 @@ func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType 
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operations.GetLibraryItemsResponse, error) {
 	sectionKey, err := strconv.Atoi(libraryKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid library key: %v", err)
+		return nil, fmt.Errorf("invalid library key: %w", err)
 	}
 
 	return c.api.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{

@@ -3,6 +3,7 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"time"
@@ -18,7 +19,7 @@ func ValidateDate(date string) error {
 
 	parsed, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return fmt.Errorf("invalid date: %s", err)
+		return fmt.Errorf("invalid date: %w", err)
 	}
 
 	// Check if date is in the future
@@ -44,7 +45,9 @@ func ValidatePagination(page, size int) error {
 func WriteError(w http.ResponseWriter, err error, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error": err.Error(),
-	})
+	}); err != nil {
+		log.Printf("Failed to encode error response: %v", err)
+	}
 }

@@ -35,7 +35,7 @@ func NewApp() (*App, error) {
 	}
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0750); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
@@ -141,7 +141,14 @@ func main() {
 	}
 
 	slog.Info("Starting server", slog.String("port", port))
-	if err := http.ListenAndServe(":"+port, app.router); err != nil {
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      app.router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		slog.Error("Server error", slog.Any("error", err))
 		os.Exit(1)
 	}

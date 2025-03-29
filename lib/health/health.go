@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"log/slog"
+
 	"gorm.io/gorm"
 )
 
@@ -54,5 +56,7 @@ func Check(db *gorm.DB) http.HandlerFunc {
 func writeHealth(w http.ResponseWriter, health Health, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		slog.Error("Failed to encode health response", slog.Any("error", err))
+	}
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -53,7 +54,7 @@ func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 		var rec models.Recommendation
 		result := db.WithContext(ctx).Where("date = ?", today).First(&rec)
 		if result.Error != nil {
-			if result.Error == gorm.ErrRecordNotFound {
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				renderError(w, "No recommendations available for today. Please check back later or visit the Past Recommendations page.", http.StatusNotFound)
 			} else {
 				slog.ErrorContext(ctx, "Failed to get today's recommendation", slog.Any("error", result.Error))
@@ -208,7 +209,11 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 		}
 
 		if count > 0 {
-			fmt.Fprintf(w, "Recommendation already exists for %s\n", today.Format("2006-01-02"))
+			if _, err := fmt.Fprintf(w, "Recommendation already exists for %s\n", today.Format("2006-01-02")); err != nil {
+				slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
+				renderError(w, "Failed to write response.", http.StatusInternalServerError)
+				return
+			}
 			return
 		}
 
@@ -222,7 +227,11 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			}
 		}()
 
-		fmt.Fprintf(w, "Started generating recommendation for %s\n", today.Format("2006-01-02"))
+		if _, err := fmt.Fprintf(w, "Started generating recommendation for %s\n", today.Format("2006-01-02")); err != nil {
+			slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
+			renderError(w, "Failed to write response.", http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -237,6 +246,10 @@ func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 			}
 		}()
 
-		fmt.Fprintf(w, "Started updating Plex and Anilist cache\n")
+		if _, err := fmt.Fprintf(w, "Started updating Plex and Anilist cache\n"); err != nil {
+			slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
+			renderError(w, "Failed to write response.", http.StatusInternalServerError)
+			return
+		}
 	}
 }
