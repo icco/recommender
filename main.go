@@ -376,7 +376,7 @@ func (a *App) getUnwatchedMovies(ctx context.Context, libraries []operations.Get
 				Rating:    getFloatValue(item.Rating),
 				Genre:     getGenres(item.Genre),
 				Runtime:   getIntValue(item.Duration) / 60000,
-				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+				PosterURL: fmt.Sprintf("%s%s", a.plexURL, getStringValue(item.Thumb)),
 				Source:    "plex",
 			}
 			unwatchedMovies = append(unwatchedMovies, movie)
@@ -409,7 +409,7 @@ func (a *App) getUnwatchedAnime(ctx context.Context, libraries []operations.GetA
 				Rating:    getFloatValue(item.Rating),
 				Genre:     getGenres(item.Genre),
 				Episodes:  getIntValue(item.LeafCount),
-				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+				PosterURL: fmt.Sprintf("%s%s", a.plexURL, getStringValue(item.Thumb)),
 				Source:    "plex",
 			}
 			unwatchedAnime = append(unwatchedAnime, anime)
@@ -442,7 +442,7 @@ func (a *App) getUnwatchedTVShows(ctx context.Context, libraries []operations.Ge
 				Rating:    getFloatValue(item.Rating),
 				Genre:     getGenres(item.Genre),
 				Seasons:   getIntValue(item.ChildCount),
-				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+				PosterURL: fmt.Sprintf("%s%s", a.plexURL, getStringValue(item.Thumb)),
 				Source:    "plex",
 			}
 			unwatchedTVShows = append(unwatchedTVShows, tvShow)
@@ -463,6 +463,13 @@ func getIntValue(v *int) int {
 func getFloatValue(v *float64) float64 {
 	if v == nil {
 		return 0
+	}
+	return *v
+}
+
+func getStringValue(v *string) string {
+	if v == nil {
+		return ""
 	}
 	return *v
 }
@@ -571,7 +578,7 @@ func (a *App) getAllMovies(ctx context.Context, libraries []operations.GetAllLib
 			Rating:    getFloatValue(item.Rating),
 			Genre:     getGenres(item.Genre),
 			Runtime:   getIntValue(item.Duration) / 60000,
-			PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+			PosterURL: fmt.Sprintf("%s%s", a.plexURL, getStringValue(item.Thumb)),
 			Watched:   watched,
 		}
 		movies = append(movies, movie)
@@ -606,7 +613,7 @@ func (a *App) getAllAnime(ctx context.Context, libraries []operations.GetAllLibr
 			Rating:    getFloatValue(item.Rating),
 			Genre:     getGenres(item.Genre),
 			Episodes:  getIntValue(item.LeafCount),
-			PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+			PosterURL: fmt.Sprintf("%s%s", a.plexURL, getStringValue(item.Thumb)),
 			Watched:   watched,
 		}
 		anime = append(anime, animeItem)
@@ -641,7 +648,7 @@ func (a *App) getAllTVShows(ctx context.Context, libraries []operations.GetAllLi
 			Rating:    getFloatValue(item.Rating),
 			Genre:     getGenres(item.Genre),
 			Seasons:   getIntValue(item.ChildCount),
-			PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+			PosterURL: fmt.Sprintf("%s%s", a.plexURL, getStringValue(item.Thumb)),
 			Watched:   watched,
 		}
 		tvShows = append(tvShows, tvShow)
