@@ -36,12 +36,24 @@ It generates a new recommendation every day. It stores the recommendations in a 
  - My Letterboxd ratings
  - My Traktv watch history
 
-## Future Data Sources
+### Future Data Sources
 
  - Goodreads
  - My Kindle Library
  - My Spotify Library
  - My Kavita Library
+
+## API Endpoints
+
+ - `GET /` - Homepage
+ - `GET /cron/recommend` - Generate new recommendations
+ - `GET /cron/cache` - Update the cache of Plex and Anilist
+ - `GET /date` - List of all dates with recommendations
+ - `GET /date/2025-05-19` - Recommendations for a specific date
+
+## Recommendation Logic
+
+This uses an ensemble of prompts to query OpenAI and Gemini to get recommendations.
 
 ## Running the Service
 
