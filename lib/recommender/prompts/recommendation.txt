@@ -1,27 +1,27 @@
-Based on the user's preferences and the available content, please recommend:
+Recommend the following:
 
 Movies:
-- One funny movie they haven't seen
-- One action or drama movie they haven't seen
-- One movie they have seen before that they might enjoy revisiting
+- 1 funny unwatched movie
+- 1 action/drama unwatched movie
+- 1 rewatchable movie
 
 Anime:
-- Three anime series they haven't seen, considering their genre preferences and rating patterns
+- 3 unwatched series matching preferences
 
 TV Shows:
-- Three TV shows they haven't seen, focusing on their preferred genres and themes
+- 3 unwatched shows matching preferences
 
-For each recommendation, please provide:
-1. The title and year
-2. A brief explanation of why it matches their preferences
-3. Similar content they've enjoyed
-4. Key themes or elements that might appeal to them
+For each, provide:
+1. Title and year
+2. Why it matches preferences
+3. Similar content
+4. Key appealing elements
 
 Available Content:
 {{.Content}}
 
-User Preferences:
+Preferences:
 {{.Preferences}}
 
-Previous Recommendations:
+Recent History:
 {{.PreviousRecommendations}} 
