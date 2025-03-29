@@ -27,6 +27,10 @@ type Movie struct {
 	UpdatedAt time.Time
 }
 
+func (m Movie) GetTitle() string {
+	return m.Title
+}
+
 type Anime struct {
 	ID        uint   `gorm:"primarykey"`
 	Title     string `gorm:"uniqueIndex"`
@@ -40,6 +44,10 @@ type Anime struct {
 	UpdatedAt time.Time
 }
 
+func (a Anime) GetTitle() string {
+	return a.Title
+}
+
 type TVShow struct {
 	ID        uint   `gorm:"primarykey"`
 	Title     string `gorm:"uniqueIndex"`
@@ -51,6 +59,10 @@ type TVShow struct {
 	Source    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+func (t TVShow) GetTitle() string {
+	return t.Title
 }
 
 type PlexCache struct {
