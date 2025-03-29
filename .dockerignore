@@ -1,7 +1,8 @@
-.git
-.gitignore
-README.md
-.env
 *.db
 *.db-journal
 .DS_Store 
+.env
+.git
+.gitignore
+README.md
+template.env
