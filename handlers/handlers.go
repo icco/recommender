@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommender"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
@@ -165,5 +166,19 @@ func HandleCron(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 		}()
 
 		fmt.Fprintf(w, "Started generating recommendation for %s\n", today.Format("2006-01-02"))
+	}
+}
+
+func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		// Start the cache update in the background
+		go func() {
+			ctx := context.Background()
+			if err := p.UpdateCache(ctx); err != nil {
+				slog.Error("Failed to update cache", slog.Any("error", err))
+			}
+		}()
+
+		fmt.Fprintf(w, "Started updating Plex and Anilist cache\n")
 	}
 }

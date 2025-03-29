@@ -203,3 +203,38 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 
 	return unwatchedTVShows, nil
 }
+
+// UpdateCache updates the Plex cache by fetching all libraries and their items
+func (c *Client) UpdateCache(ctx context.Context) error {
+	// Get all libraries
+	libraries, err := c.GetAllLibraries(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get libraries: %w", err)
+	}
+
+	// Update movies
+	movies, err := c.GetUnwatchedMovies(ctx, libraries.Object.MediaContainer.Directory)
+	if err != nil {
+		return fmt.Errorf("failed to get unwatched movies: %w", err)
+	}
+
+	// Update anime
+	anime, err := c.GetUnwatchedAnime(ctx, libraries.Object.MediaContainer.Directory)
+	if err != nil {
+		return fmt.Errorf("failed to get unwatched anime: %w", err)
+	}
+
+	// Update TV shows
+	tvShows, err := c.GetUnwatchedTVShows(ctx, libraries.Object.MediaContainer.Directory)
+	if err != nil {
+		return fmt.Errorf("failed to get unwatched TV shows: %w", err)
+	}
+
+	c.logger.Info("Cache updated successfully",
+		slog.Int("movies", len(movies)),
+		slog.Int("anime", len(anime)),
+		slog.Int("tv_shows", len(tvShows)),
+	)
+
+	return nil
+}
