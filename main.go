@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -121,7 +122,7 @@ func (a *App) generateRecommendations(ctx context.Context, rec *models.Recommend
 	if err := a.generateMovieRecommendations(ctx, rec, res.Object.MediaContainer.Directory); err != nil {
 		return err
 	}
-	if err := a.generateAnimeRecommendations(ctx, rec); err != nil {
+	if err := a.generateAnimeRecommendations(ctx, rec, res.Object.MediaContainer.Directory); err != nil {
 		return err
 	}
 	if err := a.generateTVShowRecommendations(ctx, rec, res.Object.MediaContainer.Directory); err != nil {
@@ -132,173 +133,141 @@ func (a *App) generateRecommendations(ctx context.Context, rec *models.Recommend
 }
 
 func (a *App) generateMovieRecommendations(ctx context.Context, rec *models.Recommendation, libraries []shared.Directory) error {
-	// Find the movie library
-	var movieLibraryKey int
+	var movieLibraryKey string
 	for _, lib := range libraries {
 		if lib.Type == "movie" {
-			key, err := strconv.Atoi(lib.Key)
-			if err != nil {
-				return fmt.Errorf("invalid library key: %w", err)
-			}
-			movieLibraryKey = key
+			movieLibraryKey = lib.Key
 			break
 		}
 	}
 
-	if movieLibraryKey == 0 {
+	if movieLibraryKey == "" {
 		return fmt.Errorf("no movie library found")
 	}
 
-	// Get all movies from Plex
+	// Convert library key to int
+	sectionKey, err := strconv.Atoi(movieLibraryKey)
+	if err != nil {
+		return fmt.Errorf("invalid library key: %v", err)
+	}
+
 	items, err := a.plex.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{
-		Tag:          "all",
-		SectionKey:   movieLibraryKey,
-		Type:         operations.GetLibraryItemsQueryParamTypeMovie.ToPointer(),
-		IncludeMeta:  operations.GetLibraryItemsQueryParamIncludeMetaEnable.ToPointer(),
-		IncludeGuids: operations.IncludeGuidsEnable.ToPointer(),
+		SectionKey: sectionKey,
+		Tag:        "all",
 	})
 	if err != nil {
-		return fmt.Errorf("failed to get library items: %w", err)
+		return fmt.Errorf("failed to get library items: %v", err)
 	}
 
-	// Create maps for different movie types
-	var (
-		funnyMovies  []models.Movie
-		actionMovies []models.Movie
-		dramaMovies  []models.Movie
-		seenMovies   []models.Movie
-	)
-
-	// Categorize movies
+	var unwatchedMovies []models.Movie
 	for _, item := range items.Object.MediaContainer.Metadata {
-		var year int
-		if item.Year != nil {
-			year = *item.Year
-		}
-
-		var rating float64
-		if item.Rating != nil {
-			rating = float64(*item.Rating) / 10.0
-		}
-
-		var runtime int
-		if item.Duration != nil {
-			runtime = *item.Duration / 60000 // Convert milliseconds to minutes
-		}
-
-		var viewCount int
-		if item.ViewCount != nil {
-			viewCount = *item.ViewCount
-		}
-
-		// Convert genre slice to strings
-		genres := make([]string, len(item.Genre))
-		for i, g := range item.Genre {
-			genres[i] = string(g)
-		}
-
-		movie := models.Movie{
-			Title:     item.Title,
-			Year:      year,
-			Rating:    rating,
-			Genre:     strings.Join(genres, ", "),
-			Runtime:   runtime,
-			PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
-			Source:    "plex",
-			Seen:      viewCount > 0,
-		}
-
-		// Categorize based on genres
-		for _, genreStr := range genres {
-			genreLower := strings.ToLower(genreStr)
-			switch {
-			case strings.Contains(genreLower, "comedy"):
-				movie.Type = "funny"
-				funnyMovies = append(funnyMovies, movie)
-			case strings.Contains(genreLower, "action") || strings.Contains(genreLower, "adventure"):
-				movie.Type = "action"
-				actionMovies = append(actionMovies, movie)
-			case strings.Contains(genreLower, "drama"):
-				movie.Type = "drama"
-				dramaMovies = append(dramaMovies, movie)
+		if item.ViewCount == 0 {
+			var year int
+			if item.Year != nil {
+				year = *item.Year
 			}
+
+			var rating float64
+			if item.Rating != nil {
+				rating = *item.Rating
+			}
+
+			var runtime int
+			if item.Duration != nil {
+				runtime = *item.Duration / 60000 // Convert to minutes
+			}
+
+			var genres []string
+			for _, g := range item.Genre {
+				genres = append(genres, g.Tag)
+			}
+
+			movie := models.Movie{
+				Title:     item.Title,
+				Year:      year,
+				Rating:    rating,
+				Genre:     strings.Join(genres, ", "),
+				Runtime:   runtime,
+				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
+				Source:    "plex",
+			}
+			unwatchedMovies = append(unwatchedMovies, movie)
 		}
-
-		if movie.Seen {
-			movie.Type = "seen"
-			seenMovies = append(seenMovies, movie)
-		}
 	}
 
-	// Select recommendations
-	var recommendations []models.Movie
-
-	// 1. Add a funny movie you haven't seen
-	if len(funnyMovies) > 0 {
-		recommendations = append(recommendations, funnyMovies[0])
+	if len(unwatchedMovies) == 0 {
+		return fmt.Errorf("no unwatched movies found")
 	}
 
-	// 2. Add an action or drama movie you haven't seen
-	actionDrama := append(actionMovies, dramaMovies...)
-	if len(actionDrama) > 0 {
-		recommendations = append(recommendations, actionDrama[0])
+	// Randomly select up to 3 movies
+	rand.Shuffle(len(unwatchedMovies), func(i, j int) {
+		unwatchedMovies[i], unwatchedMovies[j] = unwatchedMovies[j], unwatchedMovies[i]
+	})
+
+	if len(unwatchedMovies) > 3 {
+		unwatchedMovies = unwatchedMovies[:3]
 	}
 
-	// 3. Add a movie you've seen before
-	if len(seenMovies) > 0 {
-		recommendations = append(recommendations, seenMovies[0])
-	}
-
-	// Save recommendations
-	rec.Movies = recommendations
+	rec.Movies = unwatchedMovies
 	return nil
 }
 
-func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Recommendation) error {
-	// Find anime library
-	res, err := a.plex.Library.GetAllLibraries(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get libraries: %w", err)
-	}
-
-	var animeLibraryKey int
-	for _, lib := range res.Object.MediaContainer.Directory {
+func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Recommendation, libraries []shared.Directory) error {
+	var animeLibraryKey string
+	for _, lib := range libraries {
 		if strings.Contains(strings.ToLower(lib.Title), "anime") {
-			key, err := strconv.Atoi(lib.Key)
-			if err != nil {
-				return fmt.Errorf("invalid library key: %w", err)
-			}
-			animeLibraryKey = key
+			animeLibraryKey = lib.Key
 			break
 		}
 	}
 
-	if animeLibraryKey == 0 {
+	if animeLibraryKey == "" {
 		return fmt.Errorf("no anime library found")
 	}
 
-	// Get all anime from Plex
-	items, err := a.plex.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{
-		Tag:          "all",
-		SectionKey:   animeLibraryKey,
-		Type:         operations.GetLibraryItemsQueryParamTypeShow.ToPointer(),
-		IncludeMeta:  operations.GetLibraryItemsQueryParamIncludeMetaEnable.ToPointer(),
-		IncludeGuids: operations.IncludeGuidsEnable.ToPointer(),
-	})
+	// Convert library key to int
+	sectionKey, err := strconv.Atoi(animeLibraryKey)
 	if err != nil {
-		return fmt.Errorf("failed to get library items: %w", err)
+		return fmt.Errorf("invalid library key: %v", err)
 	}
 
-	// Filter for unwatched anime
+	items, err := a.plex.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{
+		SectionKey: sectionKey,
+		Tag:        "all",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get library items: %v", err)
+	}
+
 	var unwatchedAnime []models.Anime
 	for _, item := range items.Object.MediaContainer.Metadata {
 		if item.ViewCount == 0 {
+			var year int
+			if item.Year != nil {
+				year = *item.Year
+			}
+
+			var rating float64
+			if item.Rating != nil {
+				rating = *item.Rating
+			}
+
+			var episodes int
+			if item.LeafCount != nil {
+				episodes = *item.LeafCount
+			}
+
+			var genres []string
+			for _, g := range item.Genre {
+				genres = append(genres, g.Tag)
+			}
+
 			anime := models.Anime{
 				Title:     item.Title,
-				Year:      item.Year,
-				Rating:    float64(item.Rating) / 10.0,
-				Genre:     strings.Join(item.Genre, ", "),
-				Episodes:  item.LeafCount,
+				Year:      year,
+				Rating:    rating,
+				Genre:     strings.Join(genres, ", "),
+				Episodes:  episodes,
 				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
 				Source:    "plex",
 			}
@@ -306,70 +275,100 @@ func (a *App) generateAnimeRecommendations(ctx context.Context, rec *models.Reco
 		}
 	}
 
-	// Select up to 3 random unwatched anime
-	var recommendations []models.Anime
-	for i := 0; i < 3 && i < len(unwatchedAnime); i++ {
-		recommendations = append(recommendations, unwatchedAnime[i])
+	if len(unwatchedAnime) == 0 {
+		return fmt.Errorf("no unwatched anime found")
 	}
 
-	rec.Anime = recommendations
+	// Randomly select up to 3 anime
+	rand.Shuffle(len(unwatchedAnime), func(i, j int) {
+		unwatchedAnime[i], unwatchedAnime[j] = unwatchedAnime[j], unwatchedAnime[i]
+	})
+
+	if len(unwatchedAnime) > 3 {
+		unwatchedAnime = unwatchedAnime[:3]
+	}
+
+	rec.Anime = unwatchedAnime
 	return nil
 }
 
 func (a *App) generateTVShowRecommendations(ctx context.Context, rec *models.Recommendation, libraries []shared.Directory) error {
-	// Find TV show library
-	var tvLibraryKey int
+	var tvLibraryKey string
 	for _, lib := range libraries {
 		if lib.Type == "show" && !strings.Contains(strings.ToLower(lib.Title), "anime") {
-			key, err := strconv.Atoi(lib.Key)
-			if err != nil {
-				return fmt.Errorf("invalid library key: %w", err)
-			}
-			tvLibraryKey = key
+			tvLibraryKey = lib.Key
 			break
 		}
 	}
 
-	if tvLibraryKey == 0 {
+	if tvLibraryKey == "" {
 		return fmt.Errorf("no TV show library found")
 	}
 
-	// Get all TV shows from Plex
-	items, err := a.plex.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{
-		Tag:          "all",
-		SectionKey:   tvLibraryKey,
-		Type:         operations.GetLibraryItemsQueryParamTypeShow.ToPointer(),
-		IncludeMeta:  operations.GetLibraryItemsQueryParamIncludeMetaEnable.ToPointer(),
-		IncludeGuids: operations.IncludeGuidsEnable.ToPointer(),
-	})
+	// Convert library key to int
+	sectionKey, err := strconv.Atoi(tvLibraryKey)
 	if err != nil {
-		return fmt.Errorf("failed to get library items: %w", err)
+		return fmt.Errorf("invalid library key: %v", err)
 	}
 
-	// Filter for unwatched TV shows
-	var unwatchedShows []models.TVShow
+	items, err := a.plex.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{
+		SectionKey: sectionKey,
+		Tag:        "all",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get library items: %v", err)
+	}
+
+	var unwatchedTVShows []models.TVShow
 	for _, item := range items.Object.MediaContainer.Metadata {
 		if item.ViewCount == 0 {
-			show := models.TVShow{
+			var year int
+			if item.Year != nil {
+				year = *item.Year
+			}
+
+			var rating float64
+			if item.Rating != nil {
+				rating = *item.Rating
+			}
+
+			var seasons int
+			if item.ChildCount != nil {
+				seasons = *item.ChildCount
+			}
+
+			var genres []string
+			for _, g := range item.Genre {
+				genres = append(genres, g.Tag)
+			}
+
+			tvShow := models.TVShow{
 				Title:     item.Title,
-				Year:      item.Year,
-				Rating:    float64(item.Rating) / 10.0,
-				Genre:     strings.Join(item.Genre, ", "),
-				Seasons:   item.ChildCount,
+				Year:      year,
+				Rating:    rating,
+				Genre:     strings.Join(genres, ", "),
+				Seasons:   seasons,
 				PosterURL: fmt.Sprintf("%s%s", a.plexURL, item.Thumb),
 				Source:    "plex",
 			}
-			unwatchedShows = append(unwatchedShows, show)
+			unwatchedTVShows = append(unwatchedTVShows, tvShow)
 		}
 	}
 
-	// Select up to 3 random unwatched TV shows
-	var recommendations []models.TVShow
-	for i := 0; i < 3 && i < len(unwatchedShows); i++ {
-		recommendations = append(recommendations, unwatchedShows[i])
+	if len(unwatchedTVShows) == 0 {
+		return fmt.Errorf("no unwatched TV shows found")
 	}
 
-	rec.TVShows = recommendations
+	// Randomly select up to 3 TV shows
+	rand.Shuffle(len(unwatchedTVShows), func(i, j int) {
+		unwatchedTVShows[i], unwatchedTVShows[j] = unwatchedTVShows[j], unwatchedTVShows[i]
+	})
+
+	if len(unwatchedTVShows) > 3 {
+		unwatchedTVShows = unwatchedTVShows[:3]
+	}
+
+	rec.TVShows = unwatchedTVShows
 	return nil
 }
 
@@ -421,4 +420,160 @@ func GenerateTags(ctx context.Context, text string) ([]string, error) {
 	log.Printf("tags: %+v", tags)
 
 	return nil, nil
+}
+
+func generateMovieRecommendations(ctx context.Context, client *plexgo.PlexGo, movieLibraryKey string) ([]models.Movie, error) {
+	// Convert library key to int
+	key, err := strconv.Atoi(movieLibraryKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid library key: %v", err)
+	}
+
+	// Get all movies from the library
+	request := operations.GetLibraryItemsRequest{
+		SectionKey: key,
+		Tag:        "all",
+	}
+	items, err := client.Library.GetLibraryItems(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get movies: %v", err)
+	}
+
+	// Filter unwatched movies
+	var unwatchedMovies []models.Movie
+	for _, item := range items.Object.MediaContainer.Metadata {
+		if item.ViewCount != nil && *item.ViewCount == 0 {
+			// Convert duration from milliseconds to minutes
+			var runtime int
+			if item.Duration != nil {
+				runtime = *item.Duration / (1000 * 60)
+			}
+
+			// Convert genres to string slice
+			genres := make([]string, len(item.Genre))
+			for i, g := range item.Genre {
+				if g.Tag != nil {
+					genres[i] = *g.Tag
+				}
+			}
+
+			movie := models.Movie{
+				Title:     item.Title,
+				Year:      *item.Year,
+				Rating:    item.Rating,
+				Genre:     strings.Join(genres, ", "),
+				Runtime:   runtime,
+				PosterURL: *item.Thumb,
+				Source:    "plex",
+			}
+			unwatchedMovies = append(unwatchedMovies, movie)
+		}
+	}
+
+	// Return 3 random movies
+	return getRandomItems(unwatchedMovies, 3), nil
+}
+
+func generateAnimeRecommendations(ctx context.Context, client *plexgo.PlexGo, animeLibraryKey string) ([]models.Anime, error) {
+	// Convert library key to int
+	key, err := strconv.Atoi(animeLibraryKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid library key: %v", err)
+	}
+
+	// Get all anime from the library
+	request := operations.GetLibraryItemsRequest{
+		SectionKey: key,
+		Tag:        "all",
+	}
+	items, err := client.Library.GetLibraryItems(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get anime: %v", err)
+	}
+
+	// Filter unwatched anime
+	var unwatchedAnime []models.Anime
+	for _, item := range items.Object.MediaContainer.Metadata {
+		if item.ViewCount != nil && *item.ViewCount == 0 {
+			// Convert genres to string slice
+			genres := make([]string, len(item.Genre))
+			for i, g := range item.Genre {
+				if g.Tag != nil {
+					genres[i] = *g.Tag
+				}
+			}
+
+			anime := models.Anime{
+				Title:     item.Title,
+				Year:      *item.Year,
+				Rating:    item.Rating,
+				Genre:     strings.Join(genres, ", "),
+				Episodes:  *item.LeafCount,
+				PosterURL: *item.Thumb,
+				Source:    "plex",
+			}
+			unwatchedAnime = append(unwatchedAnime, anime)
+		}
+	}
+
+	// Return 3 random anime
+	return getRandomItems(unwatchedAnime, 3), nil
+}
+
+func generateTVShowRecommendations(ctx context.Context, client *plexgo.PlexGo, tvLibraryKey string) ([]models.TVShow, error) {
+	// Convert library key to int
+	key, err := strconv.Atoi(tvLibraryKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid library key: %v", err)
+	}
+
+	// Get all TV shows from the library
+	request := operations.GetLibraryItemsRequest{
+		SectionKey: key,
+		Tag:        "all",
+	}
+	items, err := client.Library.GetLibraryItems(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get TV shows: %v", err)
+	}
+
+	// Filter unwatched TV shows
+	var unwatchedTVShows []models.TVShow
+	for _, item := range items.Object.MediaContainer.Metadata {
+		if item.ViewCount != nil && *item.ViewCount == 0 {
+			// Convert genres to string slice
+			genres := make([]string, len(item.Genre))
+			for i, g := range item.Genre {
+				if g.Tag != nil {
+					genres[i] = *g.Tag
+				}
+			}
+
+			tvShow := models.TVShow{
+				Title:     item.Title,
+				Year:      *item.Year,
+				Rating:    item.Rating,
+				Genre:     strings.Join(genres, ", "),
+				Seasons:   *item.ChildCount,
+				PosterURL: *item.Thumb,
+				Source:    "plex",
+			}
+			unwatchedTVShows = append(unwatchedTVShows, tvShow)
+		}
+	}
+
+	// Return 3 random TV shows
+	return getRandomItems(unwatchedTVShows, 3), nil
+}
+
+func getRandomItems[T any](items []T, count int) []T {
+	if len(items) <= count {
+		return items
+	}
+
+	rand.Shuffle(len(items), func(i, j int) {
+		items[i], items[j] = items[j], items[i]
+	})
+
+	return items[:count]
 }
