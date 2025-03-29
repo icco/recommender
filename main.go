@@ -103,10 +103,14 @@ func (a *App) setupRoutes() {
 	})
 	a.router.Use(middleware.Recoverer)
 
+	// Main routes
 	a.router.Get("/", handlers.HandleHome(a.db, a.recommender))
-	a.router.Get("/dates", handlers.HandleDates(a.db, a.recommender))
+	a.router.Get("/date", handlers.HandleDates(a.db, a.recommender))
 	a.router.Get("/date/{date}", handlers.HandleDate(a.db, a.recommender))
-	a.router.Get("/cron", handlers.HandleCron(a.db, a.recommender))
+
+	// Cron routes
+	a.router.Get("/cron/recommend", handlers.HandleCron(a.db, a.recommender))
+	a.router.Get("/cron/cache", handlers.HandleCache(a.db, a.plex))
 }
 
 func main() {
