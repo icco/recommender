@@ -51,6 +51,19 @@ It generates a new recommendation every day. It stores the recommendations in a 
  - `GET /date` - List of all dates with recommendations
  - `GET /date/2025-05-19` - Recommendations for a specific date
 
+## Repository Structure
+
+```
+recommender/
+├── handlers/           # HTTP request handlers and templates
+├── lib/               # Core libraries and business logic
+│   ├── db/           # Database utilities
+│   ├── plex/         # Plex API client
+│   └── recommender/  # Recommendation generation logic
+├── models/           # Data models and database schemas
+└── data/            # Persistent data storage
+```
+
 ## Recommendation Logic
 
 This uses an ensemble of prompts to query OpenAI and Gemini to get recommendations.
