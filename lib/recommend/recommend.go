@@ -2,7 +2,6 @@ package recommend
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
 	"os"
@@ -19,9 +18,6 @@ import (
 	"google.golang.org/api/option"
 	"gorm.io/gorm"
 )
-
-//go:embed prompts/*.txt
-var promptFS embed.FS
 
 type Recommender struct {
 	db     *gorm.DB
