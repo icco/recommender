@@ -20,6 +20,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type App struct {
@@ -28,6 +29,46 @@ type App struct {
 	plexURL string
 	router  *chi.Mux
 	logger  *slog.Logger
+}
+
+// gormLogger implements gorm.logger.Interface
+type gormLogger struct {
+	logger *slog.Logger
+}
+
+func (l *gormLogger) LogMode(level logger.LogLevel) logger.Interface {
+	return l
+}
+
+func (l *gormLogger) Info(ctx context.Context, msg string, data ...interface{}) {
+	l.logger.Info(msg, slog.Any("data", data))
+}
+
+func (l *gormLogger) Warn(ctx context.Context, msg string, data ...interface{}) {
+	l.logger.Warn(msg, slog.Any("data", data))
+}
+
+func (l *gormLogger) Error(ctx context.Context, msg string, data ...interface{}) {
+	l.logger.Error(msg, slog.Any("data", data))
+}
+
+func (l *gormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
+	elapsed := time.Since(begin)
+	sql, rows := fc()
+
+	if err != nil {
+		l.logger.Error("GORM error",
+			slog.Any("error", err),
+			slog.String("sql", sql),
+			slog.Int64("rows", rows),
+			slog.Duration("elapsed", elapsed))
+		return
+	}
+
+	l.logger.Debug("GORM query",
+		slog.String("sql", sql),
+		slog.Int64("rows", rows),
+		slog.Duration("elapsed", elapsed))
 }
 
 func NewApp() (*App, error) {
@@ -41,7 +82,16 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	// Create JSON logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger) // Set as default logger
+
+	// Configure GORM with our logger
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: &gormLogger{logger: logger},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -69,12 +119,6 @@ func NewApp() (*App, error) {
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
 	)
-
-	// Create JSON logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger) // Set as default logger
 
 	app := &App{
 		db:      db,
