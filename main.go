@@ -56,6 +56,7 @@ func NewApp() (*App, error) {
 	err = gormDB.AutoMigrate(
 		&models.Recommendation{}, &models.Movie{}, &models.Anime{}, &models.TVShow{},
 		&models.PlexCache{}, &models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
+		&models.UserPreference{}, &models.UserRating{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -72,7 +73,10 @@ func NewApp() (*App, error) {
 	}
 
 	plexClient := plex.NewClient(plexURL, plexToken, logger)
-	recommender := recommender.New(gormDB, plexClient, logger)
+	recommender, err := recommender.New(gormDB, plexClient, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create recommender: %w", err)
+	}
 
 	app := &App{
 		db:          gormDB,
