@@ -9,103 +9,6 @@ import (
 	"github.com/icco/recommender/models"
 )
 
-// GetUnwatchedMovies gets unwatched movies from Plex
-func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Movie, error) {
-	movieLibraryKey, err := getPlexLibraryKey(libraries, "movie", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := c.getPlexItems(ctx, movieLibraryKey)
-	if err != nil {
-		return nil, err
-	}
-
-	var unwatchedMovies []models.Movie
-	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			movie := models.Movie{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				Runtime:   getIntValue(item.Duration) / 60000,
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
-			}
-			unwatchedMovies = append(unwatchedMovies, movie)
-		}
-	}
-
-	return unwatchedMovies, nil
-}
-
-// GetUnwatchedAnime gets unwatched anime from Plex
-func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Anime, error) {
-	animeLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
-		return strings.Contains(strings.ToLower(title), "anime")
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := c.getPlexItems(ctx, animeLibraryKey)
-	if err != nil {
-		return nil, err
-	}
-
-	var unwatchedAnime []models.Anime
-	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			anime := models.Anime{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				Episodes:  getIntValue(item.LeafCount),
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
-			}
-			unwatchedAnime = append(unwatchedAnime, anime)
-		}
-	}
-
-	return unwatchedAnime, nil
-}
-
-// GetUnwatchedTVShows gets unwatched TV shows from Plex
-func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.TVShow, error) {
-	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
-		return !strings.Contains(strings.ToLower(title), "anime")
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := c.getPlexItems(ctx, tvLibraryKey)
-	if err != nil {
-		return nil, err
-	}
-
-	var unwatchedTVShows []models.TVShow
-	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			tvShow := models.TVShow{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				Seasons:   getIntValue(item.ChildCount),
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
-			}
-			unwatchedTVShows = append(unwatchedTVShows, tvShow)
-		}
-	}
-
-	return unwatchedTVShows, nil
-}
-
 // GetAllMovies gets all movies from Plex
 func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.PlexMovie, error) {
 	movieLibraryKey, err := getPlexLibraryKey(libraries, "movie", nil)
@@ -113,7 +16,7 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 		return nil, err
 	}
 
-	items, err := c.getPlexItems(ctx, movieLibraryKey)
+	items, err := c.GetPlexItems(ctx, movieLibraryKey)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +52,7 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 		return nil, err
 	}
 
-	items, err := c.getPlexItems(ctx, animeLibraryKey)
+	items, err := c.GetPlexItems(ctx, animeLibraryKey)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +88,7 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 		return nil, err
 	}
 
-	items, err := c.getPlexItems(ctx, tvLibraryKey)
+	items, err := c.GetPlexItems(ctx, tvLibraryKey)
 	if err != nil {
 		return nil, err
 	}
