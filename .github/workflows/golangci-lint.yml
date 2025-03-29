@@ -17,4 +17,8 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: latest
-          args: -E bodyclose,misspell,gosec,goconst,gci,errorlint
+          args: -E bodyclose,misspell,gosec,goconst,errorlint
+      - name: Install gci
+        run: go install github.com/daixiang0/gci@latest
+      - name: Format imports
+        run: gci write .
