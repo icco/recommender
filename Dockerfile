@@ -1,10 +1,7 @@
 # Build stage
-FROM golang:1.24.1-alpine AS builder
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
-
-# Install build dependencies
-RUN apk add --no-cache gcc musl-dev
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -16,22 +13,25 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main .
+RUN CGO_ENABLED=0 GOOS=linux go build -o recommender
 
-# Final stage
-FROM alpine:3.19
+# Use a minimal alpine image for the final stage
+FROM alpine:latest
 
 WORKDIR /app
 
 # Install SQLite and create non-root user
 RUN apk add --no-cache sqlite && \
   adduser -D -u 1000 appuser && \
-  mkdir -p /app/data && \
-  chown -R appuser:appuser /app/data
+  mkdir -p /data && \
+  chown -R appuser:appuser /data
 
 # Copy the binary and templates from builder
-COPY --from=builder /app/main .
+COPY --from=builder /app/recommender .
 COPY --from=builder /app/templates ./templates
+
+# Set environment variables
+ENV DB_PATH=/data/recommender.db
 
 # Switch to non-root user
 USER appuser
@@ -39,8 +39,5 @@ USER appuser
 # Expose port
 EXPOSE 8080
 
-# Set environment variables
-ENV PORT=8080
-
 # Run the application
-CMD ["./main"] 
+CMD ["./recommender"] 
