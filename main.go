@@ -104,6 +104,7 @@ func (a *App) setupRoutes() {
 	a.router.Use(middleware.Recoverer)
 
 	a.router.Get("/", handlers.HandleHome(a.db, a.recommender))
+	a.router.Get("/dates", handlers.HandleDates(a.db, a.recommender))
 	a.router.Get("/date/{date}", handlers.HandleDate(a.db, a.recommender))
 	a.router.Get("/cron", handlers.HandleCron(a.db, a.recommender))
 }

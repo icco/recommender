@@ -18,6 +18,10 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+func parseTemplates(files ...string) (*template.Template, error) {
+	return template.ParseFS(templateFS, files...)
+}
+
 func HandleHome(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		// Get today's date in YYYY-MM-DD format
@@ -33,7 +37,7 @@ func HandleHome(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 		}
 
 		// Parse and execute the template
-		tmpl, err := template.ParseFS(templateFS, "templates/home.html")
+		tmpl, err := parseTemplates("templates/base.html", "templates/home.html")
 		if err != nil {
 			slog.Error("Failed to parse template", slog.Any("error", err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -57,7 +61,7 @@ func HandleDate(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 		}
 
 		// Validate date format
-		_, err := time.Parse("2006-01-02", date)
+		parsedDate, err := time.Parse("2006-01-02", date)
 		if err != nil {
 			http.Error(w, "Invalid date format. Use YYYY-MM-DD", http.StatusBadRequest)
 			return
@@ -65,7 +69,7 @@ func HandleDate(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 
 		// Try to get the recommendation for the specified date
 		var rec models.Recommendation
-		result := db.Where("date = ?", date).First(&rec)
+		result := db.Where("date = ?", parsedDate).First(&rec)
 		if result.Error != nil {
 			slog.Error("Failed to get recommendation", slog.Any("error", result.Error))
 			http.Error(w, "Failed to get recommendation", http.StatusInternalServerError)
@@ -73,7 +77,7 @@ func HandleDate(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 		}
 
 		// Parse and execute the template
-		tmpl, err := template.ParseFS(templateFS, "templates/home.html")
+		tmpl, err := parseTemplates("templates/base.html", "templates/home.html")
 		if err != nil {
 			slog.Error("Failed to parse template", slog.Any("error", err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -81,6 +85,33 @@ func HandleDate(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
 		}
 
 		if err := tmpl.Execute(w, rec); err != nil {
+			slog.Error("Failed to execute template", slog.Any("error", err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+func HandleDates(db *gorm.DB, r *recommender.Recommender) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		// Get all dates with recommendations
+		var dates []time.Time
+		result := db.Model(&models.Recommendation{}).Pluck("date", &dates)
+		if result.Error != nil {
+			slog.Error("Failed to get dates", slog.Any("error", result.Error))
+			http.Error(w, "Failed to get dates", http.StatusInternalServerError)
+			return
+		}
+
+		// Parse and execute the template
+		tmpl, err := parseTemplates("templates/base.html", "templates/dates.html")
+		if err != nil {
+			slog.Error("Failed to parse template", slog.Any("error", err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if err := tmpl.Execute(w, struct{ Dates []time.Time }{Dates: dates}); err != nil {
 			slog.Error("Failed to execute template", slog.Any("error", err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
