@@ -33,7 +33,7 @@ type App struct {
 func NewApp() (*App, error) {
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
-		dbPath = "data/recommender.db"
+		dbPath = "recommender.db"
 	}
 
 	// Ensure the directory exists
