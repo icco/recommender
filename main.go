@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/icco/recommender/handlers"
 	"github.com/icco/recommender/lib/db"
+	"github.com/icco/recommender/lib/health"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommender"
 	"github.com/icco/recommender/models"
@@ -56,7 +57,6 @@ func NewApp() (*App, error) {
 	err = gormDB.AutoMigrate(
 		&models.Recommendation{}, &models.Movie{}, &models.Anime{}, &models.TVShow{},
 		&models.PlexCache{}, &models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
-		&models.UserPreference{}, &models.UserRating{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -91,30 +91,31 @@ func NewApp() (*App, error) {
 }
 
 func (a *App) setupRoutes() {
-	// Custom JSON logger middleware
-	a.router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
-			next.ServeHTTP(w, r)
-			duration := time.Since(start)
-			a.logger.Info("HTTP request",
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-				slog.String("remote_addr", r.RemoteAddr),
-				slog.Duration("duration", duration),
-			)
-		})
-	})
+	// Middleware
+	a.router.Use(middleware.RequestID)
+	a.router.Use(middleware.RealIP)
+	a.router.Use(middleware.Logger)
 	a.router.Use(middleware.Recoverer)
+	a.router.Use(middleware.Timeout(60 * time.Second))
+	a.router.Use(middleware.Compress(5))
+
+	// Rate limiting
+	a.router.Use(middleware.Throttle(100)) // 100 requests per minute
+
+	// Health check
+	a.router.Get("/health", health.Check(a.db))
 
 	// Main routes
 	a.router.Get("/", handlers.HandleHome(a.db, a.recommender))
 	a.router.Get("/date", handlers.HandleDates(a.db, a.recommender))
 	a.router.Get("/date/{date}", handlers.HandleDate(a.db, a.recommender))
 
-	// Cron routes
-	a.router.Get("/cron/recommend", handlers.HandleCron(a.db, a.recommender))
-	a.router.Get("/cron/cache", handlers.HandleCache(a.db, a.plex))
+	// Cron routes (protected)
+	a.router.Group(func(r chi.Router) {
+		r.Use(handlers.RequireAuth)
+		r.Get("/cron/recommend", handlers.HandleCron(a.db, a.recommender))
+		r.Get("/cron/cache", handlers.HandleCache(a.db, a.plex))
+	})
 }
 
 func main() {
