@@ -133,7 +133,20 @@ func NewApp() (*App, error) {
 }
 
 func (a *App) setupRoutes() {
-	a.router.Use(middleware.Logger)
+	// Custom JSON logger middleware
+	a.router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			next.ServeHTTP(w, r)
+			duration := time.Since(start)
+			a.logger.Info("HTTP request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("remote_addr", r.RemoteAddr),
+				slog.Duration("duration", duration),
+			)
+		})
+	})
 	a.router.Use(middleware.Recoverer)
 
 	a.router.Get("/", a.handleHome)
