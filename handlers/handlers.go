@@ -219,7 +219,7 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 				slog.Any("error", err),
 				slog.Time("date", today),
 			)
-			renderError(w, "Failed to check existing recommendation.", http.StatusInternalServerError)
+			http.Error(w, `{"error": "Failed to check existing recommendation", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
 			return
 		}
 
@@ -228,11 +228,9 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 				slog.Time("date", today),
 				slog.Int64("count", count),
 			)
-			if _, err := fmt.Fprintf(w, "Recommendation already exists for %s\n", today.Format("2006-01-02")); err != nil {
-				slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
-				renderError(w, "Failed to write response.", http.StatusInternalServerError)
-				return
-			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"message": "Recommendation already exists for %s", "timestamp": "%s"}`,
+				today.Format("2006-01-02"), time.Now().Format(time.RFC3339))
 			return
 		}
 
@@ -268,11 +266,9 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			}
 		}()
 
-		if _, err := fmt.Fprintf(w, "Started generating recommendation for %s\n", today.Format("2006-01-02")); err != nil {
-			slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
-			renderError(w, "Failed to write response.", http.StatusInternalServerError)
-			return
-		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"message": "Started generating recommendation for %s", "timestamp": "%s"}`,
+			today.Format("2006-01-02"), time.Now().Format(time.RFC3339))
 	}
 }
 
@@ -327,10 +323,8 @@ func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 			}
 		}()
 
-		if _, err := fmt.Fprintf(w, "Started cache update in background\n"); err != nil {
-			slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
-			renderError(w, "Failed to write response.", http.StatusInternalServerError)
-			return
-		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"message": "Started cache update in background", "timestamp": "%s"}`,
+			time.Now().Format(time.RFC3339))
 	}
 }
