@@ -73,7 +73,7 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("PLEX_TOKEN environment variable is required")
 	}
 
-	plexClient := plex.NewClient(plexURL, plexToken, logger, gormDB)
+	plexClient := plex.NewClient(plexURL, plexToken, logger)
 	recommender, err := recommend.New(gormDB, plexClient, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create recommender: %w", err)
