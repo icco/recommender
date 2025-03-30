@@ -27,14 +27,6 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Cli
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
-		plexgo.WithHeader("X-Plex-Client-Identifier", "recommender"),
-		plexgo.WithHeader("X-Plex-Product", "Recommender"),
-		plexgo.WithHeader("X-Plex-Version", "1.0.0"),
-		plexgo.WithHeader("X-Plex-Device", "Server"),
-		plexgo.WithHeader("X-Plex-Device-Name", "Recommender"),
-		plexgo.WithHeader("X-Plex-Platform", "Go"),
-		plexgo.WithHeader("X-Plex-Platform-Version", "1.0.0"),
-		plexgo.WithHeader("X-Plex-Provides", "controller"),
 	)
 
 	return &Client{
