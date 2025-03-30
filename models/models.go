@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -147,19 +148,152 @@ type UserPreference struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	// Favorite genres across all media types
-	FavoriteGenres []string `gorm:"type:text[]"`
+	FavoriteGenres string `gorm:"type:text"` // JSON string of []string
 	// Preferred themes and topics
-	Themes []string `gorm:"type:text[]"`
+	Themes string `gorm:"type:text"` // JSON string of []string
 	// Preferred mood (e.g., light-hearted, serious, thought-provoking)
-	Moods []string `gorm:"type:text[]"`
+	Moods string `gorm:"type:text"` // JSON string of []string
 	// Preferred content length (short, medium, long)
-	ContentLengths []string `gorm:"type:text[]"`
+	ContentLengths string `gorm:"type:text"` // JSON string of []string
 	// Preferred decades or time periods
-	TimePeriods []string `gorm:"type:text[]"`
+	TimePeriods string `gorm:"type:text"` // JSON string of []string
 	// Preferred languages
-	Languages []string `gorm:"type:text[]"`
+	Languages string `gorm:"type:text"` // JSON string of []string
 	// Preferred content sources
-	Sources []string `gorm:"type:text[]"`
+	Sources string `gorm:"type:text"` // JSON string of []string
+}
+
+// GetFavoriteGenres returns the favorite genres as a string slice
+func (p *UserPreference) GetFavoriteGenres() []string {
+	var genres []string
+	if err := json.Unmarshal([]byte(p.FavoriteGenres), &genres); err != nil {
+		return []string{}
+	}
+	return genres
+}
+
+// GetThemes returns the themes as a string slice
+func (p *UserPreference) GetThemes() []string {
+	var themes []string
+	if err := json.Unmarshal([]byte(p.Themes), &themes); err != nil {
+		return []string{}
+	}
+	return themes
+}
+
+// GetMoods returns the moods as a string slice
+func (p *UserPreference) GetMoods() []string {
+	var moods []string
+	if err := json.Unmarshal([]byte(p.Moods), &moods); err != nil {
+		return []string{}
+	}
+	return moods
+}
+
+// GetContentLengths returns the content lengths as a string slice
+func (p *UserPreference) GetContentLengths() []string {
+	var lengths []string
+	if err := json.Unmarshal([]byte(p.ContentLengths), &lengths); err != nil {
+		return []string{}
+	}
+	return lengths
+}
+
+// GetTimePeriods returns the time periods as a string slice
+func (p *UserPreference) GetTimePeriods() []string {
+	var periods []string
+	if err := json.Unmarshal([]byte(p.TimePeriods), &periods); err != nil {
+		return []string{}
+	}
+	return periods
+}
+
+// GetLanguages returns the languages as a string slice
+func (p *UserPreference) GetLanguages() []string {
+	var languages []string
+	if err := json.Unmarshal([]byte(p.Languages), &languages); err != nil {
+		return []string{}
+	}
+	return languages
+}
+
+// GetSources returns the sources as a string slice
+func (p *UserPreference) GetSources() []string {
+	var sources []string
+	if err := json.Unmarshal([]byte(p.Sources), &sources); err != nil {
+		return []string{}
+	}
+	return sources
+}
+
+// SetFavoriteGenres sets the favorite genres from a string slice
+func (p *UserPreference) SetFavoriteGenres(genres []string) error {
+	data, err := json.Marshal(genres)
+	if err != nil {
+		return err
+	}
+	p.FavoriteGenres = string(data)
+	return nil
+}
+
+// SetThemes sets the themes from a string slice
+func (p *UserPreference) SetThemes(themes []string) error {
+	data, err := json.Marshal(themes)
+	if err != nil {
+		return err
+	}
+	p.Themes = string(data)
+	return nil
+}
+
+// SetMoods sets the moods from a string slice
+func (p *UserPreference) SetMoods(moods []string) error {
+	data, err := json.Marshal(moods)
+	if err != nil {
+		return err
+	}
+	p.Moods = string(data)
+	return nil
+}
+
+// SetContentLengths sets the content lengths from a string slice
+func (p *UserPreference) SetContentLengths(lengths []string) error {
+	data, err := json.Marshal(lengths)
+	if err != nil {
+		return err
+	}
+	p.ContentLengths = string(data)
+	return nil
+}
+
+// SetTimePeriods sets the time periods from a string slice
+func (p *UserPreference) SetTimePeriods(periods []string) error {
+	data, err := json.Marshal(periods)
+	if err != nil {
+		return err
+	}
+	p.TimePeriods = string(data)
+	return nil
+}
+
+// SetLanguages sets the languages from a string slice
+func (p *UserPreference) SetLanguages(languages []string) error {
+	data, err := json.Marshal(languages)
+	if err != nil {
+		return err
+	}
+	p.Languages = string(data)
+	return nil
+}
+
+// SetSources sets the sources from a string slice
+func (p *UserPreference) SetSources(sources []string) error {
+	data, err := json.Marshal(sources)
+	if err != nil {
+		return err
+	}
+	p.Sources = string(data)
+	return nil
 }
 
 // UserRating represents a user's rating and review of a media item.

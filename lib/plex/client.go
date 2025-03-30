@@ -143,21 +143,29 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 
 // GetUnwatchedAnime gets unwatched anime from Plex
 func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Anime, error) {
-	animeLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
-		return strings.Contains(strings.ToLower(title), "anime")
-	})
+	// First get the TV library
+	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	items, err := c.GetPlexItems(ctx, animeLibraryKey)
+	items, err := c.GetPlexItems(ctx, tvLibraryKey)
 	if err != nil {
 		return nil, err
 	}
 
 	var unwatchedAnime []models.Anime
 	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
+		// Check if the show has the anime genre
+		isAnime := false
+		for _, genre := range item.Genre {
+			if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
+				isAnime = true
+				break
+			}
+		}
+
+		if isAnime && item.ViewCount != nil && *item.ViewCount == 0 {
 			anime := models.Anime{
 				BaseMedia: models.BaseMedia{
 					Title:     item.Title,
@@ -178,9 +186,8 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 
 // GetUnwatchedTVShows gets unwatched TV shows from Plex
 func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.TVShow, error) {
-	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
-		return !strings.Contains(strings.ToLower(title), "anime")
-	})
+	// First get the TV library
+	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +199,16 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 
 	var unwatchedTVShows []models.TVShow
 	for _, item := range items.Object.MediaContainer.Metadata {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
+		// Skip shows with the anime genre
+		isAnime := false
+		for _, genre := range item.Genre {
+			if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
+				isAnime = true
+				break
+			}
+		}
+
+		if !isAnime && item.ViewCount != nil && *item.ViewCount == 0 {
 			tvShow := models.TVShow{
 				BaseMedia: models.BaseMedia{
 					Title:     item.Title,

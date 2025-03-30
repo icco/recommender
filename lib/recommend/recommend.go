@@ -78,14 +78,27 @@ func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPrefe
 	if err := r.db.First(&prefs).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Create default preferences if none exist
-			prefs = models.UserPreference{
-				FavoriteGenres: []string{"Action", "Drama", "Comedy"},
-				Themes:         []string{"Character Development", "Storytelling"},
-				Moods:          []string{"Thought-provoking", "Entertaining"},
-				ContentLengths: []string{"Medium"},
-				TimePeriods:    []string{"Modern", "Classic"},
-				Languages:      []string{"English", "Japanese"},
-				Sources:        []string{"Plex", "Anilist"},
+			prefs = models.UserPreference{}
+			if err := prefs.SetFavoriteGenres([]string{"Action", "Drama", "Comedy"}); err != nil {
+				return nil, fmt.Errorf("failed to set favorite genres: %w", err)
+			}
+			if err := prefs.SetThemes([]string{"Character Development", "Storytelling"}); err != nil {
+				return nil, fmt.Errorf("failed to set themes: %w", err)
+			}
+			if err := prefs.SetMoods([]string{"Thought-provoking", "Entertaining"}); err != nil {
+				return nil, fmt.Errorf("failed to set moods: %w", err)
+			}
+			if err := prefs.SetContentLengths([]string{"Medium"}); err != nil {
+				return nil, fmt.Errorf("failed to set content lengths: %w", err)
+			}
+			if err := prefs.SetTimePeriods([]string{"Modern", "Classic"}); err != nil {
+				return nil, fmt.Errorf("failed to set time periods: %w", err)
+			}
+			if err := prefs.SetLanguages([]string{"English", "Japanese"}); err != nil {
+				return nil, fmt.Errorf("failed to set languages: %w", err)
+			}
+			if err := prefs.SetSources([]string{"Plex", "Anilist"}); err != nil {
+				return nil, fmt.Errorf("failed to set sources: %w", err)
 			}
 			if err := r.db.Create(&prefs).Error; err != nil {
 				return nil, fmt.Errorf("failed to create default preferences: %w", err)
