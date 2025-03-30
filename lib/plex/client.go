@@ -113,11 +113,9 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operatio
 		slog.Int("section_key", sectionKey),
 		slog.String("url", c.plexURL))
 
-	// Try to get items with different parameters
+	// Get items from the library section
 	req := operations.GetLibraryItemsRequest{
 		SectionKey: sectionKey,
-		Tag:        "all",
-		Type:       0,
 	}
 	c.logger.Debug("Making request to Plex API", slog.Any("request", req))
 
@@ -136,29 +134,6 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operatio
 		slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)),
 		slog.String("title1", resp.Object.MediaContainer.Title1),
 		slog.String("title2", resp.Object.MediaContainer.Title2))
-
-	// If we got no items, try with different parameters
-	if resp.Object.MediaContainer.TotalSize == 0 {
-		c.logger.Debug("No items found, trying with different parameters")
-
-		// Try with type 1 (show) for TV libraries
-		if strings.Contains(strings.ToLower(resp.Object.MediaContainer.Title1), "tv") {
-			req.Type = 1
-			c.logger.Debug("Making request to Plex API with type 1", slog.Any("request", req))
-
-			resp, err = c.api.Library.GetLibraryItems(ctx, req)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get library items with type 1: %w", err)
-			}
-
-			if resp.Object != nil && resp.Object.MediaContainer != nil {
-				c.logger.Debug("Got response with type 1",
-					slog.Int("total_size", resp.Object.MediaContainer.TotalSize),
-					slog.Int("size", resp.Object.MediaContainer.Size),
-					slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)))
-			}
-		}
-	}
 
 	return resp, nil
 }
