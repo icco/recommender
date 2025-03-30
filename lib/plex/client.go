@@ -101,30 +101,46 @@ func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType 
 	return "", fmt.Errorf("no matching library found for type %s", libType)
 }
 
+// PlexItem represents a media item from Plex
+type PlexItem struct {
+	RatingKey  string
+	Key        string
+	Title      string
+	Type       operations.GetLibraryItemsLibraryType
+	Year       *int
+	Rating     *float64
+	Summary    string
+	Thumb      *string
+	Art        *string
+	Duration   *int
+	AddedAt    int64
+	UpdatedAt  *int64
+	ViewCount  *int
+	Genre      []operations.GetLibraryItemsGenre
+	LeafCount  *int
+	ChildCount *int
+}
+
 // GetPlexItems gets items from a Plex library
-func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operations.GetLibraryItemsResponse, error) {
+func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) ([]PlexItem, error) {
+	// Convert library key to integer
 	sectionKey, err := strconv.Atoi(libraryKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid library key: %w", err)
 	}
 
-	c.logger.Debug("Getting items from library",
-		slog.String("library_key", libraryKey),
-		slog.Int("section_key", sectionKey),
-		slog.String("url", c.plexURL))
-
 	// Set up pagination parameters
-	containerSize := int(50)
-	containerStart := int(0)
+	containerSize := 50
+	containerStart := 0
 
-	// Try different parameter combinations
+	// Set up common parameters
 	includeGuids1 := operations.IncludeGuids(1)
 	includeMeta1 := operations.GetLibraryItemsQueryParamIncludeMeta(1)
 
-	// Make a single request with the most reliable parameters
-	req := operations.GetLibraryItemsRequest{
+	// Make request to Plex API with reliable parameters
+	request := operations.GetLibraryItemsRequest{
 		SectionKey:          sectionKey,
-		Type:                operations.GetLibraryItemsQueryParamType(0), // Use type 0 for all items
+		Type:                operations.GetLibraryItemsQueryParamType(1), // Use type 1 for movies
 		IncludeGuids:        &includeGuids1,
 		IncludeMeta:         &includeMeta1,
 		XPlexContainerSize:  &containerSize,
@@ -132,23 +148,18 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operatio
 	}
 
 	c.logger.Debug("Making request to Plex API",
-		slog.Any("request", req),
+		slog.Any("request", request),
 		slog.Int("container_size", containerSize),
 		slog.Int("container_start", containerStart))
 
-	resp, err := c.api.Library.GetLibraryItems(ctx, req)
+	resp, err := c.api.Library.GetLibraryItems(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get library items: %w", err)
+		return nil, fmt.Errorf("failed to get items from library: %w", err)
 	}
 
-	if resp.Object == nil || resp.Object.MediaContainer == nil {
-		return nil, fmt.Errorf("invalid response from Plex API")
-	}
-
-	// Log more detailed information about the response
 	c.logger.Debug("Got response from Plex API",
-		slog.Int("total_size", resp.Object.MediaContainer.TotalSize),
-		slog.Int("size", resp.Object.MediaContainer.Size),
+		slog.Int("total_size", int(resp.Object.MediaContainer.TotalSize)),
+		slog.Int("size", int(resp.Object.MediaContainer.Size)),
 		slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)),
 		slog.String("title1", resp.Object.MediaContainer.Title1),
 		slog.String("title2", resp.Object.MediaContainer.Title2),
@@ -160,31 +171,55 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operatio
 		slog.String("content", resp.Object.MediaContainer.Content),
 		slog.String("view_group", resp.Object.MediaContainer.ViewGroup))
 
-	// If we got a response with items, return it
-	if len(resp.Object.MediaContainer.Metadata) > 0 {
-		return resp, nil
-	}
-
-	// If we got a response with a total size but no items, try the next page
-	if resp.Object.MediaContainer.TotalSize > 0 {
-		c.logger.Debug("Got total size but no items on current page, trying next page",
-			slog.Int("total_size", resp.Object.MediaContainer.TotalSize),
-			slog.Int("next_start", containerStart+containerSize))
+	// If we got no items but total size is greater than 0, try to get the next page
+	if len(resp.Object.MediaContainer.Metadata) == 0 && resp.Object.MediaContainer.TotalSize > 0 {
 		containerStart += containerSize
+		request.XPlexContainerStart = &containerStart
 
-		// Make another request with the next page
-		req.XPlexContainerStart = &containerStart
-		resp, err = c.api.Library.GetLibraryItems(ctx, req)
+		c.logger.Debug("Making request to Plex API",
+			slog.Int("container_size", containerSize),
+			slog.Int("container_start", containerStart))
+
+		resp, err = c.api.Library.GetLibraryItems(ctx, request)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get next page: %w", err)
+			return nil, fmt.Errorf("failed to get items from library: %w", err)
 		}
 
-		if len(resp.Object.MediaContainer.Metadata) > 0 {
-			return resp, nil
-		}
+		c.logger.Debug("Got response from Plex API",
+			slog.Int("total_size", int(resp.Object.MediaContainer.TotalSize)),
+			slog.Int("size", int(resp.Object.MediaContainer.Size)),
+			slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)),
+			slog.String("title1", resp.Object.MediaContainer.Title1),
+			slog.String("title2", resp.Object.MediaContainer.Title2),
+			slog.String("identifier", resp.Object.MediaContainer.Identifier),
+			slog.String("library_section_id", strconv.FormatInt(resp.Object.MediaContainer.LibrarySectionID, 10)),
+			slog.String("library_section_title", resp.Object.MediaContainer.LibrarySectionTitle),
+			slog.String("library_section_uuid", resp.Object.MediaContainer.LibrarySectionUUID),
+			slog.Bool("allow_sync", resp.Object.MediaContainer.AllowSync),
+			slog.String("content", resp.Object.MediaContainer.Content),
+			slog.String("view_group", resp.Object.MediaContainer.ViewGroup))
 	}
 
-	return nil, fmt.Errorf("no items found in library")
+	// Convert response to slice of PlexItem
+	var items []PlexItem
+	for _, item := range resp.Object.MediaContainer.Metadata {
+		items = append(items, PlexItem{
+			Title:      item.Title,
+			Year:       item.Year,
+			Rating:     item.Rating,
+			Genre:      item.Genre,
+			Thumb:      item.Thumb,
+			Duration:   item.Duration,
+			Type:       item.Type,
+			Summary:    item.Summary,
+			AddedAt:    item.AddedAt,
+			UpdatedAt:  item.UpdatedAt,
+			LeafCount:  item.LeafCount,
+			ChildCount: item.ChildCount,
+		})
+	}
+
+	return items, nil
 }
 
 // Helper functions for Plex data extraction
@@ -232,7 +267,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 	}
 
 	var unwatchedMovies []models.Movie
-	for _, item := range items.Object.MediaContainer.Metadata {
+	for _, item := range items {
 		if item.ViewCount != nil && *item.ViewCount == 0 {
 			movie := models.Movie{
 				BaseMedia: models.BaseMedia{
@@ -275,7 +310,7 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 	}
 
 	var unwatchedAnime []models.Anime
-	for _, item := range items.Object.MediaContainer.Metadata {
+	for _, item := range items {
 		// Check if the show has the anime genre
 		isAnime := false
 		for _, genre := range item.Genre {
@@ -322,7 +357,7 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 	}
 
 	var unwatchedTVShows []models.TVShow
-	for _, item := range items.Object.MediaContainer.Metadata {
+	for _, item := range items {
 		// Skip shows with the anime genre
 		isAnime := false
 		for _, genre := range item.Genre {
@@ -511,7 +546,7 @@ func (c *Client) TestConnection(ctx context.Context) error {
 
 		c.logger.Debug("Library access successful",
 			slog.String("title", lib.Title),
-			slog.Int("item_count", len(items.Object.MediaContainer.Metadata)))
+			slog.Int("item_count", len(items)))
 	}
 
 	return nil

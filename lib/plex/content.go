@@ -24,12 +24,7 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 	}
 
 	var movies []models.PlexMovie
-	for _, item := range items.Object.MediaContainer.Metadata {
-		watched := false
-		if item.ViewCount != nil && *item.ViewCount > 0 {
-			watched = true
-		}
-
+	for _, item := range items {
 		movie := models.PlexMovie{
 			BaseMedia: models.BaseMedia{
 				Title:     item.Title,
@@ -40,7 +35,6 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 				Source:    "plex",
 			},
 			Runtime: getIntValue(item.Duration) / 60000,
-			Watched: watched,
 		}
 		movies = append(movies, movie)
 	}
@@ -76,11 +70,11 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 	}
 
 	c.logger.Debug("Got items from library",
-		slog.Int("total_items", len(items.Object.MediaContainer.Metadata)),
+		slog.Int("total_items", len(items)),
 		slog.String("library_key", animeLibraryKey))
 
 	var anime []models.PlexAnime
-	for _, item := range items.Object.MediaContainer.Metadata {
+	for _, item := range items {
 		// Log each item's genres
 		var genres []string
 		for _, genre := range item.Genre {
@@ -102,11 +96,6 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 		}
 
 		if isAnime {
-			watched := false
-			if item.ViewCount != nil && *item.ViewCount > 0 {
-				watched = true
-			}
-
 			animeItem := models.PlexAnime{
 				BaseMedia: models.BaseMedia{
 					Title:     item.Title,
@@ -117,13 +106,11 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 					Source:    "plex",
 				},
 				Episodes: getIntValue(item.LeafCount),
-				Watched:  watched,
 			}
 			anime = append(anime, animeItem)
 			c.logger.Debug("Added anime item",
 				slog.String("title", item.Title),
-				slog.Int("episodes", getIntValue(item.LeafCount)),
-				slog.Bool("watched", watched))
+				slog.Int("episodes", getIntValue(item.LeafCount)))
 		}
 	}
 
@@ -136,9 +123,8 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 
 // GetAllTVShows gets all TV shows from Plex
 func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.PlexTVShow, error) {
-	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
-		return !strings.Contains(strings.ToLower(title), "anime")
-	})
+	// First get the TV library
+	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +135,7 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 	}
 
 	var tvShows []models.PlexTVShow
-	for _, item := range items.Object.MediaContainer.Metadata {
+	for _, item := range items {
 		// Skip shows with the anime genre
 		isAnime := false
 		for _, genre := range item.Genre {
@@ -160,11 +146,6 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 		}
 
 		if !isAnime {
-			watched := false
-			if item.ViewCount != nil && *item.ViewCount > 0 {
-				watched = true
-			}
-
 			tvShow := models.PlexTVShow{
 				BaseMedia: models.BaseMedia{
 					Title:     item.Title,
@@ -175,7 +156,6 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 					Source:    "plex",
 				},
 				Seasons: getIntValue(item.ChildCount),
-				Watched: watched,
 			}
 			tvShows = append(tvShows, tvShow)
 		}
