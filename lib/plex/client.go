@@ -27,6 +27,14 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Cli
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
+		plexgo.WithHeader("X-Plex-Client-Identifier", "recommender"),
+		plexgo.WithHeader("X-Plex-Product", "Recommender"),
+		plexgo.WithHeader("X-Plex-Version", "1.0.0"),
+		plexgo.WithHeader("X-Plex-Device", "Server"),
+		plexgo.WithHeader("X-Plex-Device-Name", "Recommender"),
+		plexgo.WithHeader("X-Plex-Platform", "Go"),
+		plexgo.WithHeader("X-Plex-Platform-Version", "1.0.0"),
+		plexgo.WithHeader("X-Plex-Provides", "controller"),
 	)
 
 	return &Client{
@@ -122,7 +130,7 @@ type PlexItem struct {
 }
 
 // GetPlexItems gets items from a Plex library
-func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) ([]PlexItem, error) {
+func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
 	// Convert library key to integer
 	sectionKey, err := strconv.Atoi(libraryKey)
 	if err != nil {
@@ -130,57 +138,58 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) ([]PlexIte
 	}
 
 	// Set up pagination parameters
-	containerSize := 50
+	containerSize := 50 // Reduced for better reliability
 	containerStart := 0
 
 	// Set up common parameters
 	includeGuids1 := operations.IncludeGuids(1)
 	includeMeta1 := operations.GetLibraryItemsQueryParamIncludeMeta(1)
 
-	// Make request to Plex API with reliable parameters
-	request := operations.GetLibraryItemsRequest{
-		SectionKey:          sectionKey,
-		Type:                operations.GetLibraryItemsQueryParamType(1), // Use type 1 for movies
-		IncludeGuids:        &includeGuids1,
-		IncludeMeta:         &includeMeta1,
-		XPlexContainerSize:  &containerSize,
-		XPlexContainerStart: &containerStart,
-	}
-
-	c.logger.Debug("Making request to Plex API",
-		slog.Any("request", request),
-		slog.Int("container_size", containerSize),
-		slog.Int("container_start", containerStart))
-
-	resp, err := c.api.Library.GetLibraryItems(ctx, request)
+	// Get library type first
+	libraries, err := c.GetAllLibraries(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get items from library: %w", err)
+		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
 
-	c.logger.Debug("Got response from Plex API",
-		slog.Int("total_size", int(resp.Object.MediaContainer.TotalSize)),
-		slog.Int("size", int(resp.Object.MediaContainer.Size)),
-		slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)),
-		slog.String("title1", resp.Object.MediaContainer.Title1),
-		slog.String("title2", resp.Object.MediaContainer.Title2),
-		slog.String("identifier", resp.Object.MediaContainer.Identifier),
-		slog.String("library_section_id", strconv.FormatInt(resp.Object.MediaContainer.LibrarySectionID, 10)),
-		slog.String("library_section_title", resp.Object.MediaContainer.LibrarySectionTitle),
-		slog.String("library_section_uuid", resp.Object.MediaContainer.LibrarySectionUUID),
-		slog.Bool("allow_sync", resp.Object.MediaContainer.AllowSync),
-		slog.String("content", resp.Object.MediaContainer.Content),
-		slog.String("view_group", resp.Object.MediaContainer.ViewGroup))
+	var libraryType operations.GetLibraryItemsQueryParamType
+	var librarySection string
+	for _, lib := range libraries.Object.MediaContainer.Directory {
+		if lib.Key == libraryKey {
+			librarySection = lib.Type
+			switch lib.Type {
+			case "movie":
+				libraryType = operations.GetLibraryItemsQueryParamType(1)
+			case "show":
+				libraryType = operations.GetLibraryItemsQueryParamType(2)
+			case "artist":
+				libraryType = operations.GetLibraryItemsQueryParamType(8)
+			default:
+				return nil, fmt.Errorf("unsupported library type: %s", lib.Type)
+			}
+		}
+	}
 
-	// If we got no items but total size is greater than 0, try to get the next page
-	if len(resp.Object.MediaContainer.Metadata) == 0 && resp.Object.MediaContainer.TotalSize > 0 {
-		containerStart += containerSize
-		request.XPlexContainerStart = &containerStart
+	var allItems []PlexItem
+	for {
+		// Make request to Plex API with reliable parameters
+		request := operations.GetLibraryItemsRequest{
+			SectionKey:          sectionKey,
+			Type:                libraryType,
+			IncludeGuids:        &includeGuids1,
+			IncludeMeta:         &includeMeta1,
+			XPlexContainerSize:  &containerSize,
+			XPlexContainerStart: &containerStart,
+			Tag:                 operations.Tag("all"),
+		}
 
 		c.logger.Debug("Making request to Plex API",
+			slog.Any("request", request),
 			slog.Int("container_size", containerSize),
-			slog.Int("container_start", containerStart))
+			slog.Int("container_start", containerStart),
+			slog.String("library_type", librarySection),
+			slog.String("section_key", libraryKey))
 
-		resp, err = c.api.Library.GetLibraryItems(ctx, request)
+		resp, err := c.api.Library.GetLibraryItems(ctx, request)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get items from library: %w", err)
 		}
@@ -197,29 +206,63 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) ([]PlexIte
 			slog.String("library_section_uuid", resp.Object.MediaContainer.LibrarySectionUUID),
 			slog.Bool("allow_sync", resp.Object.MediaContainer.AllowSync),
 			slog.String("content", resp.Object.MediaContainer.Content),
-			slog.String("view_group", resp.Object.MediaContainer.ViewGroup))
+			slog.String("view_group", resp.Object.MediaContainer.ViewGroup),
+			slog.Any("metadata_fields", func() []map[string]interface{} {
+				var fields []map[string]interface{}
+				for _, item := range resp.Object.MediaContainer.Metadata {
+					fields = append(fields, map[string]interface{}{
+						"title":       item.Title,
+						"type":        item.Type,
+						"year":        item.Year,
+						"rating":      item.Rating,
+						"summary":     item.Summary,
+						"view_count":  item.ViewCount,
+						"genre":       item.Genre,
+						"leaf_count":  item.LeafCount,
+						"child_count": item.ChildCount,
+					})
+				}
+				return fields
+			}()))
+
+		// Convert response to slice of PlexItem
+		for _, item := range resp.Object.MediaContainer.Metadata {
+			// Skip watched items if unwatchedOnly is true
+			if unwatchedOnly && item.ViewCount != nil && *item.ViewCount > 0 {
+				continue
+			}
+
+			allItems = append(allItems, PlexItem{
+				RatingKey:  item.RatingKey,
+				Key:        item.Key,
+				Title:      item.Title,
+				Type:       item.Type,
+				Year:       item.Year,
+				Rating:     item.Rating,
+				Summary:    item.Summary,
+				Thumb:      item.Thumb,
+				Art:        item.Art,
+				Duration:   item.Duration,
+				AddedAt:    item.AddedAt,
+				UpdatedAt:  item.UpdatedAt,
+				ViewCount:  item.ViewCount,
+				Genre:      item.Genre,
+				LeafCount:  item.LeafCount,
+				ChildCount: item.ChildCount,
+			})
+		}
+
+		// Check if we've retrieved all items
+		if len(resp.Object.MediaContainer.Metadata) == 0 ||
+			containerStart+len(resp.Object.MediaContainer.Metadata) >= int(resp.Object.MediaContainer.TotalSize) {
+			break
+		}
+
+		// Move to next page
+		containerStart += containerSize
 	}
 
-	// Convert response to slice of PlexItem
-	var items []PlexItem
-	for _, item := range resp.Object.MediaContainer.Metadata {
-		items = append(items, PlexItem{
-			Title:      item.Title,
-			Year:       item.Year,
-			Rating:     item.Rating,
-			Genre:      item.Genre,
-			Thumb:      item.Thumb,
-			Duration:   item.Duration,
-			Type:       item.Type,
-			Summary:    item.Summary,
-			AddedAt:    item.AddedAt,
-			UpdatedAt:  item.UpdatedAt,
-			LeafCount:  item.LeafCount,
-			ChildCount: item.ChildCount,
-		})
-	}
-
-	return items, nil
+	return allItems, nil
 }
 
 // Helper functions for Plex data extraction
@@ -261,7 +304,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 		return nil, err
 	}
 
-	items, err := c.GetPlexItems(ctx, movieLibraryKey)
+	items, err := c.GetPlexItems(ctx, movieLibraryKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +347,7 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 		animeLibraryKey = tvLibraryKey
 	}
 
-	items, err := c.GetPlexItems(ctx, animeLibraryKey)
+	items, err := c.GetPlexItems(ctx, animeLibraryKey, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get items from library: %w", err)
 	}
@@ -351,7 +394,7 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 		return nil, err
 	}
 
-	items, err := c.GetPlexItems(ctx, tvLibraryKey)
+	items, err := c.GetPlexItems(ctx, tvLibraryKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +454,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries.Object.MediaContainer.Directory)))
 
-	// Get all content (including watched items)
+	// Get all content
 	movies, err := c.GetAllMovies(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
 		return fmt.Errorf("failed to get movies: %w", err)
@@ -539,7 +582,7 @@ func (c *Client) TestConnection(ctx context.Context) error {
 			slog.String("type", lib.Type),
 			slog.String("key", lib.Key))
 
-		items, err := c.GetPlexItems(ctx, lib.Key)
+		items, err := c.GetPlexItems(ctx, lib.Key, false)
 		if err != nil {
 			return fmt.Errorf("failed to access library %s: %w", lib.Title, err)
 		}

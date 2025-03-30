@@ -18,7 +18,7 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 		return nil, err
 	}
 
-	items, err := c.GetPlexItems(ctx, movieLibraryKey)
+	items, err := c.GetPlexItems(ctx, movieLibraryKey, false)
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +35,7 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 				Source:    "plex",
 			},
 			Runtime: getIntValue(item.Duration) / 60000,
+			Watched: item.ViewCount != nil && *item.ViewCount > 0,
 		}
 		movies = append(movies, movie)
 	}
@@ -44,11 +45,6 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 
 // GetAllAnime gets all anime from Plex
 func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.PlexAnime, error) {
-	// Log available libraries
-	c.logger.Debug("Available libraries",
-		slog.Int("count", len(libraries)),
-		slog.Any("libraries", libraries))
-
 	// First try to find a library with "anime" in the title
 	animeLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
 		return strings.Contains(strings.ToLower(title), "anime")
@@ -64,7 +60,7 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 		animeLibraryKey = tvLibraryKey
 	}
 
-	items, err := c.GetPlexItems(ctx, animeLibraryKey)
+	items, err := c.GetPlexItems(ctx, animeLibraryKey, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get items from library: %w", err)
 	}
@@ -82,7 +78,7 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 				genres = append(genres, *genre.Tag)
 			}
 		}
-		c.logger.Debug("Checking item",
+		c.logger.Debug("Item genres",
 			slog.String("title", item.Title),
 			slog.Any("genres", genres))
 
@@ -106,6 +102,7 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 					Source:    "plex",
 				},
 				Episodes: getIntValue(item.LeafCount),
+				Watched:  item.ViewCount != nil && *item.ViewCount > 0,
 			}
 			anime = append(anime, animeItem)
 			c.logger.Debug("Added anime item",
@@ -129,7 +126,7 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 		return nil, err
 	}
 
-	items, err := c.GetPlexItems(ctx, tvLibraryKey)
+	items, err := c.GetPlexItems(ctx, tvLibraryKey, false)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +153,7 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 					Source:    "plex",
 				},
 				Seasons: getIntValue(item.ChildCount),
+				Watched: item.ViewCount != nil && *item.ViewCount > 0,
 			}
 			tvShows = append(tvShows, tvShow)
 		}
