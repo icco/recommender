@@ -269,10 +269,21 @@ func (r *Recommender) generateOpenAIRecommendations(ctx context.Context, systemP
 
 	// Parse OpenAI response and match with our content
 	recommendations := resp.Choices[0].Message.Content
+	r.logger.Debug("OpenAI response", slog.String("recommendations", recommendations))
+
+	movies := matchRecommendations(unwatched.Movies, recommendations, "Movies")
+	anime := matchRecommendations(unwatched.Anime, recommendations, "Anime")
+	tvshows := matchRecommendations(unwatched.TVShows, recommendations, "TV Shows")
+
+	r.logger.Debug("Matched recommendations",
+		slog.Int("movies_matched", len(movies)),
+		slog.Int("anime_matched", len(anime)),
+		slog.Int("tvshows_matched", len(tvshows)))
+
 	return &models.Recommendation{
-		Movies:  matchRecommendations(unwatched.Movies, recommendations, "Movies"),
-		Anime:   matchRecommendations(unwatched.Anime, recommendations, "Anime"),
-		TVShows: matchRecommendations(unwatched.TVShows, recommendations, "TV Shows"),
+		Movies:  movies,
+		Anime:   anime,
+		TVShows: tvshows,
 	}, nil
 }
 
@@ -314,12 +325,23 @@ func matchRecommendations[T interface{ GetTitle() string }](items []T, recommend
 		if inCategory && strings.HasPrefix(line, "-") {
 			title := strings.TrimPrefix(line, "-")
 			title = strings.TrimSpace(title)
-			// Extract title before any parentheses
+			// Extract title before any parentheses or additional information
 			if idx := strings.Index(title, "("); idx != -1 {
 				title = strings.TrimSpace(title[:idx])
 			}
+			if idx := strings.Index(title, " - "); idx != -1 {
+				title = strings.TrimSpace(title[:idx])
+			}
+			// Try to match the title
 			for _, item := range items {
-				if strings.EqualFold(item.GetTitle(), title) {
+				itemTitle := item.GetTitle()
+				// Try exact match first
+				if strings.EqualFold(itemTitle, title) {
+					matched = append(matched, item)
+					break
+				}
+				// Try partial match if exact match fails
+				if strings.Contains(strings.ToLower(itemTitle), strings.ToLower(title)) {
 					matched = append(matched, item)
 					break
 				}
