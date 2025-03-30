@@ -12,15 +12,17 @@ import (
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/operations"
 	"github.com/icco/recommender/models"
+	"gorm.io/gorm"
 )
 
 type Client struct {
 	api     *plexgo.PlexAPI
 	plexURL string
 	logger  *slog.Logger
+	db      *gorm.DB
 }
 
-func NewClient(plexURL, plexToken string, logger *slog.Logger) *Client {
+func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
@@ -30,6 +32,7 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger) *Client {
 		api:     plex,
 		plexURL: plexURL,
 		logger:  logger,
+		db:      db,
 	}
 }
 
@@ -143,15 +146,24 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 
 // GetUnwatchedAnime gets unwatched anime from Plex
 func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Anime, error) {
-	// First get the TV library
-	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
+	// First try to find a library with "anime" in the title
+	animeLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
+		return strings.Contains(strings.ToLower(title), "anime")
+	})
+
+	// If no dedicated anime library found, try to find any TV library
 	if err != nil {
-		return nil, err
+		c.logger.Debug("No dedicated anime library found, searching in TV libraries")
+		tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find any TV library: %w", err)
+		}
+		animeLibraryKey = tvLibraryKey
 	}
 
-	items, err := c.GetPlexItems(ctx, tvLibraryKey)
+	items, err := c.GetPlexItems(ctx, animeLibraryKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get items from library: %w", err)
 	}
 
 	var unwatchedAnime []models.Anime
@@ -180,6 +192,10 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 			unwatchedAnime = append(unwatchedAnime, anime)
 		}
 	}
+
+	c.logger.Debug("Found unwatched anime",
+		slog.Int("count", len(unwatchedAnime)),
+		slog.String("library_key", animeLibraryKey))
 
 	return unwatchedAnime, nil
 }
@@ -239,22 +255,33 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		return fmt.Errorf("failed to get libraries: %w", err)
 	}
 
-	// Update movies
-	movies, err := c.GetUnwatchedMovies(ctx, libraries.Object.MediaContainer.Directory)
+	// Get all content (including watched items)
+	movies, err := c.GetAllMovies(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
-		return fmt.Errorf("failed to get unwatched movies: %w", err)
+		return fmt.Errorf("failed to get movies: %w", err)
 	}
 
-	// Update anime
-	anime, err := c.GetUnwatchedAnime(ctx, libraries.Object.MediaContainer.Directory)
+	anime, err := c.GetAllAnime(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
-		return fmt.Errorf("failed to get unwatched anime: %w", err)
+		return fmt.Errorf("failed to get anime: %w", err)
 	}
 
-	// Update TV shows
-	tvShows, err := c.GetUnwatchedTVShows(ctx, libraries.Object.MediaContainer.Directory)
+	tvShows, err := c.GetAllTVShows(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
-		return fmt.Errorf("failed to get unwatched TV shows: %w", err)
+		return fmt.Errorf("failed to get TV shows: %w", err)
+	}
+
+	// Create a new cache entry
+	cache := &models.PlexCache{
+		UpdatedAt: time.Now(),
+		Movies:    movies,
+		Anime:     anime,
+		TVShows:   tvShows,
+	}
+
+	// Save to database
+	if err := c.db.WithContext(ctx).Create(cache).Error; err != nil {
+		return fmt.Errorf("failed to save cache to database: %w", err)
 	}
 
 	c.logger.Info("Cache updated successfully",
