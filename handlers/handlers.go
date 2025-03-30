@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"time"
@@ -18,13 +17,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// parseTemplates parses HTML templates from the embedded filesystem.
-// It takes a variadic list of template file paths and returns a parsed template
-// or an error if parsing fails.
-func parseTemplates(files ...string) (*template.Template, error) {
-	return template.ParseFS(templates.FS, files...)
-}
-
 type errorData struct {
 	Message string
 }
@@ -32,7 +24,7 @@ type errorData struct {
 // renderError renders an error page using the error template.
 // It takes a response writer, error message, and HTTP status code.
 func renderError(w http.ResponseWriter, message string, status int) {
-	tmpl, err := parseTemplates("base.html", "error.html")
+	tmpl, err := templates.ParseTemplates("base.html", "error.html")
 	if err != nil {
 		slog.Error("Failed to parse error template", slog.Any("error", err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -50,7 +42,7 @@ func renderError(w http.ResponseWriter, message string, status int) {
 // It takes a response writer, template files, and data to render.
 // Returns true if rendering was successful, false otherwise.
 func renderTemplate(w http.ResponseWriter, ctx context.Context, files []string, data interface{}) bool {
-	tmpl, err := parseTemplates(files...)
+	tmpl, err := templates.ParseTemplates(files...)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to parse template", slog.Any("error", err))
 		renderError(w, "Something went wrong while loading the page.", http.StatusInternalServerError)
