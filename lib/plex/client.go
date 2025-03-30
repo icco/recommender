@@ -16,10 +16,11 @@ import (
 )
 
 type Client struct {
-	api     *plexgo.PlexAPI
-	plexURL string
-	logger  *slog.Logger
-	db      *gorm.DB
+	api       *plexgo.PlexAPI
+	plexURL   string
+	logger    *slog.Logger
+	db        *gorm.DB
+	plexToken string
 }
 
 func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Client {
@@ -29,10 +30,11 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Cli
 	)
 
 	return &Client{
-		api:     plex,
-		plexURL: plexURL,
-		logger:  logger,
-		db:      db,
+		api:       plex,
+		plexURL:   plexURL,
+		logger:    logger,
+		db:        db,
+		plexToken: plexToken,
 	}
 }
 
@@ -53,7 +55,40 @@ func (c *Client) GetLibrary() *plexgo.Library {
 
 // GetAllLibraries gets all libraries from Plex
 func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrariesResponse, error) {
-	return c.api.Library.GetAllLibraries(ctx)
+	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
+
+	resp, err := c.api.Library.GetAllLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get libraries: %w", err)
+	}
+
+	if resp.Object == nil {
+		return nil, fmt.Errorf("invalid response from Plex API")
+	}
+
+	// Log available libraries
+	var libraryInfo []map[string]interface{}
+	for _, lib := range resp.Object.MediaContainer.Directory {
+		libraryInfo = append(libraryInfo, map[string]interface{}{
+			"key":      lib.Key,
+			"type":     lib.Type,
+			"title":    lib.Title,
+			"agent":    lib.Agent,
+			"scanner":  lib.Scanner,
+			"language": lib.Language,
+			"uuid":     lib.UUID,
+		})
+	}
+
+	c.logger.Debug("Got libraries from Plex",
+		slog.Int("count", len(resp.Object.MediaContainer.Directory)),
+		slog.Any("libraries", libraryInfo),
+		slog.Any("media_container", map[string]interface{}{
+			"title1":     resp.Object.MediaContainer.Title1,
+			"allow_sync": resp.Object.MediaContainer.AllowSync,
+		}))
+
+	return resp, nil
 }
 
 // getPlexLibraryKey finds the library key for a given type and title condition
@@ -63,7 +98,7 @@ func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType 
 			return lib.Key, nil
 		}
 	}
-	return "", fmt.Errorf("no matching library found")
+	return "", fmt.Errorf("no matching library found for type %s", libType)
 }
 
 // GetPlexItems gets items from a Plex library
@@ -73,10 +108,59 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string) (*operatio
 		return nil, fmt.Errorf("invalid library key: %w", err)
 	}
 
-	return c.api.Library.GetLibraryItems(ctx, operations.GetLibraryItemsRequest{
+	c.logger.Debug("Getting items from library",
+		slog.String("library_key", libraryKey),
+		slog.Int("section_key", sectionKey),
+		slog.String("url", c.plexURL))
+
+	// Try to get items with different parameters
+	req := operations.GetLibraryItemsRequest{
 		SectionKey: sectionKey,
 		Tag:        "all",
-	})
+		Type:       0,
+	}
+	c.logger.Debug("Making request to Plex API", slog.Any("request", req))
+
+	resp, err := c.api.Library.GetLibraryItems(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get library items: %w", err)
+	}
+
+	if resp.Object == nil || resp.Object.MediaContainer == nil {
+		return nil, fmt.Errorf("invalid response from Plex API")
+	}
+
+	c.logger.Debug("Got response from Plex API",
+		slog.Int("total_size", resp.Object.MediaContainer.TotalSize),
+		slog.Int("size", resp.Object.MediaContainer.Size),
+		slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)),
+		slog.String("title1", resp.Object.MediaContainer.Title1),
+		slog.String("title2", resp.Object.MediaContainer.Title2))
+
+	// If we got no items, try with different parameters
+	if resp.Object.MediaContainer.TotalSize == 0 {
+		c.logger.Debug("No items found, trying with different parameters")
+
+		// Try with type 1 (show) for TV libraries
+		if strings.Contains(strings.ToLower(resp.Object.MediaContainer.Title1), "tv") {
+			req.Type = 1
+			c.logger.Debug("Making request to Plex API with type 1", slog.Any("request", req))
+
+			resp, err = c.api.Library.GetLibraryItems(ctx, req)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get library items with type 1: %w", err)
+			}
+
+			if resp.Object != nil && resp.Object.MediaContainer != nil {
+				c.logger.Debug("Got response with type 1",
+					slog.Int("total_size", resp.Object.MediaContainer.TotalSize),
+					slog.Int("size", resp.Object.MediaContainer.Size),
+					slog.Int("metadata_count", len(resp.Object.MediaContainer.Metadata)))
+			}
+		}
+	}
+
+	return resp, nil
 }
 
 // Helper functions for Plex data extraction
@@ -245,15 +329,28 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 
 // UpdateCache updates the Plex cache by fetching all libraries and their items
 func (c *Client) UpdateCache(ctx context.Context) error {
+	c.logger.Info("Starting cache update")
+
 	// Create a new context with a timeout of 30 seconds
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// Test connection and library access first
+	c.logger.Info("Testing Plex connection and library access")
+	if err := c.TestConnection(ctx); err != nil {
+		c.logger.Error("Connection test failed", slog.Any("error", err))
+		return fmt.Errorf("connection test failed: %w", err)
+	}
+	c.logger.Info("Connection test successful")
+
 	// Get all libraries
+	c.logger.Info("Fetching all libraries")
 	libraries, err := c.GetAllLibraries(ctx)
 	if err != nil {
+		c.logger.Error("Failed to get libraries", slog.Any("error", err))
 		return fmt.Errorf("failed to get libraries: %w", err)
 	}
+	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries.Object.MediaContainer.Directory)))
 
 	// Get all content (including watched items)
 	movies, err := c.GetAllMovies(ctx, libraries.Object.MediaContainer.Directory)
@@ -361,6 +458,37 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		slog.Int("anime", len(anime)),
 		slog.Int("tv_shows", len(tvShows)),
 	)
+
+	return nil
+}
+
+// TestConnection tests the Plex connection and token access
+func (c *Client) TestConnection(ctx context.Context) error {
+	// Test basic connection
+	c.logger.Debug("Testing Plex connection", slog.String("url", c.plexURL))
+
+	// Get libraries to test token
+	libraries, err := c.GetAllLibraries(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get libraries: %w", err)
+	}
+
+	// Test access to each library
+	for _, lib := range libraries.Object.MediaContainer.Directory {
+		c.logger.Debug("Testing library access",
+			slog.String("title", lib.Title),
+			slog.String("type", lib.Type),
+			slog.String("key", lib.Key))
+
+		items, err := c.GetPlexItems(ctx, lib.Key)
+		if err != nil {
+			return fmt.Errorf("failed to access library %s: %w", lib.Title, err)
+		}
+
+		c.logger.Debug("Library access successful",
+			slog.String("title", lib.Title),
+			slog.Int("item_count", len(items.Object.MediaContainer.Metadata)))
+	}
 
 	return nil
 }

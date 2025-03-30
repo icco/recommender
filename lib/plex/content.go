@@ -50,6 +50,11 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 
 // GetAllAnime gets all anime from Plex
 func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.PlexAnime, error) {
+	// Log available libraries
+	c.logger.Debug("Available libraries",
+		slog.Int("count", len(libraries)),
+		slog.Any("libraries", libraries))
+
 	// First try to find a library with "anime" in the title
 	animeLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
 		return strings.Contains(strings.ToLower(title), "anime")
@@ -70,8 +75,23 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 		return nil, fmt.Errorf("failed to get items from library: %w", err)
 	}
 
+	c.logger.Debug("Got items from library",
+		slog.Int("total_items", len(items.Object.MediaContainer.Metadata)),
+		slog.String("library_key", animeLibraryKey))
+
 	var anime []models.PlexAnime
 	for _, item := range items.Object.MediaContainer.Metadata {
+		// Log each item's genres
+		var genres []string
+		for _, genre := range item.Genre {
+			if genre.Tag != nil {
+				genres = append(genres, *genre.Tag)
+			}
+		}
+		c.logger.Debug("Checking item",
+			slog.String("title", item.Title),
+			slog.Any("genres", genres))
+
 		// Check if the show has the anime genre
 		isAnime := false
 		for _, genre := range item.Genre {
@@ -100,6 +120,10 @@ func (c *Client) GetAllAnime(ctx context.Context, libraries []operations.GetAllL
 				Watched:  watched,
 			}
 			anime = append(anime, animeItem)
+			c.logger.Debug("Added anime item",
+				slog.String("title", item.Title),
+				slog.Int("episodes", getIntValue(item.LeafCount)),
+				slog.Bool("watched", watched))
 		}
 	}
 

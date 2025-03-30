@@ -289,48 +289,42 @@ func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 
 		// Create a new background context with a timeout for the cache update
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		go func() {
-			defer cancel()
-			slog.Info("Starting cache update in background",
-				slog.Duration("timeout", 5*time.Minute),
+		defer cancel()
+
+		// Run the cache update synchronously for now to see the logs
+		slog.Info("Starting cache update",
+			slog.Duration("timeout", 5*time.Minute),
+		)
+
+		slog.Debug("Initializing cache update process")
+
+		if err := p.UpdateCache(ctx); err != nil {
+			slog.ErrorContext(ctx, "Failed to update cache",
+				slog.Any("error", err),
+				slog.Duration("duration", time.Since(startTime)),
+			)
+		} else {
+			slog.Info("Successfully updated cache",
+				slog.Duration("duration", time.Since(startTime)),
 			)
 
-			slog.Debug("Initializing cache update process")
-
-			if err := p.UpdateCache(ctx); err != nil {
-				slog.ErrorContext(ctx, "Failed to update cache",
-					slog.Any("error", err),
-					slog.Duration("duration", time.Since(startTime)),
-				)
-			} else {
-				slog.Info("Successfully updated cache",
-					slog.Duration("duration", time.Since(startTime)),
-				)
-
-				// Log cache statistics
-				var movieCount, animeCount, tvShowCount int64
-				if err := db.WithContext(ctx).Model(&models.PlexMovie{}).Count(&movieCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get movie count", slog.Any("error", err))
-				}
-				if err := db.WithContext(ctx).Model(&models.PlexAnime{}).Count(&animeCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get anime count", slog.Any("error", err))
-				}
-				if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Count(&tvShowCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get TV show count", slog.Any("error", err))
-				}
-
-				slog.Debug("Cache update statistics",
-					slog.Int64("movies_count", movieCount),
-					slog.Int64("anime_count", animeCount),
-					slog.Int64("tvshows_count", tvShowCount),
-				)
+			// Log cache statistics
+			var movieCount, animeCount, tvShowCount int64
+			if err := db.WithContext(ctx).Model(&models.PlexMovie{}).Count(&movieCount).Error; err != nil {
+				slog.ErrorContext(ctx, "Failed to get movie count", slog.Any("error", err))
 			}
-		}()
+			if err := db.WithContext(ctx).Model(&models.PlexAnime{}).Count(&animeCount).Error; err != nil {
+				slog.ErrorContext(ctx, "Failed to get anime count", slog.Any("error", err))
+			}
+			if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Count(&tvShowCount).Error; err != nil {
+				slog.ErrorContext(ctx, "Failed to get TV show count", slog.Any("error", err))
+			}
 
-		if _, err := fmt.Fprintf(w, "Started updating Plex and Anilist cache\n"); err != nil {
-			slog.ErrorContext(req.Context(), "Failed to write response", slog.Any("error", err))
-			renderError(w, "Failed to write response.", http.StatusInternalServerError)
-			return
+			slog.Info("Cache statistics",
+				slog.Int64("movies", movieCount),
+				slog.Int64("anime", animeCount),
+				slog.Int64("tv_shows", tvShowCount),
+			)
 		}
 	}
 }
