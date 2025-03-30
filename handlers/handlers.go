@@ -229,8 +229,12 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 				slog.Int64("count", count),
 			)
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"message": "Recommendation already exists for %s", "timestamp": "%s"}`,
-				today.Format("2006-01-02"), time.Now().Format(time.RFC3339))
+			if _, err := fmt.Fprintf(w, `{"message": "Recommendation already exists for %s", "timestamp": "%s"}`,
+				today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
+				slog.Error("Failed to write response", slog.Any("error", err))
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
 			return
 		}
 
@@ -267,8 +271,12 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"message": "Started generating recommendation for %s", "timestamp": "%s"}`,
-			today.Format("2006-01-02"), time.Now().Format(time.RFC3339))
+		if _, err := fmt.Fprintf(w, `{"message": "Started generating recommendation for %s", "timestamp": "%s"}`,
+			today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
+			slog.Error("Failed to write response", slog.Any("error", err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -324,7 +332,11 @@ func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"message": "Started cache update in background", "timestamp": "%s"}`,
-			time.Now().Format(time.RFC3339))
+		if _, err := fmt.Fprintf(w, `{"message": "Started cache update in background", "timestamp": "%s"}`,
+			time.Now().Format(time.RFC3339)); err != nil {
+			slog.Error("Failed to write response", slog.Any("error", err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 }
