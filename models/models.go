@@ -21,8 +21,8 @@ type MediaItem interface {
 // It implements the MediaItem interface and provides the base structure
 // for movies, anime, and TV shows.
 type BaseMedia struct {
-	ID        uint   `gorm:"primarykey"`
-	Title     string `gorm:"uniqueIndex"`
+	ID        uint `gorm:"primarykey"`
+	Title     string
 	Year      int
 	Rating    float64
 	Genre     string

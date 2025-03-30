@@ -63,6 +63,21 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	// Drop and recreate tables to remove unique constraints
+	if err := gormDB.Migrator().DropTable(
+		"plex_movies", "plex_anime", "plex_tvshows",
+		"plex_cache_movies", "plex_cache_anime", "plex_cache_tvshows",
+	); err != nil {
+		return nil, fmt.Errorf("failed to drop tables: %w", err)
+	}
+
+	// Recreate tables without unique constraints
+	if err := gormDB.AutoMigrate(
+		&models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
+	); err != nil {
+		return nil, fmt.Errorf("failed to recreate tables: %w", err)
+	}
+
 	plexURL := os.Getenv("PLEX_URL")
 	if plexURL == "" {
 		return nil, fmt.Errorf("PLEX_URL environment variable is required")
