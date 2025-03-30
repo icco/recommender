@@ -521,11 +521,11 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 	// Process movies one at a time
 	if len(movies) > 0 {
-		c.logger.Info("Processing movies", slog.Int("total", len(movies)))
+		c.logger.Debug("Processing movies", slog.Int("total", len(movies)))
 		for i, movie := range movies {
 			// Log progress every 100 items
 			if i%100 == 0 {
-				c.logger.Info("Processing movies progress",
+				c.logger.Debug("Processing movies progress",
 					slog.Int("processed", i),
 					slog.Int("total", len(movies)),
 					slog.Float64("percent", float64(i)/float64(len(movies))*100))
@@ -543,16 +543,16 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				return fmt.Errorf("failed to add movie association %d: %w", i, err)
 			}
 		}
-		c.logger.Info("Successfully processed movies", slog.Int("count", len(movies)))
+		c.logger.Debug("Successfully processed movies", slog.Int("count", len(movies)))
 	}
 
 	// Process anime one at a time
 	if len(anime) > 0 {
-		c.logger.Info("Processing anime", slog.Int("total", len(anime)))
+		c.logger.Debug("Processing anime", slog.Int("total", len(anime)))
 		for i, animeItem := range anime {
 			// Log progress every 100 items
 			if i%100 == 0 {
-				c.logger.Info("Processing anime progress",
+				c.logger.Debug("Processing anime progress",
 					slog.Int("processed", i),
 					slog.Int("total", len(anime)),
 					slog.Float64("percent", float64(i)/float64(len(anime))*100))
@@ -570,16 +570,16 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				return fmt.Errorf("failed to add anime association %d: %w", i, err)
 			}
 		}
-		c.logger.Info("Successfully processed anime", slog.Int("count", len(anime)))
+		c.logger.Debug("Successfully processed anime", slog.Int("count", len(anime)))
 	}
 
 	// Process TV shows one at a time
 	if len(tvShows) > 0 {
-		c.logger.Info("Processing TV shows", slog.Int("total", len(tvShows)))
+		c.logger.Debug("Processing TV shows", slog.Int("total", len(tvShows)))
 		for i, tvShow := range tvShows {
 			// Log progress every 100 items
 			if i%100 == 0 {
-				c.logger.Info("Processing TV shows progress",
+				c.logger.Debug("Processing TV shows progress",
 					slog.Int("processed", i),
 					slog.Int("total", len(tvShows)),
 					slog.Float64("percent", float64(i)/float64(len(tvShows))*100))
@@ -597,14 +597,14 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				return fmt.Errorf("failed to add TV show association %d: %w", i, err)
 			}
 		}
-		c.logger.Info("Successfully processed TV shows", slog.Int("count", len(tvShows)))
+		c.logger.Debug("Successfully processed TV shows", slog.Int("count", len(tvShows)))
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
-	c.logger.Info("Successfully committed transaction")
+	c.logger.Debug("Successfully committed transaction")
 
 	c.logger.Info("Cache updated successfully",
 		slog.Int("movies", len(movies)),
