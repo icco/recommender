@@ -32,7 +32,7 @@ type errorData struct {
 // renderError renders an error page using the error template.
 // It takes a response writer, error message, and HTTP status code.
 func renderError(w http.ResponseWriter, message string, status int) {
-	tmpl, err := parseTemplates("templates/base.html", "templates/error.html")
+	tmpl, err := parseTemplates("base.html", "error.html")
 	if err != nil {
 		slog.Error("Failed to parse error template", slog.Any("error", err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -87,7 +87,7 @@ func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		renderTemplate(w, ctx, []string{"templates/base.html", "templates/home.html"}, rec)
+		renderTemplate(w, ctx, []string{"base.html", "home.html"}, rec)
 	}
 }
 
@@ -135,7 +135,7 @@ func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		renderTemplate(w, ctx, []string{"templates/base.html", "templates/home.html"}, rec)
+		renderTemplate(w, ctx, []string{"base.html", "home.html"}, rec)
 	}
 }
 
@@ -204,7 +204,7 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			TotalPages: int((total + int64(pageSize) - 1) / int64(pageSize)),
 		}
 
-		renderTemplate(w, ctx, []string{"templates/base.html", "templates/dates.html"}, data)
+		renderTemplate(w, ctx, []string{"base.html", "dates.html"}, data)
 	}
 }
 
