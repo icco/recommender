@@ -10,12 +10,10 @@ import (
 
 	"log/slog"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend/prompts"
 	"github.com/icco/recommender/models"
 	openai "github.com/sashabaranov/go-openai"
-	"google.golang.org/api/option"
 	"gorm.io/gorm"
 )
 
@@ -24,7 +22,6 @@ type Recommender struct {
 	plex   *plex.Client
 	logger *slog.Logger
 	openai *openai.Client
-	gemini *genai.Client
 	cache  map[string]*models.Recommendation
 }
 
@@ -43,18 +40,11 @@ type UnwatchedContent struct {
 func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, error) {
 	openaiClient := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
-	ctx := context.Background()
-	geminiClient, err := genai.NewClient(ctx, "recommender", "us-central1", option.WithAPIKey(os.Getenv("GEMINI_API_KEY")))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-
 	return &Recommender{
 		db:     db,
 		plex:   plex,
 		logger: logger,
 		openai: openaiClient,
-		gemini: geminiClient,
 		cache:  make(map[string]*models.Recommendation),
 	}, nil
 }
@@ -190,23 +180,13 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 	}
 	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
 
-	// Load model-specific prompt templates
+	// Load OpenAI prompt templates
 	openaiSystemTmpl, err := r.loadPromptTemplate("system_openai.txt")
 	if err != nil {
 		return err
 	}
 
 	openaiRecommendationTmpl, err := r.loadPromptTemplate("recommendation_openai.txt")
-	if err != nil {
-		return err
-	}
-
-	geminiSystemTmpl, err := r.loadPromptTemplate("system_gemini.txt")
-	if err != nil {
-		return err
-	}
-
-	geminiRecommendationTmpl, err := r.loadPromptTemplate("recommendation_gemini.txt")
 	if err != nil {
 		return err
 	}
@@ -233,17 +213,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 		return fmt.Errorf("failed to generate OpenAI recommendation prompt: %w", err)
 	}
 
-	// Generate Gemini prompts
-	var geminiSystemPrompt strings.Builder
-	if err := geminiSystemTmpl.Execute(&geminiSystemPrompt, nil); err != nil {
-		return fmt.Errorf("failed to generate Gemini system prompt: %w", err)
-	}
-
-	var geminiRecommendationPrompt strings.Builder
-	if err := geminiRecommendationTmpl.Execute(&geminiRecommendationPrompt, ctxData); err != nil {
-		return fmt.Errorf("failed to generate Gemini recommendation prompt: %w", err)
-	}
-
 	// Prepare unwatched content
 	unwatched := UnwatchedContent{
 		Movies:  unwatchedMovies,
@@ -251,68 +220,24 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, rec *models.R
 		TVShows: unwatchedTVShows,
 	}
 
-	// Generate recommendations from both OpenAI and Gemini
+	// Generate recommendations from OpenAI
 	openaiRecs, err := r.generateOpenAIRecommendations(ctx, openaiSystemPrompt.String(), openaiRecommendationPrompt.String(), unwatched)
 	if err != nil {
 		return fmt.Errorf("failed to get OpenAI recommendations: %w", err)
 	}
 
-	geminiRecs, err := r.generateGeminiRecommendations(ctx, geminiSystemPrompt.String(), geminiRecommendationPrompt.String(), unwatched)
-	if err != nil {
-		return fmt.Errorf("failed to get Gemini recommendations: %w", err)
-	}
+	// Use OpenAI recommendations directly
+	rec.Movies = openaiRecs.Movies
+	rec.Anime = openaiRecs.Anime
+	rec.TVShows = openaiRecs.TVShows
 
-	// Combine and deduplicate recommendations
-	allMovies := make(map[string]models.Movie)
-	allAnime := make(map[string]models.Anime)
-	allTVShows := make(map[string]models.TVShow)
-
-	// Add OpenAI recommendations
-	for _, m := range openaiRecs.Movies {
-		allMovies[m.Title] = m
-	}
-	for _, a := range openaiRecs.Anime {
-		allAnime[a.Title] = a
-	}
-	for _, t := range openaiRecs.TVShows {
-		allTVShows[t.Title] = t
-	}
-
-	// Add Gemini recommendations
-	for _, m := range geminiRecs.Movies {
-		allMovies[m.Title] = m
-	}
-	for _, a := range geminiRecs.Anime {
-		allAnime[a.Title] = a
-	}
-	for _, t := range geminiRecs.TVShows {
-		allTVShows[t.Title] = t
-	}
-
-	// Convert maps back to slices
-	rec.Movies = make([]models.Movie, 0, len(allMovies))
-	for _, m := range allMovies {
-		rec.Movies = append(rec.Movies, m)
-	}
-
-	rec.Anime = make([]models.Anime, 0, len(allAnime))
-	for _, a := range allAnime {
-		rec.Anime = append(rec.Anime, a)
-	}
-
-	rec.TVShows = make([]models.TVShow, 0, len(allTVShows))
-	for _, t := range allTVShows {
-		rec.TVShows = append(rec.TVShows, t)
-	}
-
-	r.logger.Debug("Successfully combined recommendations",
+	r.logger.Debug("Successfully generated recommendations",
 		slog.Int("movies_count", len(rec.Movies)),
 		slog.Int("anime_count", len(rec.Anime)),
 		slog.Int("tvshows_count", len(rec.TVShows)))
 
-	// Check if we found any recommendations
 	if len(rec.Movies) == 0 && len(rec.Anime) == 0 && len(rec.TVShows) == 0 {
-		return fmt.Errorf("no recommendations found from either model")
+		return fmt.Errorf("no recommendations found")
 	}
 
 	// Save the recommendation to the database
@@ -344,22 +269,6 @@ func (r *Recommender) generateOpenAIRecommendations(ctx context.Context, systemP
 
 	// Parse OpenAI response and match with our content
 	recommendations := resp.Choices[0].Message.Content
-	return &models.Recommendation{
-		Movies:  matchRecommendations(unwatched.Movies, recommendations, "Movies"),
-		Anime:   matchRecommendations(unwatched.Anime, recommendations, "Anime"),
-		TVShows: matchRecommendations(unwatched.TVShows, recommendations, "TV Shows"),
-	}, nil
-}
-
-func (r *Recommender) generateGeminiRecommendations(ctx context.Context, systemPrompt, userPrompt string, unwatched UnwatchedContent) (*models.Recommendation, error) {
-	model := r.gemini.GenerativeModel("gemini-pro")
-	resp, err := model.GenerateContent(ctx, genai.Text(systemPrompt+"\n\n"+userPrompt))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Gemini completion: %w", err)
-	}
-
-	// Parse Gemini response and match with our content
-	recommendations := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
 	return &models.Recommendation{
 		Movies:  matchRecommendations(unwatched.Movies, recommendations, "Movies"),
 		Anime:   matchRecommendations(unwatched.Anime, recommendations, "Anime"),

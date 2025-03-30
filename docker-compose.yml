@@ -11,9 +11,6 @@ services:
       - PLEX_URL=${PLEX_URL}
       - PLEX_TOKEN=${PLEX_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_PROJECT=${GEMINI_PROJECT:-recommender}
-      - GEMINI_LOCATION=${GEMINI_LOCATION:-us-central1}
       - DB_PATH=/data/recommender.db
       - PORT=${PORT:-8080}
     volumes:

@@ -67,7 +67,7 @@ recommender/
 
 ## Recommendation Logic
 
-This uses an ensemble of prompts to query OpenAI and Gemini to get recommendations.
+This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences.
 
 ## Running the Service
 
