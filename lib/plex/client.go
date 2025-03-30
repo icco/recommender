@@ -517,7 +517,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		tx.Rollback()
 		return fmt.Errorf("failed to save cache: %w", err)
 	}
-	c.logger.Debug("Successfully created cache entry", slog.Int("cache_id", int(uint64(cache.ID))))
+	c.logger.Debug("Successfully created cache entry", slog.Int("cache_id", int(cache.ID)))
 
 	// Process movies one at a time
 	if len(movies) > 0 {
