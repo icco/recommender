@@ -477,6 +477,17 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 	}()
 
+	// Ensure all tables exist first
+	if err := tx.AutoMigrate(
+		&models.PlexCache{},
+		&models.PlexMovie{},
+		&models.PlexAnime{},
+		&models.PlexTVShow{},
+	); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to ensure tables exist: %w", err)
+	}
+
 	// Clear existing cache entries and their associations
 	if err := tx.Exec("DELETE FROM plex_cache_movies").Error; err != nil {
 		tx.Rollback()
