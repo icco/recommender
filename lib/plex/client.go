@@ -495,51 +495,72 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		return fmt.Errorf("failed to clear existing cache: %w", err)
 	}
 
-	// Save movies
-	if len(movies) > 0 {
-		c.logger.Debug("Saving movies to database", slog.Int("count", len(movies)))
-		if err := tx.CreateInBatches(movies, 100).Error; err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to save movies: %w", err)
-		}
-		c.logger.Debug("Successfully saved movies")
-	}
-
-	// Save anime
-	if len(anime) > 0 {
-		c.logger.Debug("Saving anime to database", slog.Int("count", len(anime)))
-		if err := tx.CreateInBatches(anime, 100).Error; err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to save anime: %w", err)
-		}
-		c.logger.Debug("Successfully saved anime")
-	}
-
-	// Save TV shows
-	if len(tvShows) > 0 {
-		c.logger.Debug("Saving TV shows to database", slog.Int("count", len(tvShows)))
-		if err := tx.CreateInBatches(tvShows, 100).Error; err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to save TV shows: %w", err)
-		}
-		c.logger.Debug("Successfully saved TV shows")
-	}
-
 	// Create a new cache entry with associations
 	cache := &models.PlexCache{
 		UpdatedAt: time.Now(),
-		Movies:    movies,
-		Anime:     anime,
-		TVShows:   tvShows,
 	}
 
-	// Save the cache entry with associations
-	c.logger.Debug("Creating new cache entry with associations")
+	// Save the cache entry first
+	c.logger.Debug("Creating new cache entry")
 	if err := tx.Create(cache).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to save cache: %w", err)
 	}
 	c.logger.Debug("Successfully created cache entry", slog.Int("cache_id", int(cache.ID)))
+
+	// Add associations in batches
+	const batchSize = 100
+
+	// Add movies in batches
+	if len(movies) > 0 {
+		c.logger.Debug("Adding movie associations", slog.Int("total", len(movies)))
+		for i := 0; i < len(movies); i += batchSize {
+			end := i + batchSize
+			if end > len(movies) {
+				end = len(movies)
+			}
+			batch := movies[i:end]
+			if err := tx.Model(cache).Association("Movies").Append(batch); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to add movie associations batch %d-%d: %w", i, end, err)
+			}
+		}
+		c.logger.Debug("Successfully added movie associations")
+	}
+
+	// Add anime in batches
+	if len(anime) > 0 {
+		c.logger.Debug("Adding anime associations", slog.Int("total", len(anime)))
+		for i := 0; i < len(anime); i += batchSize {
+			end := i + batchSize
+			if end > len(anime) {
+				end = len(anime)
+			}
+			batch := anime[i:end]
+			if err := tx.Model(cache).Association("Anime").Append(batch); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to add anime associations batch %d-%d: %w", i, end, err)
+			}
+		}
+		c.logger.Debug("Successfully added anime associations")
+	}
+
+	// Add TV shows in batches
+	if len(tvShows) > 0 {
+		c.logger.Debug("Adding TV show associations", slog.Int("total", len(tvShows)))
+		for i := 0; i < len(tvShows); i += batchSize {
+			end := i + batchSize
+			if end > len(tvShows) {
+				end = len(tvShows)
+			}
+			batch := tvShows[i:end]
+			if err := tx.Model(cache).Association("TVShows").Append(batch); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to add TV show associations batch %d-%d: %w", i, end, err)
+			}
+		}
+		c.logger.Debug("Successfully added TV show associations")
+	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
