@@ -260,18 +260,81 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get movies: %w", err)
 	}
+	c.logger.Debug("Fetched movies from Plex", slog.Int("count", len(movies)))
 
 	anime, err := c.GetAllAnime(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
 		return fmt.Errorf("failed to get anime: %w", err)
 	}
+	c.logger.Debug("Fetched anime from Plex", slog.Int("count", len(anime)))
 
 	tvShows, err := c.GetAllTVShows(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
 		return fmt.Errorf("failed to get TV shows: %w", err)
 	}
+	c.logger.Debug("Fetched TV shows from Plex", slog.Int("count", len(tvShows)))
 
-	// Create a new cache entry
+	// Start a transaction to ensure all operations succeed or none do
+	tx := c.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return fmt.Errorf("failed to start transaction: %w", tx.Error)
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
+		}
+	}()
+
+	// Clear existing cache entries and their associations
+	if err := tx.Exec("DELETE FROM plex_cache_movies").Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to clear movie associations: %w", err)
+	}
+	if err := tx.Exec("DELETE FROM plex_cache_anime").Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to clear anime associations: %w", err)
+	}
+	if err := tx.Exec("DELETE FROM plex_cache_tvshows").Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to clear TV show associations: %w", err)
+	}
+	if err := tx.Where("1 = 1").Delete(&models.PlexCache{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to clear existing cache: %w", err)
+	}
+
+	// Save movies
+	if len(movies) > 0 {
+		c.logger.Debug("Saving movies to database", slog.Int("count", len(movies)))
+		if err := tx.CreateInBatches(movies, 100).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to save movies: %w", err)
+		}
+		c.logger.Debug("Successfully saved movies")
+	}
+
+	// Save anime
+	if len(anime) > 0 {
+		c.logger.Debug("Saving anime to database", slog.Int("count", len(anime)))
+		if err := tx.CreateInBatches(anime, 100).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to save anime: %w", err)
+		}
+		c.logger.Debug("Successfully saved anime")
+	}
+
+	// Save TV shows
+	if len(tvShows) > 0 {
+		c.logger.Debug("Saving TV shows to database", slog.Int("count", len(tvShows)))
+		if err := tx.CreateInBatches(tvShows, 100).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to save TV shows: %w", err)
+		}
+		c.logger.Debug("Successfully saved TV shows")
+	}
+
+	// Create a new cache entry with associations
 	cache := &models.PlexCache{
 		UpdatedAt: time.Now(),
 		Movies:    movies,
@@ -279,10 +342,19 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		TVShows:   tvShows,
 	}
 
-	// Save to database
-	if err := c.db.WithContext(ctx).Create(cache).Error; err != nil {
-		return fmt.Errorf("failed to save cache to database: %w", err)
+	// Save the cache entry with associations
+	c.logger.Debug("Creating new cache entry with associations")
+	if err := tx.Create(cache).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to save cache: %w", err)
 	}
+	c.logger.Debug("Successfully created cache entry", slog.Int("cache_id", int(cache.ID)))
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	c.logger.Debug("Successfully committed transaction")
 
 	c.logger.Info("Cache updated successfully",
 		slog.Int("movies", len(movies)),

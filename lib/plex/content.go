@@ -126,24 +126,35 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 
 	var tvShows []models.PlexTVShow
 	for _, item := range items.Object.MediaContainer.Metadata {
-		watched := false
-		if item.ViewCount != nil && *item.ViewCount > 0 {
-			watched = true
+		// Skip shows with the anime genre
+		isAnime := false
+		for _, genre := range item.Genre {
+			if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
+				isAnime = true
+				break
+			}
 		}
 
-		tvShow := models.PlexTVShow{
-			BaseMedia: models.BaseMedia{
-				Title:     item.Title,
-				Year:      getIntValue(item.Year),
-				Rating:    getFloatValue(item.Rating),
-				Genre:     getGenres(item.Genre),
-				PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-				Source:    "plex",
-			},
-			Seasons: getIntValue(item.ChildCount),
-			Watched: watched,
+		if !isAnime {
+			watched := false
+			if item.ViewCount != nil && *item.ViewCount > 0 {
+				watched = true
+			}
+
+			tvShow := models.PlexTVShow{
+				BaseMedia: models.BaseMedia{
+					Title:     item.Title,
+					Year:      getIntValue(item.Year),
+					Rating:    getFloatValue(item.Rating),
+					Genre:     getGenres(item.Genre),
+					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
+					Source:    "plex",
+				},
+				Seasons: getIntValue(item.ChildCount),
+				Watched: watched,
+			}
+			tvShows = append(tvShows, tvShow)
 		}
-		tvShows = append(tvShows, tvShow)
 	}
 
 	return tvShows, nil
