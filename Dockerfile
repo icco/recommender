@@ -3,6 +3,8 @@ FROM golang:1.24.1-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache gcc musl-dev git
+
 # Copy go mod and sum files
 COPY go.mod go.sum ./
 
