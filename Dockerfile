@@ -26,7 +26,11 @@ WORKDIR /app
 RUN apk add --no-cache gcc musl-dev git sqlite
 RUN adduser -D -u 1000 appuser && \
   mkdir -p /data && \
-  chown -R appuser:appuser /data
+  chown -R appuser:appuser /data && \
+  chown -R appuser:appuser /app && \
+  touch /data/recommender.db && \
+  chown appuser:appuser /data/recommender.db && \
+  chmod 777 /data/recommender.db
 
 # Copy the binary and templates from builder
 COPY --from=builder /app/recommender .
@@ -41,4 +45,4 @@ USER appuser
 EXPOSE 8080
 
 # Run the application
-CMD ["./recommender"] 
+CMD ["/app/recommender"]
