@@ -3,7 +3,7 @@ FROM golang:1.24.1-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcc musl-dev git
+RUN apk add --no-cache gcc musl-dev git sqlite
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
@@ -23,8 +23,8 @@ FROM alpine:latest
 WORKDIR /app
 
 # Install SQLite and create non-root user
-RUN apk add --no-cache sqlite && \
-  adduser -D -u 1000 appuser && \
+RUN apk add --no-cache gcc musl-dev git sqlite
+RUN adduser -D -u 1000 appuser && \
   mkdir -p /data && \
   chown -R appuser:appuser /data
 
