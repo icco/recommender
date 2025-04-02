@@ -11,12 +11,6 @@ Anime:
 TV Shows:
 - 3 unwatched shows matching preferences
 
-For each recommendation:
-1. Title and year
-2. Brief explanation of preference match
-3. Similar content reference
-4. Key appealing elements
-
 Available Content:
 {{.Content}}
 
@@ -26,4 +20,27 @@ User Preferences:
 Recent History:
 {{.PreviousRecommendations}}
 
-Format your response with clear section headers and bullet points. 
+Format your response as a JSON object with the following structure:
+{
+  "movies": [
+    {
+      "title": "exact title from available content",
+      "type": "funny|action_drama|rewatchable",
+      "explanation": "brief explanation of why this was chosen"
+    }
+  ],
+  "anime": [
+    {
+      "title": "exact title from available content",
+      "explanation": "brief explanation of why this was chosen"
+    }
+  ],
+  "tvshows": [
+    {
+      "title": "exact title from available content",
+      "explanation": "brief explanation of why this was chosen"
+    }
+  ]
+}
+
+Only include titles that exactly match those in the available content. Do not modify or approximate the titles. 

@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -217,47 +218,62 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				},
 			},
 			Temperature: 0.7,
+			ResponseFormat: &openai.ChatCompletionResponseFormat{
+				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			},
 		},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get OpenAI completion: %w", err)
 	}
 
-	// Parse OpenAI response and match with available content
+	// Parse OpenAI JSON response
+	type RecommendationItem struct {
+		Title       string `json:"title"`
+		Type        string `json:"type,omitempty"`
+		Explanation string `json:"explanation"`
+	}
+
+	type RecommendationResponse struct {
+		Movies  []RecommendationItem `json:"movies"`
+		Anime   []RecommendationItem `json:"anime"`
+		TVShows []RecommendationItem `json:"tvshows"`
+	}
+
+	var recResponse RecommendationResponse
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &recResponse); err != nil {
+		return fmt.Errorf("failed to parse OpenAI response: %w", err)
+	}
+
+	// Create a map of all available content for quick lookup
+	contentMap := make(map[string]models.Recommendation)
+	for _, content := range allContent {
+		contentMap[content.Title] = content
+	}
+
+	// Process recommendations
 	recommendations := make([]models.Recommendation, 0)
 	seenTitles := make(map[string]bool)
 
-	// Extract titles from OpenAI response
-	lines := strings.Split(resp.Choices[0].Message.Content, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Try to match the title from the line
-		for _, content := range allContent {
-			// Skip if we've already seen this title
-			if seenTitles[content.Title] {
+	// Helper function to process recommendation items
+	processItems := func(items []RecommendationItem, contentType string) {
+		for _, item := range items {
+			if seenTitles[item.Title] {
 				continue
 			}
 
-			// More precise title matching
-			lineLower := strings.ToLower(line)
-			titleLower := strings.ToLower(content.Title)
-
-			// Check for exact match or title surrounded by word boundaries
-			if lineLower == titleLower ||
-				strings.Contains(lineLower, " "+titleLower+" ") ||
-				strings.HasPrefix(lineLower, titleLower+" ") ||
-				strings.HasSuffix(lineLower, " "+titleLower) {
+			if content, exists := contentMap[item.Title]; exists {
 				content.Date = date
 				recommendations = append(recommendations, content)
-				seenTitles[content.Title] = true
-				break
+				seenTitles[item.Title] = true
 			}
 		}
 	}
+
+	// Process each type of recommendation
+	processItems(recResponse.Movies, "movie")
+	processItems(recResponse.Anime, "anime")
+	processItems(recResponse.TVShows, "tvshow")
 
 	// Enforce limits based on content type
 	typeCounts := make(map[string]int)
