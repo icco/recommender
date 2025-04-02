@@ -14,37 +14,49 @@ import (
 
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend/prompts"
+	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	openai "github.com/sashabaranov/go-openai"
 	"gorm.io/gorm"
 )
 
+// Recommender handles the generation and retrieval of content recommendations.
+// It uses OpenAI to generate recommendations based on unwatched content from Plex
+// and metadata from TMDb.
 type Recommender struct {
 	db     *gorm.DB
 	plex   *plex.Client
+	tmdb   *tmdb.Client
 	logger *slog.Logger
 	openai *openai.Client
 	cache  map[string]*models.Recommendation
 }
 
+// RecommendationContext contains the context used for generating recommendations.
+// It includes the available content, user preferences, and previous recommendations.
 type RecommendationContext struct {
 	Content                 string
 	Preferences             string
 	PreviousRecommendations string
 }
 
+// UnwatchedContent represents the unwatched content available for recommendations,
+// organized by content type (movies, anime, TV shows).
 type UnwatchedContent struct {
 	Movies  []models.Recommendation
 	Anime   []models.Recommendation
 	TVShows []models.Recommendation
 }
 
-func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, error) {
+// New creates a new Recommender instance with the provided dependencies.
+// It initializes the OpenAI client and sets up the recommendation cache.
+func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger) (*Recommender, error) {
 	openaiClient := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
 	return &Recommender{
 		db:     db,
 		plex:   plex,
+		tmdb:   tmdb,
 		logger: logger,
 		openai: openaiClient,
 		cache:  make(map[string]*models.Recommendation),
@@ -89,6 +101,8 @@ func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.T
 	return count > 0, nil
 }
 
+// loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
+// It returns a template that can be executed with the provided data.
 func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, error) {
 	content, err := prompts.FS.ReadFile(filename)
 	if err != nil {
@@ -103,15 +117,20 @@ func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, e
 	return tmpl, nil
 }
 
+// formatContent formats a slice of recommendations into a human-readable string.
+// Each item is formatted with its title, year, rating, genre, runtime, and TMDb ID.
 func (r *Recommender) formatContent(items []models.Recommendation) string {
 	var content strings.Builder
 	for _, item := range items {
-		content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s - Runtime: %d\n",
-			item.Title, item.Year, item.Rating, item.Genre, item.Runtime))
+		content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
+			item.Title, item.Year, item.Rating, item.Genre, item.Runtime, item.TMDbID))
 	}
 	return content.String()
 }
 
+// GenerateRecommendations generates new recommendations for the specified date.
+// It uses OpenAI to analyze unwatched content and previous recommendations,
+// then stores the generated recommendations in the database.
 func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Time) error {
 	r.logger.Debug("Starting recommendation generation")
 
@@ -158,6 +177,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Runtime:   movie.Runtime,
 			Source:    movie.Source,
 			MovieID:   &movie.ID,
+			TMDbID:    movie.TMDbID,
 		})
 	}
 
@@ -172,6 +192,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Runtime:   tvShow.Seasons,
 			Source:    tvShow.Source,
 			TVShowID:  &tvShow.ID,
+			TMDbID:    tvShow.TMDbID,
 		})
 	}
 
@@ -231,6 +252,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	type RecommendationItem struct {
 		Title       string `json:"title"`
 		Type        string `json:"type,omitempty"`
+		TMDbID      int    `json:"tmdb_id"`
 		Explanation string `json:"explanation"`
 	}
 
@@ -264,6 +286,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 			if content, exists := contentMap[item.Title]; exists {
 				content.Date = date
+				content.TMDbID = item.TMDbID
 				recommendations = append(recommendations, content)
 				seenTitles[item.Title] = true
 			}

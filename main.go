@@ -1,3 +1,6 @@
+// Package main implements a content recommendation service that integrates with Plex and TMDb.
+// It provides a web interface for viewing recommendations and handles background tasks
+// for generating new recommendations and updating content metadata.
 package main
 
 import (
@@ -13,12 +16,14 @@ import (
 	"github.com/icco/recommender/lib/db"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
+	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// JSONLogger is a custom logger middleware that logs in JSON format
+// JSONLogger is a custom middleware that logs HTTP requests in JSON format.
+// It captures request details including method, path, status code, and duration.
 func JSONLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -41,6 +46,8 @@ func JSONLogger(next http.Handler) http.Handler {
 	})
 }
 
+// main is the entry point of the application.
+// It sets up the environment, initializes clients and services, and starts the HTTP server.
 func main() {
 	// Set up logging
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -57,6 +64,12 @@ func main() {
 	plexToken := os.Getenv("PLEX_TOKEN")
 	if plexToken == "" {
 		slog.Error("PLEX_TOKEN environment variable is required")
+		os.Exit(1)
+	}
+
+	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
+	if tmdbAPIKey == "" {
+		slog.Error("TMDB_API_KEY environment variable is required")
 		os.Exit(1)
 	}
 
@@ -84,8 +97,11 @@ func main() {
 	// Set up Plex client
 	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB)
 
+	// Set up TMDb client
+	tmdbClient := tmdb.NewClient(tmdbAPIKey, slog.Default())
+
 	// Set up recommender
-	recommender, err := recommend.New(gormDB, plexClient, slog.Default())
+	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, slog.Default())
 	if err != nil {
 		slog.Error("Failed to create recommender", slog.Any("error", err))
 		os.Exit(1)

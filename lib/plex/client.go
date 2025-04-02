@@ -15,11 +15,8 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	MediaTypeMovie = "movie"
-	MediaTypeShow  = "show"
-)
-
+// Client represents a Plex API client that handles communication with a Plex server.
+// It provides methods for retrieving library information and media items.
 type Client struct {
 	api       *plexgo.PlexAPI
 	plexURL   string
@@ -28,6 +25,13 @@ type Client struct {
 	plexToken string
 }
 
+const (
+	contentTypeMovie = "movie"
+	contentTypeShow  = "show"
+)
+
+// NewClient creates a new Plex client with the provided configuration.
+// It initializes the Plex API client with the given URL and authentication token.
 func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
@@ -43,22 +47,23 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Cli
 	}
 }
 
-// GetAPI returns the underlying Plex API instance
+// GetAPI returns the underlying Plex API instance for direct access to Plex API methods.
 func (c *Client) GetAPI() *plexgo.PlexAPI {
 	return c.api
 }
 
-// GetURL returns the Plex server URL
+// GetURL returns the Plex server URL used by this client.
 func (c *Client) GetURL() string {
 	return c.plexURL
 }
 
-// GetLibrary returns the Library API
+// GetLibrary returns the Library API instance for accessing Plex library operations.
 func (c *Client) GetLibrary() *plexgo.Library {
 	return c.api.Library
 }
 
-// GetAllLibraries gets all libraries from Plex
+// GetAllLibraries retrieves all libraries from the Plex server.
+// It returns detailed information about each library, including its type, title, and configuration.
 func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrariesResponse, error) {
 	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
 
@@ -72,9 +77,9 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	}
 
 	// Log available libraries
-	var libraryInfo []map[string]interface{}
+	var libraryInfo []map[string]any
 	for _, lib := range resp.Object.MediaContainer.Directory {
-		libraryInfo = append(libraryInfo, map[string]interface{}{
+		libraryInfo = append(libraryInfo, map[string]any{
 			"key":      lib.Key,
 			"type":     lib.Type,
 			"title":    lib.Title,
@@ -88,7 +93,7 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	c.logger.Debug("Got libraries from Plex",
 		slog.Int("count", len(resp.Object.MediaContainer.Directory)),
 		slog.Any("libraries", libraryInfo),
-		slog.Any("media_container", map[string]interface{}{
+		slog.Any("media_container", map[string]any{
 			"title1":     resp.Object.MediaContainer.Title1,
 			"allow_sync": resp.Object.MediaContainer.AllowSync,
 		}))
@@ -116,7 +121,8 @@ type PlexItem struct {
 	ChildCount *int
 }
 
-// GetPlexItems gets items from a Plex library
+// GetPlexItems retrieves items from a specific Plex library.
+// It supports pagination and filtering for unwatched items only.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
 	// Convert library key to integer
 	sectionKey, err := strconv.Atoi(libraryKey)
@@ -144,9 +150,9 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 		if lib.Key == libraryKey {
 			librarySection = lib.Type
 			switch lib.Type {
-			case MediaTypeMovie:
+			case contentTypeMovie:
 				libraryType = operations.GetLibraryItemsQueryParamType(1)
-			case MediaTypeShow:
+			case contentTypeShow:
 				libraryType = operations.GetLibraryItemsQueryParamType(2)
 			case "artist":
 				libraryType = operations.GetLibraryItemsQueryParamType(8)
@@ -194,10 +200,10 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 			slog.Bool("allow_sync", resp.Object.MediaContainer.AllowSync),
 			slog.String("content", resp.Object.MediaContainer.Content),
 			slog.String("view_group", resp.Object.MediaContainer.ViewGroup),
-			slog.Any("metadata_fields", func() []map[string]interface{} {
-				var fields []map[string]interface{}
+			slog.Any("metadata_fields", func() []map[string]any {
+				var fields []map[string]any
 				for _, item := range resp.Object.MediaContainer.Metadata {
-					fields = append(fields, map[string]interface{}{
+					fields = append(fields, map[string]any{
 						"title":       item.Title,
 						"type":        item.Type,
 						"year":        item.Year,
@@ -252,11 +258,12 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 	return allItems, nil
 }
 
-// GetUnwatchedMovies retrieves unwatched movies from Plex.
+// GetUnwatchedMovies retrieves all unwatched movies from Plex libraries.
+// It converts the Plex items into Recommendation models for use in the recommendation system.
 func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var movies []models.Recommendation
 	for _, lib := range libraries {
-		if lib.Type != "movie" {
+		if lib.Type != contentTypeMovie {
 			continue
 		}
 
@@ -293,7 +300,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 
 			movies = append(movies, models.Recommendation{
 				Title:     item.Title,
-				Type:      "movie",
+				Type:      contentTypeMovie,
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -306,11 +313,12 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 	return movies, nil
 }
 
-// GetUnwatchedAnime retrieves unwatched anime from Plex.
+// GetUnwatchedAnime retrieves all unwatched anime from Plex libraries.
+// It identifies anime by checking for the "anime" genre and converts them into Recommendation models.
 func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var anime []models.Recommendation
 	for _, lib := range libraries {
-		if lib.Type != "show" {
+		if lib.Type != contentTypeShow {
 			continue
 		}
 
@@ -360,7 +368,7 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 
 			anime = append(anime, models.Recommendation{
 				Title:     item.Title,
-				Type:      "anime",
+				Type:      contentTypeShow,
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -373,11 +381,12 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 	return anime, nil
 }
 
-// GetUnwatchedTVShows retrieves unwatched TV shows from Plex.
+// GetUnwatchedTVShows retrieves all unwatched TV shows from Plex libraries.
+// It excludes anime shows and converts the items into Recommendation models.
 func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var shows []models.Recommendation
 	for _, lib := range libraries {
-		if lib.Type != "show" {
+		if lib.Type != contentTypeShow {
 			continue
 		}
 
@@ -427,7 +436,7 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 
 			shows = append(shows, models.Recommendation{
 				Title:     item.Title,
-				Type:      "tvshow",
+				Type:      contentTypeShow,
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -440,7 +449,8 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 	return shows, nil
 }
 
-// UpdateCache updates the Plex cache by fetching all libraries and their items
+// UpdateCache updates the Plex cache by fetching all libraries and their items.
+// It clears existing cache entries and populates them with the latest data from Plex.
 func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Starting cache update")
 
