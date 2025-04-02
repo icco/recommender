@@ -94,11 +94,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up Plex client
-	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB)
-
 	// Set up TMDb client
 	tmdbClient := tmdb.NewClient(tmdbAPIKey, slog.Default())
+
+	// Set up Plex client
+	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB, tmdbClient)
 
 	// Set up recommender
 	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, slog.Default())

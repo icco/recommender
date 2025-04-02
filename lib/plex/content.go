@@ -45,7 +45,11 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 
 			thumb := ""
 			if item.Thumb != nil {
-				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+				// Search for the movie in TMDB to get the poster URL
+				result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
+				if err == nil && len(result.Results) > 0 {
+					thumb = c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+				}
 			}
 
 			movies = append(movies, models.Recommendation{
@@ -112,7 +116,11 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 
 			thumb := ""
 			if item.Thumb != nil {
-				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+				// Search for the TV show in TMDB to get the poster URL
+				result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
+				if err == nil && len(result.Results) > 0 {
+					thumb = c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+				}
 			}
 
 			shows = append(shows, models.Recommendation{

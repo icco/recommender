@@ -11,6 +11,7 @@ import (
 
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/operations"
+	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,7 @@ type Client struct {
 	logger    *slog.Logger
 	db        *gorm.DB
 	plexToken string
+	tmdb      *tmdb.Client
 }
 
 const (
@@ -32,7 +34,7 @@ const (
 
 // NewClient creates a new Plex client with the provided configuration.
 // It initializes the Plex API client with the given URL and authentication token.
-func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Client {
+func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB, tmdbClient *tmdb.Client) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
@@ -44,6 +46,7 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Cli
 		logger:    logger,
 		db:        db,
 		plexToken: plexToken,
+		tmdb:      tmdbClient,
 	}
 }
 

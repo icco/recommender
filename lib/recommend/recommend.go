@@ -200,13 +200,22 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Convert movies and TV shows to recommendations for OpenAI
 	var allContent []models.Recommendation
 	for _, movie := range unwatchedMovies {
+		// Get TMDB poster URL if available
+		posterURL := movie.PosterURL
+		if movie.TMDbID > 0 {
+			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
+			if err == nil && len(result.Results) > 0 {
+				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
+			}
+		}
+
 		allContent = append(allContent, models.Recommendation{
 			Title:     movie.Title,
 			Type:      "movie",
 			Year:      movie.Year,
 			Rating:    movie.Rating,
 			Genre:     movie.Genre,
-			PosterURL: movie.PosterURL,
+			PosterURL: posterURL,
 			Runtime:   movie.Runtime,
 			Source:    movie.Source,
 			MovieID:   &movie.ID,
@@ -215,13 +224,22 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 
 	for _, tvShow := range unwatchedTVShows {
+		// Get TMDB poster URL if available
+		posterURL := tvShow.PosterURL
+		if tvShow.TMDbID > 0 {
+			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
+			if err == nil && len(result.Results) > 0 {
+				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
+			}
+		}
+
 		allContent = append(allContent, models.Recommendation{
 			Title:     tvShow.Title,
 			Type:      "tvshow",
 			Year:      tvShow.Year,
 			Rating:    tvShow.Rating,
 			Genre:     tvShow.Genre,
-			PosterURL: tvShow.PosterURL,
+			PosterURL: posterURL,
 			Runtime:   tvShow.Seasons,
 			Source:    tvShow.Source,
 			TVShowID:  &tvShow.ID,
