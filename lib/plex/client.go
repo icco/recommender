@@ -77,9 +77,9 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	}
 
 	// Log available libraries
-	var libraryInfo []map[string]interface{}
+	var libraryInfo []map[string]any
 	for _, lib := range resp.Object.MediaContainer.Directory {
-		libraryInfo = append(libraryInfo, map[string]interface{}{
+		libraryInfo = append(libraryInfo, map[string]any{
 			"key":      lib.Key,
 			"type":     lib.Type,
 			"title":    lib.Title,
@@ -93,23 +93,12 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	c.logger.Debug("Got libraries from Plex",
 		slog.Int("count", len(resp.Object.MediaContainer.Directory)),
 		slog.Any("libraries", libraryInfo),
-		slog.Any("media_container", map[string]interface{}{
+		slog.Any("media_container", map[string]any{
 			"title1":     resp.Object.MediaContainer.Title1,
 			"allow_sync": resp.Object.MediaContainer.AllowSync,
 		}))
 
 	return resp, nil
-}
-
-// getPlexLibraryKey is intentionally kept for future use.
-// It will be used to retrieve library keys based on type and title conditions.
-func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType string, titleCondition func(string) bool) (string, error) {
-	for _, lib := range libraries {
-		if lib.Type == libType && (titleCondition == nil || titleCondition(lib.Title)) {
-			return lib.Key, nil
-		}
-	}
-	return "", fmt.Errorf("no matching library found for type %s", libType)
 }
 
 // PlexItem represents a media item from Plex
@@ -211,10 +200,10 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 			slog.Bool("allow_sync", resp.Object.MediaContainer.AllowSync),
 			slog.String("content", resp.Object.MediaContainer.Content),
 			slog.String("view_group", resp.Object.MediaContainer.ViewGroup),
-			slog.Any("metadata_fields", func() []map[string]interface{} {
-				var fields []map[string]interface{}
+			slog.Any("metadata_fields", func() []map[string]any {
+				var fields []map[string]any
 				for _, item := range resp.Object.MediaContainer.Metadata {
-					fields = append(fields, map[string]interface{}{
+					fields = append(fields, map[string]any{
 						"title":       item.Title,
 						"type":        item.Type,
 						"year":        item.Year,
@@ -267,45 +256,6 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 	}
 
 	return allItems, nil
-}
-
-// getIntValue is intentionally kept for future use.
-// It provides a safe way to get integer values from pointers.
-func getIntValue(v *int) int {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-// getFloatValue is intentionally kept for future use.
-// It provides a safe way to get float values from pointers.
-func getFloatValue(v *float64) float64 {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-// getStringValue is intentionally kept for future use.
-// It provides a safe way to get string values from pointers.
-func getStringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
-}
-
-// getGenres is intentionally kept for future use.
-// It will be used to format genre information from Plex items.
-func getGenres(genres []operations.GetLibraryItemsGenre) string {
-	var genreStrings []string
-	for _, g := range genres {
-		if g.Tag != nil {
-			genreStrings = append(genreStrings, *g.Tag)
-		}
-	}
-	return strings.Join(genreStrings, ", ")
 }
 
 // GetUnwatchedMovies retrieves all unwatched movies from Plex libraries.

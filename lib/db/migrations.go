@@ -35,14 +35,35 @@ func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 		}
 	}
 
-	// Fix movie title index
-	if err := fixMovieTitleIndex(ctx, db, logger); err != nil {
-		return fmt.Errorf("failed to fix movie title index: %w", err)
+	// Drop movies title index if it exists
+	if err := dropMoviesTitleIndex(ctx, db, logger); err != nil {
+		return fmt.Errorf("failed to drop movies title index: %w", err)
 	}
 
 	// Recreate recommendations table
 	if err := recreateRecommendationsTable(ctx, db, logger); err != nil {
 		return fmt.Errorf("failed to recreate recommendations table: %w", err)
+	}
+
+	return nil
+}
+
+// dropMoviesTitleIndex drops the index on movie titles if it exists
+func dropMoviesTitleIndex(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+	// Check if index exists
+	var count int64
+	if err := db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_movies_title'").Scan(&count).Error; err != nil {
+		return fmt.Errorf("failed to check if index exists: %w", err)
+	}
+
+	if count > 0 {
+		logger.Info("Dropping index on movie titles")
+		if err := db.WithContext(ctx).Exec("DROP INDEX idx_movies_title").Error; err != nil {
+			return fmt.Errorf("failed to drop index: %w", err)
+		}
+		logger.Info("Successfully dropped index on movie titles")
+	} else {
+		logger.Debug("Index on movie titles does not exist, skipping drop")
 	}
 
 	return nil
@@ -65,31 +86,6 @@ func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string, logge
 	} else {
 		logger.Debug("Table does not exist, skipping drop", slog.String("table", tableName))
 	}
-
-	return nil
-}
-
-// fixMovieTitleIndex drops the unique index on movie titles and creates a regular index
-func fixMovieTitleIndex(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
-	// Check if unique index exists
-	var count int64
-	if err := db.WithContext(ctx).Raw("SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_movies_title'").Scan(&count).Error; err != nil {
-		return fmt.Errorf("failed to check if index exists: %w", err)
-	}
-
-	if count > 0 {
-		logger.Info("Dropping unique index on movie titles")
-		if err := db.WithContext(ctx).Exec("DROP INDEX idx_movies_title").Error; err != nil {
-			return fmt.Errorf("failed to drop unique index: %w", err)
-		}
-		logger.Info("Successfully dropped unique index")
-	}
-
-	// Create regular index if it doesn't exist
-	if err := db.WithContext(ctx).Exec("CREATE INDEX IF NOT EXISTS idx_movies_title ON movies(title)").Error; err != nil {
-		return fmt.Errorf("failed to create regular index: %w", err)
-	}
-	logger.Info("Successfully created regular index on movie titles")
 
 	return nil
 }

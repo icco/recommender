@@ -82,15 +82,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Run migrations to drop old tables
-	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
-		slog.Error("Failed to run migrations", slog.Any("error", err))
+	// Auto-migrate the schema first to ensure tables exist
+	if err := gormDB.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
+		slog.Error("Failed to migrate database", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	// Auto-migrate the schema
-	if err := gormDB.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
-		slog.Error("Failed to migrate database", slog.Any("error", err))
+	// Run migrations to drop old tables and fix indexes
+	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
+		slog.Error("Failed to run migrations", slog.Any("error", err))
 		os.Exit(1)
 	}
 
@@ -120,7 +120,7 @@ func main() {
 	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
-	r.Get("/dates", handlers.HandleDates(recommender))
+	r.Get("/date", handlers.HandleDates(recommender))
 	r.Get("/cron/recommend", handlers.HandleCron(recommender))
 	r.Get("/cron/cache", handlers.HandleCache(plexClient))
 
@@ -130,17 +130,16 @@ func main() {
 		port = "8080"
 	}
 
-	srv := &http.Server{
+	slog.Info("Starting server", slog.String("port", port))
+	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", port),
 		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
-
-	slog.Info("Starting server", "port", port)
-	if err := srv.ListenAndServe(); err != nil {
-		slog.Error("Server failed", "error", err)
+	if err := server.ListenAndServe(); err != nil {
+		slog.Error("Server error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }
