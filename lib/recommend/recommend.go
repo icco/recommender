@@ -119,13 +119,28 @@ func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, e
 
 // formatContent formats a slice of recommendations into a human-readable string.
 // Each item is formatted with its title, year, rating, genre, runtime, and TMDb ID.
+// It limits the number of items to prevent token limit issues.
 func (r *Recommender) formatContent(items []models.Recommendation) string {
 	var content strings.Builder
+	// Limit to 50 items per type to prevent token limit issues
+	limit := 50
+	if len(items) > limit {
+		items = items[:limit]
+	}
 	for _, item := range items {
 		content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
 			item.Title, item.Year, item.Rating, item.Genre, item.Runtime, item.TMDbID))
 	}
 	return content.String()
+}
+
+// limitPreviousRecommendations limits the number of previous recommendations to prevent token limit issues
+func (r *Recommender) limitPreviousRecommendations(recs []models.Recommendation) []models.Recommendation {
+	// Only keep the last 10 recommendations
+	if len(recs) > 10 {
+		return recs[len(recs)-10:]
+	}
+	return recs
 }
 
 // GenerateRecommendations generates new recommendations for the specified date.
@@ -163,6 +178,9 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("failed to get previous recommendations: %w", err)
 	}
+
+	// Limit previous recommendations
+	prevRecs = r.limitPreviousRecommendations(prevRecs)
 
 	// Convert movies and TV shows to recommendations for OpenAI
 	var allContent []models.Recommendation
