@@ -286,3 +286,23 @@ func HandleCache(p *plex.Client) http.HandlerFunc {
 		}
 	}
 }
+
+// HandleStats serves statistics about the recommendations database.
+// It takes a recommender instance and returns an HTTP handler.
+func HandleStats(r *recommend.Recommender) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+		defer cancel()
+
+		stats, err := r.GetStats(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to get stats", slog.Any("error", err))
+			renderError(w, "We couldn't load the statistics. Please try again later.", http.StatusInternalServerError)
+			return
+		}
+
+		if !renderTemplate(w, ctx, []string{"base.html", "stats.html"}, stats) {
+			return
+		}
+	}
+}

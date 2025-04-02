@@ -20,6 +20,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// StatsData represents statistics about the recommendations database.
+type StatsData struct {
+	TotalRecommendations        int64
+	TotalMovies                 int64
+	TotalAnime                  int64
+	TotalTVShows                int64
+	FirstDate                   time.Time
+	LastDate                    time.Time
+	AverageDailyRecommendations float64
+	GenreDistribution           []struct {
+		Genre string
+		Count int64
+	}
+}
+
 // Recommender handles the generation and retrieval of content recommendations.
 // It uses OpenAI to generate recommendations based on unwatched content from Plex
 // and metadata from TMDb.
@@ -360,4 +375,80 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 
 	return nil
+}
+
+// GetStats retrieves statistics about the recommendations database.
+// It returns counts of recommendations by type, date range, and genre distribution.
+func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
+	var stats StatsData
+
+	// Get total recommendations
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Count(&stats.TotalRecommendations).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total recommendations: %w", err)
+	}
+
+	// Get counts by type
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "movie").Count(&stats.TotalMovies).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total movies: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "anime").Count(&stats.TotalAnime).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total anime: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "tvshow").Count(&stats.TotalTVShows).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total TV shows: %w", err)
+	}
+
+	// Get date range
+	var firstDate, lastDate time.Time
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Order("date ASC").Limit(1).Pluck("date", &firstDate).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to get first date: %w", err)
+		}
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Order("date DESC").Limit(1).Pluck("date", &lastDate).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to get last date: %w", err)
+		}
+	}
+	stats.FirstDate = firstDate
+	stats.LastDate = lastDate
+
+	// Calculate average daily recommendations
+	if !firstDate.IsZero() && !lastDate.IsZero() {
+		days := lastDate.Sub(firstDate).Hours() / 24
+		if days > 0 {
+			stats.AverageDailyRecommendations = float64(stats.TotalRecommendations) / days
+		}
+	}
+
+	// Get genre distribution
+	type genreCount struct {
+		Genre string
+		Count int64
+	}
+	var genreCounts []genreCount
+	if err := r.db.WithContext(ctx).
+		Model(&models.Recommendation{}).
+		Select("genre, count(*) as count").
+		Group("genre").
+		Order("count DESC").
+		Find(&genreCounts).Error; err != nil {
+		return nil, fmt.Errorf("failed to get genre distribution: %w", err)
+	}
+
+	stats.GenreDistribution = make([]struct {
+		Genre string
+		Count int64
+	}, len(genreCounts))
+	for i, gc := range genreCounts {
+		stats.GenreDistribution[i] = struct {
+			Genre string
+			Count int64
+		}{
+			Genre: gc.Genre,
+			Count: gc.Count,
+		}
+	}
+
+	return &stats, nil
 }

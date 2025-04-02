@@ -1,0 +1,59 @@
+{{define "content"}}
+<div class="container mx-auto px-4 py-8">
+  <h1 class="text-3xl font-bold mb-8">Database Statistics</h1>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- Total Recommendations -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-2">Total Recommendations</h2>
+      <p class="text-3xl font-bold text-blue-600">{{.TotalRecommendations}}</p>
+    </div>
+
+    <!-- Total Movies -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-2">Total Movies</h2>
+      <p class="text-3xl font-bold text-green-600">{{.TotalMovies}}</p>
+    </div>
+
+    <!-- Total Anime -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-2">Total Anime</h2>
+      <p class="text-3xl font-bold text-purple-600">{{.TotalAnime}}</p>
+    </div>
+
+    <!-- Total TV Shows -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-2">Total TV Shows</h2>
+      <p class="text-3xl font-bold text-orange-600">{{.TotalTVShows}}</p>
+    </div>
+
+    <!-- Date Range -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-2">Date Range</h2>
+      <p class="text-gray-600">From: {{.FirstDate.Format "January 2, 2006"}}</p>
+      <p class="text-gray-600">To: {{.LastDate.Format "January 2, 2006"}}</p>
+    </div>
+
+    <!-- Average Daily Recommendations -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <h2 class="text-xl font-semibold mb-2">Average Daily Recommendations</h2>
+      <p class="text-3xl font-bold text-indigo-600">{{.AverageDailyRecommendations}}</p>
+    </div>
+  </div>
+
+  <!-- Genre Distribution -->
+  <div class="mt-8">
+    <h2 class="text-2xl font-semibold mb-4">Genre Distribution</h2>
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {{range .GenreDistribution}}
+        <div class="flex justify-between items-center">
+          <span class="text-gray-600">{{.Genre}}</span>
+          <span class="font-semibold">{{.Count}}</span>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
