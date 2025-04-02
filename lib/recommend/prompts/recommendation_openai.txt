@@ -26,7 +26,7 @@ Format your response as a JSON object with the following structure:
     {
       "title": "exact title from available content",
       "type": "funny|action_drama|rewatchable",
-      "tmdb_id": "TMDb ID from available content",
+      "tmdb_id": 12345,
       "explanation": "brief explanation of why this was chosen"
     }
   ],
@@ -39,7 +39,7 @@ Format your response as a JSON object with the following structure:
   "tvshows": [
     {
       "title": "exact title from available content",
-      "tmdb_id": "TMDb ID from available content",
+      "tmdb_id": 67890,
       "explanation": "brief explanation of why this was chosen"
     }
   ]
