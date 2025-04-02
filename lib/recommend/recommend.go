@@ -225,6 +225,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Parse OpenAI response and match with available content
 	recommendations := make([]models.Recommendation, 0)
+	seenTitles := make(map[string]bool)
 
 	// Extract titles from OpenAI response
 	lines := strings.Split(resp.Choices[0].Message.Content, "\n")
@@ -236,17 +237,55 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 		// Try to match the title from the line
 		for _, content := range allContent {
-			if strings.Contains(strings.ToLower(line), strings.ToLower(content.Title)) {
+			// Skip if we've already seen this title
+			if seenTitles[content.Title] {
+				continue
+			}
+
+			// More precise title matching
+			lineLower := strings.ToLower(line)
+			titleLower := strings.ToLower(content.Title)
+
+			// Check for exact match or title surrounded by word boundaries
+			if lineLower == titleLower ||
+				strings.Contains(lineLower, " "+titleLower+" ") ||
+				strings.HasPrefix(lineLower, titleLower+" ") ||
+				strings.HasSuffix(lineLower, " "+titleLower) {
 				content.Date = date
 				recommendations = append(recommendations, content)
+				seenTitles[content.Title] = true
 				break
+			}
+		}
+	}
+
+	// Enforce limits based on content type
+	typeCounts := make(map[string]int)
+	filteredRecommendations := make([]models.Recommendation, 0)
+
+	for _, rec := range recommendations {
+		switch rec.Type {
+		case "movie":
+			if typeCounts["movie"] < 3 { // 1 funny + 1 action/drama + 1 rewatchable
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["movie"]++
+			}
+		case "anime":
+			if typeCounts["anime"] < 3 {
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["anime"]++
+			}
+		case "tvshow":
+			if typeCounts["tvshow"] < 3 {
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["tvshow"]++
 			}
 		}
 	}
 
 	// Save recommendations to database in a transaction
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, rec := range recommendations {
+		for _, rec := range filteredRecommendations {
 			if err := tx.Create(&rec).Error; err != nil {
 				return fmt.Errorf("failed to save recommendation: %w", err)
 			}
@@ -257,9 +296,9 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 
 	r.logger.Debug("Successfully generated recommendations",
-		slog.Int("total_count", len(recommendations)))
+		slog.Int("total_count", len(filteredRecommendations)))
 
-	if len(recommendations) == 0 {
+	if len(filteredRecommendations) == 0 {
 		return fmt.Errorf("no recommendations found")
 	}
 

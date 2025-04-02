@@ -1,53 +1,41 @@
-<!DOCTYPE html>
-<html lang="en">
+{{define "content"}}
+<div class="container mx-auto px-4 py-8">
+  <h1 class="text-3xl font-bold mb-8">Past Recommendations</h1>
 
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Past Recommendations</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  </head>
-
-  <body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8">
-      <h1 class="text-3xl font-bold mb-8">Past Recommendations</h1>
-
-      <!-- Dates List -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <div class="space-y-4">
-          {{range .Dates}}
-          <div class="border-b pb-4 last:border-b-0">
-            <a href="/date/{{.Format "2006-01-02"}}" class="text-lg text-blue-600 hover:text-blue-800">
-              {{.Format "January 2, 2006"}}
-            </a>
-          </div>
-          {{end}}
-        </div>
-
-        <!-- Pagination -->
-        {{if gt .TotalPages 1}}
-        <div class="mt-8 flex justify-center space-x-4">
-          {{if gt .Page 1}}
-          <a href="?page={{subtract .Page 1}}&size={{.PageSize}}"
-            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Previous
-          </a>
-          {{end}}
-
-          <span class="px-4 py-2">
-            Page {{.Page}} of {{.TotalPages}}
-          </span>
-
-          {{if lt .Page .TotalPages}}
-          <a href="?page={{add .Page 1}}&size={{.PageSize}}"
-            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Next
-          </a>
-          {{end}}
-        </div>
-        {{end}}
+  <!-- Dates List -->
+  <div class="bg-white rounded-lg shadow-md p-6">
+    <div class="space-y-4">
+      {{range .Dates}}
+      <div class="border-b pb-4 last:border-b-0">
+        <a href="/date/{{.Format "2006-01-02"}}" class="text-lg text-blue-600 hover:text-blue-800">
+          {{.Format "January 2, 2006"}}
+        </a>
       </div>
+      {{end}}
     </div>
-  </body>
 
-</html>
+    <!-- Pagination -->
+    {{if gt .TotalPages 1}}
+    <div class="mt-8 flex justify-center space-x-4">
+      {{if gt .Page 1}}
+      <a href="?page={{subtract .Page 1}}&size={{.PageSize}}"
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+        Previous
+      </a>
+      {{end}}
+
+      <span class="px-4 py-2">
+        Page {{.Page}} of {{.TotalPages}}
+      </span>
+
+      {{if lt .Page .TotalPages}}
+      <a href="?page={{add .Page 1}}&size={{.PageSize}}"
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+        Next
+      </a>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
 )
 
