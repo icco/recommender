@@ -105,8 +105,8 @@ func main() {
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
 	r.Get("/dates", handlers.HandleDates(recommender))
-	r.Get("/cron", handlers.HandleCron(recommender))
-	r.Get("/cache", handlers.HandleCache(plexClient))
+	r.Get("/cron/recommend", handlers.HandleCron(recommender))
+	r.Get("/cron/cache", handlers.HandleCache(plexClient))
 
 	// Start server
 	port := os.Getenv("PORT")
