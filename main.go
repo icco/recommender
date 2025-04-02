@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/icco/recommender/handlers"
+	"github.com/icco/recommender/lib/db"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/models"
@@ -39,7 +40,7 @@ func main() {
 	}
 
 	// Set up database
-	db, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
+	gormDB, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {
@@ -47,14 +48,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Run migrations to drop old tables
+	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
+		slog.Error("Failed to run migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	// Auto-migrate the schema
-	if err := db.AutoMigrate(&models.Recommendation{}); err != nil {
+	if err := gormDB.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
 		slog.Error("Failed to migrate database", slog.Any("error", err))
 		os.Exit(1)
 	}
 
 	// Set up Plex client
-	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), db)
+	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB)
 
 	// Test Plex connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -66,7 +73,7 @@ func main() {
 	}
 
 	// Set up recommender
-	recommender, err := recommend.New(db, plexClient, slog.Default())
+	recommender, err := recommend.New(gormDB, plexClient, slog.Default())
 	if err != nil {
 		slog.Error("Failed to create recommender", slog.Any("error", err))
 		os.Exit(1)

@@ -527,16 +527,20 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 	}()
 
-	// Ensure the Recommendation table exists
-	if err := tx.WithContext(ctx).AutoMigrate(&models.Recommendation{}); err != nil {
+	// Ensure the tables exist
+	if err := tx.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}); err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed to ensure table exists: %w", err)
+		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
 	// Clear existing cache entries
-	if err := tx.WithContext(ctx).Where("source = ?", "plex").Delete(&models.Recommendation{}).Error; err != nil {
+	if err := tx.WithContext(ctx).Where("source = ?", "plex").Delete(&models.Movie{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed to clear existing recommendations: %w", err)
+		return fmt.Errorf("failed to clear existing movies: %w", err)
+	}
+	if err := tx.WithContext(ctx).Where("source = ?", "plex").Delete(&models.TVShow{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to clear existing TV shows: %w", err)
 	}
 
 	// Process movies one at a time
@@ -551,8 +555,19 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 					slog.Float64("percent", float64(i)/float64(len(movies))*100))
 			}
 
+			// Convert to Movie model
+			dbMovie := models.Movie{
+				Title:     movie.Title,
+				Year:      movie.Year,
+				Rating:    movie.Rating,
+				Genre:     movie.Genre,
+				PosterURL: movie.PosterURL,
+				Runtime:   movie.Runtime,
+				Source:    movie.Source,
+			}
+
 			// Save the movie
-			if err := tx.WithContext(ctx).Create(&movie).Error; err != nil {
+			if err := tx.WithContext(ctx).Create(&dbMovie).Error; err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to save movie %d: %w", i, err)
 			}
@@ -572,8 +587,19 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 					slog.Float64("percent", float64(i)/float64(len(tvShows))*100))
 			}
 
+			// Convert to TVShow model
+			dbTVShow := models.TVShow{
+				Title:     tvShow.Title,
+				Year:      tvShow.Year,
+				Rating:    tvShow.Rating,
+				Genre:     tvShow.Genre,
+				PosterURL: tvShow.PosterURL,
+				Seasons:   tvShow.Runtime, // Runtime field contains seasons for TV shows
+				Source:    tvShow.Source,
+			}
+
 			// Save the TV show
-			if err := tx.WithContext(ctx).Create(&tvShow).Error; err != nil {
+			if err := tx.WithContext(ctx).Create(&dbTVShow).Error; err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to save TV show %d: %w", i, err)
 			}

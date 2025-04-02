@@ -124,30 +124,15 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return nil
 	}
 
-	// Get Plex libraries
-	res, err := r.plex.GetAPI().Library.GetAllLibraries(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get libraries: %w", err)
-	}
-
-	// Get unwatched content from Plex
-	r.logger.Debug("Fetching unwatched movies")
-	unwatchedMovies, err := r.plex.GetUnwatchedMovies(ctx, res.Object.MediaContainer.Directory)
-	if err != nil {
+	// Get unwatched content from database
+	var unwatchedMovies []models.Movie
+	if err := r.db.WithContext(ctx).Find(&unwatchedMovies).Error; err != nil {
 		return fmt.Errorf("failed to get unwatched movies: %w", err)
 	}
 	r.logger.Debug("Found unwatched movies", slog.Int("count", len(unwatchedMovies)))
 
-	r.logger.Debug("Fetching unwatched anime")
-	unwatchedAnime, err := r.plex.GetUnwatchedAnime(ctx, res.Object.MediaContainer.Directory)
-	if err != nil {
-		return fmt.Errorf("failed to get unwatched anime: %w", err)
-	}
-	r.logger.Debug("Found unwatched anime", slog.Int("count", len(unwatchedAnime)))
-
-	r.logger.Debug("Fetching unwatched TV shows")
-	unwatchedTVShows, err := r.plex.GetUnwatchedTVShows(ctx, res.Object.MediaContainer.Directory)
-	if err != nil {
+	var unwatchedTVShows []models.TVShow
+	if err := r.db.WithContext(ctx).Find(&unwatchedTVShows).Error; err != nil {
 		return fmt.Errorf("failed to get unwatched TV shows: %w", err)
 	}
 	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
@@ -159,9 +144,39 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return fmt.Errorf("failed to get previous recommendations: %w", err)
 	}
 
+	// Convert movies and TV shows to recommendations for OpenAI
+	var allContent []models.Recommendation
+	for _, movie := range unwatchedMovies {
+		allContent = append(allContent, models.Recommendation{
+			Title:     movie.Title,
+			Type:      "movie",
+			Year:      movie.Year,
+			Rating:    movie.Rating,
+			Genre:     movie.Genre,
+			PosterURL: movie.PosterURL,
+			Runtime:   movie.Runtime,
+			Source:    movie.Source,
+			MovieID:   &movie.ID,
+		})
+	}
+
+	for _, tvShow := range unwatchedTVShows {
+		allContent = append(allContent, models.Recommendation{
+			Title:     tvShow.Title,
+			Type:      "tvshow",
+			Year:      tvShow.Year,
+			Rating:    tvShow.Rating,
+			Genre:     tvShow.Genre,
+			PosterURL: tvShow.PosterURL,
+			Runtime:   tvShow.Seasons,
+			Source:    tvShow.Source,
+			TVShowID:  &tvShow.ID,
+		})
+	}
+
 	// Prepare content for OpenAI
 	content := RecommendationContext{
-		Content: r.formatContent(append(append(unwatchedMovies, unwatchedAnime...), unwatchedTVShows...)),
+		Content: r.formatContent(allContent),
 		Preferences: "User enjoys a mix of genres including action, drama, comedy, and sci-fi. " +
 			"Prefers content with high ratings (above 7.5) and appreciates both popular and lesser-known titles.",
 		PreviousRecommendations: r.formatContent(prevRecs),
@@ -210,7 +225,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Parse OpenAI response and match with available content
 	recommendations := make([]models.Recommendation, 0)
-	allContent := append(append(unwatchedMovies, unwatchedAnime...), unwatchedTVShows...)
 
 	// Extract titles from OpenAI response
 	lines := strings.Split(resp.Choices[0].Message.Content, "\n")
