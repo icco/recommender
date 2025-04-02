@@ -104,7 +104,7 @@ func main() {
 	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
-	r.Get("/dates", handlers.HandleDates(recommender))
+	r.Get("/date", handlers.HandleDates(recommender))
 	r.Get("/cron/recommend", handlers.HandleCron(recommender))
 	r.Get("/cron/cache", handlers.HandleCache(plexClient))
 
