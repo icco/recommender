@@ -48,6 +48,7 @@ type Recommendation struct {
 	Source    string    // Source of the content (e.g., "plex", "anilist")
 	MovieID   *uint     // Reference to Movie if Type is "movie"
 	TVShowID  *uint     // Reference to TVShow if Type is "tvshow"
+	TMDbID    int       // The Movie Database ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

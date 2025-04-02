@@ -109,8 +109,8 @@ func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, e
 func (r *Recommender) formatContent(items []models.Recommendation) string {
 	var content strings.Builder
 	for _, item := range items {
-		content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s - Runtime: %d\n",
-			item.Title, item.Year, item.Rating, item.Genre, item.Runtime))
+		content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
+			item.Title, item.Year, item.Rating, item.Genre, item.Runtime, item.TMDbID))
 	}
 	return content.String()
 }
@@ -161,6 +161,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Runtime:   movie.Runtime,
 			Source:    movie.Source,
 			MovieID:   &movie.ID,
+			TMDbID:    movie.TMDbID,
 		})
 	}
 
@@ -175,6 +176,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Runtime:   tvShow.Seasons,
 			Source:    tvShow.Source,
 			TVShowID:  &tvShow.ID,
+			TMDbID:    tvShow.TMDbID,
 		})
 	}
 
@@ -234,6 +236,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	type RecommendationItem struct {
 		Title       string `json:"title"`
 		Type        string `json:"type,omitempty"`
+		TMDbID      int    `json:"tmdb_id"`
 		Explanation string `json:"explanation"`
 	}
 
@@ -267,6 +270,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 			if content, exists := contentMap[item.Title]; exists {
 				content.Date = date
+				content.TMDbID = item.TMDbID
 				recommendations = append(recommendations, content)
 				seenTitles[item.Title] = true
 			}

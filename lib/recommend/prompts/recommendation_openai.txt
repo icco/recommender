@@ -26,6 +26,7 @@ Format your response as a JSON object with the following structure:
     {
       "title": "exact title from available content",
       "type": "funny|action_drama|rewatchable",
+      "tmdb_id": "TMDb ID from available content",
       "explanation": "brief explanation of why this was chosen"
     }
   ],
@@ -38,9 +39,10 @@ Format your response as a JSON object with the following structure:
   "tvshows": [
     {
       "title": "exact title from available content",
+      "tmdb_id": "TMDb ID from available content",
       "explanation": "brief explanation of why this was chosen"
     }
   ]
 }
 
-Only include titles that exactly match those in the available content. Do not modify or approximate the titles. 
+Only include titles that exactly match those in the available content. Do not modify or approximate the titles. Include the TMDb ID for movies and TV shows if available in the content. 
