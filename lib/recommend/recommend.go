@@ -15,11 +15,25 @@ import (
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend/prompts"
 	"github.com/icco/recommender/lib/tmdb"
-	"github.com/icco/recommender/lib/types"
 	"github.com/icco/recommender/models"
 	openai "github.com/sashabaranov/go-openai"
 	"gorm.io/gorm"
 )
+
+// StatsData represents statistics about the recommendations database.
+type StatsData struct {
+	TotalRecommendations        int64
+	TotalMovies                 int64
+	TotalAnime                  int64
+	TotalTVShows                int64
+	FirstDate                   time.Time
+	LastDate                    time.Time
+	AverageDailyRecommendations float64
+	GenreDistribution           []struct {
+		Genre string
+		Count int64
+	}
+}
 
 // Recommender handles the generation and retrieval of content recommendations.
 // It uses OpenAI to generate recommendations based on unwatched content from Plex
@@ -365,8 +379,8 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 // GetStats retrieves statistics about the recommendations database.
 // It returns counts of recommendations by type, date range, and genre distribution.
-func (r *Recommender) GetStats(ctx context.Context) (*types.StatsData, error) {
-	var stats types.StatsData
+func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
+	var stats StatsData
 
 	// Get total recommendations
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Count(&stats.TotalRecommendations).Error; err != nil {
