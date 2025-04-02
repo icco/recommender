@@ -69,15 +69,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Run migrations to drop old tables
-	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
-		slog.Error("Failed to run migrations", slog.Any("error", err))
+	// Auto-migrate the schema first to ensure tables exist
+	if err := gormDB.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
+		slog.Error("Failed to migrate database", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	// Auto-migrate the schema
-	if err := gormDB.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
-		slog.Error("Failed to migrate database", slog.Any("error", err))
+	// Run migrations to drop old tables and fix indexes
+	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
+		slog.Error("Failed to run migrations", slog.Any("error", err))
 		os.Exit(1)
 	}
 
