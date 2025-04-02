@@ -65,21 +65,21 @@ func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
 
-		today := time.Now().Format("2006-01-02")
+		today := time.Now().Truncate(24 * time.Hour)
 
-		var rec models.Recommendation
-		result := db.WithContext(ctx).Where("date = ?", today).First(&rec)
+		var recommendations []models.Recommendation
+		result := db.WithContext(ctx).Where("date = ?", today).Find(&recommendations)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				renderError(w, "No recommendations available for today. Please check back later or visit the Past Recommendations page.", http.StatusNotFound)
 			} else {
-				slog.ErrorContext(ctx, "Failed to get today's recommendation", slog.Any("error", result.Error))
+				slog.ErrorContext(ctx, "Failed to get today's recommendations", slog.Any("error", result.Error))
 				renderError(w, "We couldn't find today's recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
 		}
 
-		renderTemplate(w, ctx, []string{"base.html", "home.html"}, rec)
+		renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations)
 	}
 }
 
@@ -112,14 +112,14 @@ func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		var rec models.Recommendation
-		result := db.WithContext(ctx).Where("date = ?", parsedDate).First(&rec)
+		var recommendations []models.Recommendation
+		result := db.WithContext(ctx).Where("date = ?", parsedDate).Find(&recommendations)
 		if result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				slog.InfoContext(ctx, "No recommendation found for date", slog.String("date", date))
+				slog.InfoContext(ctx, "No recommendations found for date", slog.String("date", date))
 				renderError(w, "We couldn't find recommendations for this date.", http.StatusNotFound)
 			} else {
-				slog.ErrorContext(ctx, "Database error while fetching recommendation",
+				slog.ErrorContext(ctx, "Database error while fetching recommendations",
 					slog.String("date", date),
 					slog.Any("error", result.Error))
 				renderError(w, "We encountered an error while fetching recommendations. Please try again later.", http.StatusInternalServerError)
@@ -127,7 +127,7 @@ func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		renderTemplate(w, ctx, []string{"base.html", "home.html"}, rec)
+		renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations)
 	}
 }
 
@@ -215,21 +215,21 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 		var count int64
 		if err := db.WithContext(req.Context()).Model(&models.Recommendation{}).Where("date = ?", today).Count(&count).Error; err != nil {
-			slog.ErrorContext(req.Context(), "Failed to check existing recommendation",
+			slog.ErrorContext(req.Context(), "Failed to check existing recommendations",
 				slog.Any("error", err),
 				slog.Time("date", today),
 			)
-			http.Error(w, `{"error": "Failed to check existing recommendation", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
+			http.Error(w, `{"error": "Failed to check existing recommendations", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
 			return
 		}
 
 		if count > 0 {
-			slog.Info("Recommendation already exists for today",
+			slog.Info("Recommendations already exist for today",
 				slog.Time("date", today),
 				slog.Int64("count", count),
 			)
 			w.Header().Set("Content-Type", "application/json")
-			if _, err := fmt.Fprintf(w, `{"message": "Recommendation already exists for %s", "timestamp": "%s"}`,
+			if _, err := fmt.Fprintf(w, `{"message": "Recommendations already exist for %s", "timestamp": "%s"}`,
 				today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
 				slog.Error("Failed to write response", slog.Any("error", err))
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -246,32 +246,16 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 				slog.Time("date", today),
 				slog.Duration("timeout", 5*time.Minute),
 			)
-			rec := &models.Recommendation{Date: today}
-
-			slog.Debug("Initializing recommendation generation",
-				slog.Time("date", today),
-			)
-
-			if err := r.GenerateRecommendations(ctx, rec); err != nil {
-				slog.ErrorContext(ctx, "Failed to generate recommendation",
+			if err := r.GenerateRecommendations(ctx, today); err != nil {
+				slog.ErrorContext(ctx, "Failed to generate recommendations",
 					slog.Any("error", err),
 					slog.Time("date", today),
-				)
-			} else {
-				slog.Info("Successfully generated recommendation",
-					slog.Time("date", today),
-					slog.Duration("duration", time.Since(startTime)),
-				)
-				slog.Debug("Recommendation details",
-					slog.Int("movies_count", len(rec.Movies)),
-					slog.Int("anime_count", len(rec.Anime)),
-					slog.Int("tvshows_count", len(rec.TVShows)),
 				)
 			}
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := fmt.Fprintf(w, `{"message": "Started generating recommendation for %s", "timestamp": "%s"}`,
+		if _, err := fmt.Fprintf(w, `{"message": "Recommendation generation started for %s", "timestamp": "%s"}`,
 			today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
 			slog.Error("Failed to write response", slog.Any("error", err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -286,7 +270,7 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
-		slog.Info("Starting cache update cron job",
+		slog.Info("Starting cache update job",
 			slog.Time("start_time", startTime),
 			slog.String("remote_addr", req.RemoteAddr),
 		)
@@ -298,44 +282,15 @@ func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 			slog.Info("Starting cache update in background",
 				slog.Duration("timeout", 5*time.Minute),
 			)
-
-			slog.Debug("Initializing cache update process")
-
 			if err := p.UpdateCache(ctx); err != nil {
 				slog.ErrorContext(ctx, "Failed to update cache",
 					slog.Any("error", err),
-					slog.Duration("duration", time.Since(startTime)),
-				)
-			} else {
-				slog.Info("Successfully updated cache",
-					slog.Duration("duration", time.Since(startTime)),
-				)
-
-				// Log cache statistics
-				var movieCount, tvShowCount int64
-				if err := db.WithContext(ctx).Model(&models.PlexMovie{}).Count(&movieCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get movie count", slog.Any("error", err))
-				}
-				if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Count(&tvShowCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get TV show count", slog.Any("error", err))
-				}
-
-				// Count anime separately
-				var animeCount int64
-				if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Where("is_anime = ?", true).Count(&animeCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get anime count", slog.Any("error", err))
-				}
-
-				slog.Info("Cache statistics",
-					slog.Int64("movies", movieCount),
-					slog.Int64("anime", animeCount),
-					slog.Int64("tv_shows", tvShowCount),
 				)
 			}
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := fmt.Fprintf(w, `{"message": "Started cache update in background", "timestamp": "%s"}`,
+		if _, err := fmt.Fprintf(w, `{"message": "Cache update started", "timestamp": "%s"}`,
 			time.Now().Format(time.RFC3339)); err != nil {
 			slog.Error("Failed to write response", slog.Any("error", err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
