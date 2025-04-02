@@ -31,7 +31,7 @@ func renderError(w http.ResponseWriter, message string, status int) {
 	}
 
 	w.WriteHeader(status)
-	if err := tmpl.Execute(w, errorData{Message: message}); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "base.html", errorData{Message: message}); err != nil {
 		slog.Error("Failed to execute error template", slog.Any("error", err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
