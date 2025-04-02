@@ -478,7 +478,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}()
 
 	// Ensure all tables exist first
-	if err := tx.AutoMigrate(
+	if err := tx.WithContext(ctx).AutoMigrate(
 		&models.PlexCache{},
 		&models.PlexMovie{},
 		&models.PlexAnime{},
@@ -489,19 +489,19 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 
 	// Clear existing cache entries and their associations
-	if err := tx.Exec("DELETE FROM plex_cache_movies").Error; err != nil {
+	if err := tx.WithContext(ctx).Exec("DELETE FROM plex_cache_movies").Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear movie associations: %w", err)
 	}
-	if err := tx.Exec("DELETE FROM plex_cache_anime").Error; err != nil {
+	if err := tx.WithContext(ctx).Exec("DELETE FROM plex_cache_anime").Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear anime associations: %w", err)
 	}
-	if err := tx.Exec("DELETE FROM plex_cache_tvshows").Error; err != nil {
+	if err := tx.WithContext(ctx).Exec("DELETE FROM plex_cache_tvshows").Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear TV show associations: %w", err)
 	}
-	if err := tx.Where("1 = 1").Delete(&models.PlexCache{}).Error; err != nil {
+	if err := tx.WithContext(ctx).Where("1 = 1").Delete(&models.PlexCache{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing cache: %w", err)
 	}
@@ -513,7 +513,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 	// Save the cache entry first
 	c.logger.Debug("Creating new cache entry")
-	if err := tx.Create(cache).Error; err != nil {
+	if err := tx.WithContext(ctx).Create(cache).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to save cache: %w", err)
 	}
@@ -532,13 +532,13 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 			}
 
 			// Save the movie
-			if err := tx.Create(&movie).Error; err != nil {
+			if err := tx.WithContext(ctx).Create(&movie).Error; err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to save movie %d: %w", i, err)
 			}
 
 			// Add association
-			if err := tx.Model(cache).Association("Movies").Append(&movie); err != nil {
+			if err := tx.WithContext(ctx).Model(cache).Association("Movies").Append(&movie); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to add movie association %d: %w", i, err)
 			}
@@ -559,13 +559,13 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 			}
 
 			// Save the anime
-			if err := tx.Create(&animeItem).Error; err != nil {
+			if err := tx.WithContext(ctx).Create(&animeItem).Error; err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to save anime %d: %w", i, err)
 			}
 
 			// Add association
-			if err := tx.Model(cache).Association("Anime").Append(&animeItem); err != nil {
+			if err := tx.WithContext(ctx).Model(cache).Association("Anime").Append(&animeItem); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to add anime association %d: %w", i, err)
 			}
@@ -586,13 +586,13 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 			}
 
 			// Save the TV show
-			if err := tx.Create(&tvShow).Error; err != nil {
+			if err := tx.WithContext(ctx).Create(&tvShow).Error; err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to save TV show %d: %w", i, err)
 			}
 
 			// Add association
-			if err := tx.Model(cache).Association("TVShows").Append(&tvShow); err != nil {
+			if err := tx.WithContext(ctx).Model(cache).Association("TVShows").Append(&tvShow); err != nil {
 				tx.Rollback()
 				return fmt.Errorf("failed to add TV show association %d: %w", i, err)
 			}
@@ -601,7 +601,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 
 	// Commit the transaction
-	if err := tx.Commit().Error; err != nil {
+	if err := tx.WithContext(ctx).Commit().Error; err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	c.logger.Debug("Successfully committed transaction")

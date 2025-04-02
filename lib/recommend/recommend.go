@@ -65,7 +65,7 @@ func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, e
 
 func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPreference, error) {
 	var prefs models.UserPreference
-	if err := r.db.First(&prefs).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&prefs).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Create default preferences if none exist
 			prefs = models.UserPreference{}
@@ -90,7 +90,7 @@ func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPrefe
 			if err := prefs.SetSources([]string{"Plex", "Anilist"}); err != nil {
 				return nil, fmt.Errorf("failed to set sources: %w", err)
 			}
-			if err := r.db.Create(&prefs).Error; err != nil {
+			if err := r.db.WithContext(ctx).Create(&prefs).Error; err != nil {
 				return nil, fmt.Errorf("failed to create default preferences: %w", err)
 			}
 		} else {
@@ -102,7 +102,7 @@ func (r *Recommender) getUserPreferences(ctx context.Context) (*models.UserPrefe
 
 func (r *Recommender) getRecentRatings(ctx context.Context) ([]models.UserRating, error) {
 	var ratings []models.UserRating
-	if err := r.db.Order("watched_at desc").Limit(10).Find(&ratings).Error; err != nil {
+	if err := r.db.WithContext(ctx).Order("watched_at desc").Limit(10).Find(&ratings).Error; err != nil {
 		return nil, fmt.Errorf("failed to get recent ratings: %w", err)
 	}
 	return ratings, nil

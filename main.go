@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -53,8 +54,12 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Create a context with timeout for database operations
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Auto-migrate the schema
-	err = gormDB.AutoMigrate(
+	err = gormDB.WithContext(ctx).AutoMigrate(
 		&models.Recommendation{}, &models.Movie{}, &models.Anime{}, &models.TVShow{},
 		&models.PlexCache{}, &models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
 		&models.UserPreference{}, &models.UserRating{},
@@ -64,7 +69,7 @@ func NewApp() (*App, error) {
 	}
 
 	// Drop and recreate tables to remove unique constraints
-	if err := gormDB.Migrator().DropTable(
+	if err := gormDB.WithContext(ctx).Migrator().DropTable(
 		"plex_movies", "plex_anime", "plex_tvshows",
 		"plex_cache_movies", "plex_cache_anime", "plex_cache_tvshows",
 	); err != nil {
@@ -72,7 +77,7 @@ func NewApp() (*App, error) {
 	}
 
 	// Recreate tables without unique constraints
-	if err := gormDB.AutoMigrate(
+	if err := gormDB.WithContext(ctx).AutoMigrate(
 		&models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to recreate tables: %w", err)
