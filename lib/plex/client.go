@@ -96,8 +96,8 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	return resp, nil
 }
 
-// getPlexLibraryKey is a utility function that may be used in future implementations
-// to retrieve library keys based on type and title conditions.
+// getPlexLibraryKey is intentionally kept for future use.
+// It will be used to retrieve library keys based on type and title conditions.
 func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType string, titleCondition func(string) bool) (string, error) {
 	for _, lib := range libraries {
 		if lib.Type == libType && (titleCondition == nil || titleCondition(lib.Title)) {
@@ -263,8 +263,8 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 	return allItems, nil
 }
 
-// getIntValue is a utility function that safely retrieves integer values from pointers,
-// returning 0 if the pointer is nil.
+// getIntValue is intentionally kept for future use.
+// It provides a safe way to get integer values from pointers.
 func getIntValue(v *int) int {
 	if v == nil {
 		return 0
@@ -272,8 +272,8 @@ func getIntValue(v *int) int {
 	return *v
 }
 
-// getFloatValue is a utility function that safely retrieves float values from pointers,
-// returning 0 if the pointer is nil.
+// getFloatValue is intentionally kept for future use.
+// It provides a safe way to get float values from pointers.
 func getFloatValue(v *float64) float64 {
 	if v == nil {
 		return 0
@@ -281,8 +281,8 @@ func getFloatValue(v *float64) float64 {
 	return *v
 }
 
-// getStringValue is a utility function that safely retrieves string values from pointers,
-// returning an empty string if the pointer is nil.
+// getStringValue is intentionally kept for future use.
+// It provides a safe way to get string values from pointers.
 func getStringValue(v *string) string {
 	if v == nil {
 		return ""
@@ -290,8 +290,8 @@ func getStringValue(v *string) string {
 	return *v
 }
 
-// getGenres is a utility function that formats genre information from Plex API responses
-// into a comma-separated string.
+// getGenres is intentionally kept for future use.
+// It will be used to format genre information from Plex items.
 func getGenres(genres []operations.GetLibraryItemsGenre) string {
 	var genreStrings []string
 	for _, g := range genres {
