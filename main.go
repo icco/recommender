@@ -115,7 +115,14 @@ func main() {
 	}
 
 	slog.Info("Starting server", slog.String("port", port))
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), r); err != nil {
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%s", port),
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		slog.Error("Server error", slog.Any("error", err))
 		os.Exit(1)
 	}

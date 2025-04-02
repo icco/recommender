@@ -15,6 +15,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	MediaTypeMovie = "movie"
+	MediaTypeShow  = "show"
+)
+
 type Client struct {
 	api       *plexgo.PlexAPI
 	plexURL   string
@@ -91,16 +96,6 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	return resp, nil
 }
 
-// getPlexLibraryKey finds the library key for a given type and title condition
-func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType string, titleCondition func(string) bool) (string, error) {
-	for _, lib := range libraries {
-		if lib.Type == libType && (titleCondition == nil || titleCondition(lib.Title)) {
-			return lib.Key, nil
-		}
-	}
-	return "", fmt.Errorf("no matching library found for type %s", libType)
-}
-
 // PlexItem represents a media item from Plex
 type PlexItem struct {
 	RatingKey  string
@@ -149,9 +144,9 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 		if lib.Key == libraryKey {
 			librarySection = lib.Type
 			switch lib.Type {
-			case "movie":
+			case MediaTypeMovie:
 				libraryType = operations.GetLibraryItemsQueryParamType(1)
-			case "show":
+			case MediaTypeShow:
 				libraryType = operations.GetLibraryItemsQueryParamType(2)
 			case "artist":
 				libraryType = operations.GetLibraryItemsQueryParamType(8)
@@ -255,38 +250,6 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 	}
 
 	return allItems, nil
-}
-
-// Helper functions for Plex data extraction
-func getIntValue(v *int) int {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-func getFloatValue(v *float64) float64 {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
-func getStringValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
-}
-
-func getGenres(genres []operations.GetLibraryItemsGenre) string {
-	var genreStrings []string
-	for _, g := range genres {
-		if g.Tag != nil {
-			genreStrings = append(genreStrings, *g.Tag)
-		}
-	}
-	return strings.Join(genreStrings, ", ")
 }
 
 // GetUnwatchedMovies retrieves unwatched movies from Plex.
