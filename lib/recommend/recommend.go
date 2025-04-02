@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,7 +27,9 @@ type Recommender struct {
 }
 
 type RecommendationContext struct {
-	Content string
+	Content                 string
+	Preferences             string
+	PreviousRecommendations string
 }
 
 type UnwatchedContent struct {
@@ -149,25 +152,82 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
 
-	// Convert unwatched content to recommendations
+	// Get previous recommendations for context
+	prevDate := date.AddDate(0, 0, -1)
+	prevRecs, err := r.GetRecommendationsForDate(ctx, prevDate)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("failed to get previous recommendations: %w", err)
+	}
+
+	// Prepare content for OpenAI
+	content := RecommendationContext{
+		Content: r.formatContent(append(append(unwatchedMovies, unwatchedAnime...), unwatchedTVShows...)),
+		Preferences: "User enjoys a mix of genres including action, drama, comedy, and sci-fi. " +
+			"Prefers content with high ratings (above 7.5) and appreciates both popular and lesser-known titles.",
+		PreviousRecommendations: r.formatContent(prevRecs),
+	}
+
+	// Load prompt templates
+	systemPrompt, err := r.loadPromptTemplate("prompts/system_openai.txt")
+	if err != nil {
+		return fmt.Errorf("failed to load system prompt: %w", err)
+	}
+
+	recommendationPrompt, err := r.loadPromptTemplate("prompts/recommendation_openai.txt")
+	if err != nil {
+		return fmt.Errorf("failed to load recommendation prompt: %w", err)
+	}
+
+	// Generate recommendations using OpenAI
+	var systemMsg, userMsg strings.Builder
+	if err := systemPrompt.Execute(&systemMsg, nil); err != nil {
+		return fmt.Errorf("failed to execute system prompt: %w", err)
+	}
+	if err := recommendationPrompt.Execute(&userMsg, content); err != nil {
+		return fmt.Errorf("failed to execute recommendation prompt: %w", err)
+	}
+
+	resp, err := r.openai.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model: openai.GPT4oMini,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: systemMsg.String(),
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: userMsg.String(),
+				},
+			},
+			Temperature: 0.7,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get OpenAI completion: %w", err)
+	}
+
+	// Parse OpenAI response and match with available content
 	recommendations := make([]models.Recommendation, 0)
+	allContent := append(append(unwatchedMovies, unwatchedAnime...), unwatchedTVShows...)
 
-	// Add movies
-	for _, m := range unwatchedMovies {
-		m.Date = date
-		recommendations = append(recommendations, m)
-	}
+	// Extract titles from OpenAI response
+	lines := strings.Split(resp.Choices[0].Message.Content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 
-	// Add anime
-	for _, a := range unwatchedAnime {
-		a.Date = date
-		recommendations = append(recommendations, a)
-	}
-
-	// Add TV shows
-	for _, t := range unwatchedTVShows {
-		t.Date = date
-		recommendations = append(recommendations, t)
+		// Try to match the title from the line
+		for _, content := range allContent {
+			if strings.Contains(strings.ToLower(line), strings.ToLower(content.Title)) {
+				content.Date = date
+				recommendations = append(recommendations, content)
+				break
+			}
+		}
 	}
 
 	// Save recommendations to database in a transaction
