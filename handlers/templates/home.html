@@ -1,5 +1,6 @@
 {{define "content"}}
 <div class="container mx-auto px-4 py-8">
+  {{if .}}
   <h1 class="text-3xl font-bold mb-8">Recommendations for {{(index . 0).Date.Format "January 2, 2006"}}</h1>
 
   <!-- Movies Section -->
@@ -67,5 +68,12 @@
       {{end}}
     </div>
   </section>
+  {{else}}
+  <div class="text-center py-12">
+    <h1 class="text-3xl font-bold mb-4">No Recommendations Available</h1>
+    <p class="text-gray-600 mb-4">There are no recommendations available for today.</p>
+    <a href="/dates" class="text-blue-600 hover:text-blue-800">Check past recommendations</a>
+  </div>
+  {{end}}
 </div>
 {{end}}
