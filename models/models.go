@@ -97,15 +97,6 @@ func (t TVShow) GetTitle() string {
 	return t.Title
 }
 
-// PlexCache represents a cache of media items from Plex.
-type PlexCache struct {
-	ID        uint `gorm:"primarykey"`
-	UpdatedAt time.Time
-	Movies    []PlexMovie  `gorm:"many2many:plex_cache_movies;"`
-	Anime     []PlexAnime  `gorm:"many2many:plex_cache_anime;"`
-	TVShows   []PlexTVShow `gorm:"many2many:plex_cache_tvshows;"`
-}
-
 // PlexMovie represents a movie from Plex with its watch status.
 type PlexMovie struct {
 	BaseMedia
@@ -118,23 +109,12 @@ func (m PlexMovie) IsWatched() bool {
 	return m.Watched
 }
 
-// PlexAnime represents an anime from Plex with its watch status.
-type PlexAnime struct {
-	BaseMedia
-	Episodes int
-	Watched  bool
-}
-
-// IsWatched returns whether the anime has been watched.
-func (a PlexAnime) IsWatched() bool {
-	return a.Watched
-}
-
-// PlexTVShow represents a TV show from Plex with its watch status.
+// PlexTVShow represents a TV show from Plex with its watch status and anime flag.
 type PlexTVShow struct {
 	BaseMedia
 	Seasons int
 	Watched bool
+	IsAnime bool
 }
 
 // IsWatched returns whether the TV show has been watched.

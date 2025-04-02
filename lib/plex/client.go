@@ -453,12 +453,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 	c.logger.Debug("Fetched movies from Plex", slog.Int("count", len(movies)))
 
-	anime, err := c.GetAllAnime(ctx, libraries.Object.MediaContainer.Directory)
-	if err != nil {
-		return fmt.Errorf("failed to get anime: %w", err)
-	}
-	c.logger.Debug("Fetched anime from Plex", slog.Int("count", len(anime)))
-
 	tvShows, err := c.GetAllTVShows(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
 		return fmt.Errorf("failed to get TV shows: %w", err)
@@ -479,45 +473,22 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 	// Ensure all tables exist first
 	if err := tx.WithContext(ctx).AutoMigrate(
-		&models.PlexCache{},
 		&models.PlexMovie{},
-		&models.PlexAnime{},
 		&models.PlexTVShow{},
 	); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
-	// Clear existing cache entries and their associations
-	if err := tx.WithContext(ctx).Exec("DELETE FROM plex_cache_movies").Error; err != nil {
+	// Clear existing cache entries
+	if err := tx.WithContext(ctx).Where("1 = 1").Delete(&models.PlexMovie{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed to clear movie associations: %w", err)
+		return fmt.Errorf("failed to clear existing movies: %w", err)
 	}
-	if err := tx.WithContext(ctx).Exec("DELETE FROM plex_cache_anime").Error; err != nil {
+	if err := tx.WithContext(ctx).Where("1 = 1").Delete(&models.PlexTVShow{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed to clear anime associations: %w", err)
+		return fmt.Errorf("failed to clear existing TV shows: %w", err)
 	}
-	if err := tx.WithContext(ctx).Exec("DELETE FROM plex_cache_tvshows").Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to clear TV show associations: %w", err)
-	}
-	if err := tx.WithContext(ctx).Where("1 = 1").Delete(&models.PlexCache{}).Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to clear existing cache: %w", err)
-	}
-
-	// Create a new cache entry
-	cache := &models.PlexCache{
-		UpdatedAt: time.Now(),
-	}
-
-	// Save the cache entry first
-	c.logger.Debug("Creating new cache entry")
-	if err := tx.WithContext(ctx).Create(cache).Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to save cache: %w", err)
-	}
-	c.logger.Debug("Successfully created cache entry", slog.Uint64("cache_id", uint64(cache.ID)))
 
 	// Process movies one at a time
 	if len(movies) > 0 {
@@ -536,41 +507,8 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				tx.Rollback()
 				return fmt.Errorf("failed to save movie %d: %w", i, err)
 			}
-
-			// Add association
-			if err := tx.WithContext(ctx).Model(cache).Association("Movies").Append(&movie); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to add movie association %d: %w", i, err)
-			}
 		}
 		c.logger.Debug("Successfully processed movies", slog.Int("count", len(movies)))
-	}
-
-	// Process anime one at a time
-	if len(anime) > 0 {
-		c.logger.Debug("Processing anime", slog.Int("total", len(anime)))
-		for i, animeItem := range anime {
-			// Log progress every 100 items
-			if i%100 == 0 {
-				c.logger.Debug("Processing anime progress",
-					slog.Int("processed", i),
-					slog.Int("total", len(anime)),
-					slog.Float64("percent", float64(i)/float64(len(anime))*100))
-			}
-
-			// Save the anime
-			if err := tx.WithContext(ctx).Create(&animeItem).Error; err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to save anime %d: %w", i, err)
-			}
-
-			// Add association
-			if err := tx.WithContext(ctx).Model(cache).Association("Anime").Append(&animeItem); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to add anime association %d: %w", i, err)
-			}
-		}
-		c.logger.Debug("Successfully processed anime", slog.Int("count", len(anime)))
 	}
 
 	// Process TV shows one at a time
@@ -590,12 +528,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				tx.Rollback()
 				return fmt.Errorf("failed to save TV show %d: %w", i, err)
 			}
-
-			// Add association
-			if err := tx.WithContext(ctx).Model(cache).Association("TVShows").Append(&tvShow); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to add TV show association %d: %w", i, err)
-			}
 		}
 		c.logger.Debug("Successfully processed TV shows", slog.Int("count", len(tvShows)))
 	}
@@ -608,7 +540,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 	c.logger.Info("Cache updated successfully",
 		slog.Int("movies", len(movies)),
-		slog.Int("anime", len(anime)),
 		slog.Int("tv_shows", len(tvShows)),
 	)
 

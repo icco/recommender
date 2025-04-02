@@ -312,15 +312,18 @@ func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
 				)
 
 				// Log cache statistics
-				var movieCount, animeCount, tvShowCount int64
+				var movieCount, tvShowCount int64
 				if err := db.WithContext(ctx).Model(&models.PlexMovie{}).Count(&movieCount).Error; err != nil {
 					slog.ErrorContext(ctx, "Failed to get movie count", slog.Any("error", err))
 				}
-				if err := db.WithContext(ctx).Model(&models.PlexAnime{}).Count(&animeCount).Error; err != nil {
-					slog.ErrorContext(ctx, "Failed to get anime count", slog.Any("error", err))
-				}
 				if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Count(&tvShowCount).Error; err != nil {
 					slog.ErrorContext(ctx, "Failed to get TV show count", slog.Any("error", err))
+				}
+
+				// Count anime separately
+				var animeCount int64
+				if err := db.WithContext(ctx).Model(&models.PlexTVShow{}).Where("is_anime = ?", true).Count(&animeCount).Error; err != nil {
+					slog.ErrorContext(ctx, "Failed to get anime count", slog.Any("error", err))
 				}
 
 				slog.Info("Cache statistics",

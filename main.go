@@ -61,7 +61,7 @@ func NewApp() (*App, error) {
 	// Auto-migrate the schema
 	err = gormDB.WithContext(ctx).AutoMigrate(
 		&models.Recommendation{}, &models.Movie{}, &models.Anime{}, &models.TVShow{},
-		&models.PlexCache{}, &models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
+		&models.PlexMovie{}, &models.PlexTVShow{},
 		&models.UserPreference{}, &models.UserRating{},
 	)
 	if err != nil {
@@ -70,15 +70,14 @@ func NewApp() (*App, error) {
 
 	// Drop and recreate tables to remove unique constraints
 	if err := gormDB.WithContext(ctx).Migrator().DropTable(
-		"plex_movies", "plex_anime", "plex_tvshows",
-		"plex_cache_movies", "plex_cache_anime", "plex_cache_tvshows",
+		"plex_movies", "plex_tvshows",
 	); err != nil {
 		return nil, fmt.Errorf("failed to drop tables: %w", err)
 	}
 
 	// Recreate tables without unique constraints
 	if err := gormDB.WithContext(ctx).AutoMigrate(
-		&models.PlexMovie{}, &models.PlexAnime{}, &models.PlexTVShow{},
+		&models.PlexMovie{}, &models.PlexTVShow{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to recreate tables: %w", err)
 	}
