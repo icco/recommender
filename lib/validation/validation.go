@@ -3,7 +3,7 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
@@ -52,6 +52,6 @@ func WriteError(w http.ResponseWriter, err error, status int) {
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"error": err.Error(),
 	}); err != nil {
-		log.Printf("Failed to encode error response: %v", err)
+		slog.Error("Failed to encode error response", slog.Any("error", err))
 	}
 }

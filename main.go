@@ -17,12 +17,34 @@ import (
 	"github.com/icco/recommender/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
+
+// JSONLogger is a custom logger middleware that logs in JSON format
+func JSONLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Create a response writer that captures the status code
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		// Process request
+		next.ServeHTTP(ww, r)
+
+		// Log the request details
+		slog.Info("HTTP Request",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.String("remote_addr", r.RemoteAddr),
+			slog.String("user_agent", r.UserAgent()),
+			slog.Int("status", ww.Status()),
+			slog.Duration("duration", time.Since(start)),
+		)
+	})
+}
 
 func main() {
 	// Set up logging
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})))
 
@@ -39,9 +61,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up database
+	// Set up database with custom JSON logger
 	gormDB, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: db.NewGormLogger(slog.Default()),
 	})
 	if err != nil {
 		slog.Error("Failed to connect to database", slog.Any("error", err))
@@ -85,7 +107,7 @@ func main() {
 	// Middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(JSONLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
