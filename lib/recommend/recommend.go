@@ -20,6 +20,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// Recommender handles the generation and retrieval of content recommendations.
+// It uses OpenAI to generate recommendations based on unwatched content from Plex
+// and metadata from TMDb.
 type Recommender struct {
 	db     *gorm.DB
 	plex   *plex.Client
@@ -29,18 +32,24 @@ type Recommender struct {
 	cache  map[string]*models.Recommendation
 }
 
+// RecommendationContext contains the context used for generating recommendations.
+// It includes the available content, user preferences, and previous recommendations.
 type RecommendationContext struct {
 	Content                 string
 	Preferences             string
 	PreviousRecommendations string
 }
 
+// UnwatchedContent represents the unwatched content available for recommendations,
+// organized by content type (movies, anime, TV shows).
 type UnwatchedContent struct {
 	Movies  []models.Recommendation
 	Anime   []models.Recommendation
 	TVShows []models.Recommendation
 }
 
+// New creates a new Recommender instance with the provided dependencies.
+// It initializes the OpenAI client and sets up the recommendation cache.
 func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger) (*Recommender, error) {
 	openaiClient := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
@@ -92,6 +101,8 @@ func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.T
 	return count > 0, nil
 }
 
+// loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
+// It returns a template that can be executed with the provided data.
 func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, error) {
 	content, err := prompts.FS.ReadFile(filename)
 	if err != nil {
@@ -106,6 +117,8 @@ func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, e
 	return tmpl, nil
 }
 
+// formatContent formats a slice of recommendations into a human-readable string.
+// Each item is formatted with its title, year, rating, genre, runtime, and TMDb ID.
 func (r *Recommender) formatContent(items []models.Recommendation) string {
 	var content strings.Builder
 	for _, item := range items {
@@ -115,6 +128,9 @@ func (r *Recommender) formatContent(items []models.Recommendation) string {
 	return content.String()
 }
 
+// GenerateRecommendations generates new recommendations for the specified date.
+// It uses OpenAI to analyze unwatched content and previous recommendations,
+// then stores the generated recommendations in the database.
 func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Time) error {
 	r.logger.Debug("Starting recommendation generation")
 

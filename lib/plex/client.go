@@ -15,6 +15,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// Client represents a Plex API client that handles communication with a Plex server.
+// It provides methods for retrieving library information and media items.
 type Client struct {
 	api       *plexgo.PlexAPI
 	plexURL   string
@@ -28,6 +30,8 @@ const (
 	contentTypeShow  = "show"
 )
 
+// NewClient creates a new Plex client with the provided configuration.
+// It initializes the Plex API client with the given URL and authentication token.
 func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
@@ -43,22 +47,23 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Cli
 	}
 }
 
-// GetAPI returns the underlying Plex API instance
+// GetAPI returns the underlying Plex API instance for direct access to Plex API methods.
 func (c *Client) GetAPI() *plexgo.PlexAPI {
 	return c.api
 }
 
-// GetURL returns the Plex server URL
+// GetURL returns the Plex server URL used by this client.
 func (c *Client) GetURL() string {
 	return c.plexURL
 }
 
-// GetLibrary returns the Library API
+// GetLibrary returns the Library API instance for accessing Plex library operations.
 func (c *Client) GetLibrary() *plexgo.Library {
 	return c.api.Library
 }
 
-// GetAllLibraries gets all libraries from Plex
+// GetAllLibraries retrieves all libraries from the Plex server.
+// It returns detailed information about each library, including its type, title, and configuration.
 func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrariesResponse, error) {
 	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
 
@@ -127,7 +132,8 @@ type PlexItem struct {
 	ChildCount *int
 }
 
-// GetPlexItems gets items from a Plex library
+// GetPlexItems retrieves items from a specific Plex library.
+// It supports pagination and filtering for unwatched items only.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
 	// Convert library key to integer
 	sectionKey, err := strconv.Atoi(libraryKey)
@@ -302,7 +308,8 @@ func getGenres(genres []operations.GetLibraryItemsGenre) string {
 	return strings.Join(genreStrings, ", ")
 }
 
-// GetUnwatchedMovies retrieves unwatched movies from Plex.
+// GetUnwatchedMovies retrieves all unwatched movies from Plex libraries.
+// It converts the Plex items into Recommendation models for use in the recommendation system.
 func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var movies []models.Recommendation
 	for _, lib := range libraries {
@@ -356,7 +363,8 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 	return movies, nil
 }
 
-// GetUnwatchedAnime retrieves unwatched anime from Plex.
+// GetUnwatchedAnime retrieves all unwatched anime from Plex libraries.
+// It identifies anime by checking for the "anime" genre and converts them into Recommendation models.
 func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var anime []models.Recommendation
 	for _, lib := range libraries {
@@ -423,7 +431,8 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 	return anime, nil
 }
 
-// GetUnwatchedTVShows retrieves unwatched TV shows from Plex.
+// GetUnwatchedTVShows retrieves all unwatched TV shows from Plex libraries.
+// It excludes anime shows and converts the items into Recommendation models.
 func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var shows []models.Recommendation
 	for _, lib := range libraries {
@@ -490,7 +499,8 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 	return shows, nil
 }
 
-// UpdateCache updates the Plex cache by fetching all libraries and their items
+// UpdateCache updates the Plex cache by fetching all libraries and their items.
+// It clears existing cache entries and populates them with the latest data from Plex.
 func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Starting cache update")
 

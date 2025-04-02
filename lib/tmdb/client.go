@@ -10,6 +10,8 @@ import (
 	"log/slog"
 )
 
+// Client represents a TMDb API client that handles communication with The Movie Database API.
+// It provides methods for searching movies and TV shows and retrieving their metadata.
 type Client struct {
 	apiKey     string
 	baseURL    string
@@ -17,6 +19,8 @@ type Client struct {
 	logger     *slog.Logger
 }
 
+// SearchResult represents the response from a movie search on TMDb.
+// It contains a list of movies matching the search criteria.
 type SearchResult struct {
 	Results []struct {
 		ID          int     `json:"id"`
@@ -27,6 +31,8 @@ type SearchResult struct {
 	} `json:"results"`
 }
 
+// TVSearchResult represents the response from a TV show search on TMDb.
+// It contains a list of TV shows matching the search criteria.
 type TVSearchResult struct {
 	Results []struct {
 		ID           int     `json:"id"`
@@ -37,6 +43,8 @@ type TVSearchResult struct {
 	} `json:"results"`
 }
 
+// NewClient creates a new TMDb client with the provided API key and logger.
+// It initializes the HTTP client and sets up the base URL for TMDb API requests.
 func NewClient(apiKey string, logger *slog.Logger) *Client {
 	return &Client{
 		apiKey:     apiKey,
@@ -46,6 +54,8 @@ func NewClient(apiKey string, logger *slog.Logger) *Client {
 	}
 }
 
+// SearchMovie searches for movies on TMDb using the provided title and year.
+// It returns a list of matching movies with their metadata.
 func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*SearchResult, error) {
 	url := fmt.Sprintf("%s/search/movie?api_key=%s&query=%s&year=%d",
 		c.baseURL, c.apiKey, strings.ReplaceAll(title, " ", "+"), year)
@@ -73,6 +83,8 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 	return &result, nil
 }
 
+// SearchTVShow searches for TV shows on TMDb using the provided title and year.
+// It returns a list of matching TV shows with their metadata.
 func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVSearchResult, error) {
 	url := fmt.Sprintf("%s/search/tv?api_key=%s&query=%s&first_air_date_year=%d",
 		c.baseURL, c.apiKey, strings.ReplaceAll(title, " ", "+"), year)
@@ -100,6 +112,8 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 	return &result, nil
 }
 
+// GetPosterURL generates the full URL for a movie or TV show poster using the poster path.
+// It returns an empty string if the poster path is empty.
 func (c *Client) GetPosterURL(posterPath string) string {
 	if posterPath == "" {
 		return ""
