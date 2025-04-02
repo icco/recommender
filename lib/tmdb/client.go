@@ -59,7 +59,11 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.Error("failed to close response body", "error", err)
+		}
+	}()
 
 	var result SearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -82,7 +86,11 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.Error("failed to close response body", "error", err)
+		}
+	}()
 
 	var result TVSearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

@@ -23,6 +23,11 @@ type Client struct {
 	plexToken string
 }
 
+const (
+	contentTypeMovie = "movie"
+	contentTypeShow  = "show"
+)
+
 func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
@@ -91,7 +96,8 @@ func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetAllLibrari
 	return resp, nil
 }
 
-// getPlexLibraryKey finds the library key for a given type and title condition
+// getPlexLibraryKey is a utility function that may be used in future implementations
+// to retrieve library keys based on type and title conditions.
 func getPlexLibraryKey(libraries []operations.GetAllLibrariesDirectory, libType string, titleCondition func(string) bool) (string, error) {
 	for _, lib := range libraries {
 		if lib.Type == libType && (titleCondition == nil || titleCondition(lib.Title)) {
@@ -149,9 +155,9 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 		if lib.Key == libraryKey {
 			librarySection = lib.Type
 			switch lib.Type {
-			case "movie":
+			case contentTypeMovie:
 				libraryType = operations.GetLibraryItemsQueryParamType(1)
-			case "show":
+			case contentTypeShow:
 				libraryType = operations.GetLibraryItemsQueryParamType(2)
 			case "artist":
 				libraryType = operations.GetLibraryItemsQueryParamType(8)
@@ -257,7 +263,8 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 	return allItems, nil
 }
 
-// Helper functions for Plex data extraction
+// getIntValue is a utility function that safely retrieves integer values from pointers,
+// returning 0 if the pointer is nil.
 func getIntValue(v *int) int {
 	if v == nil {
 		return 0
@@ -265,6 +272,8 @@ func getIntValue(v *int) int {
 	return *v
 }
 
+// getFloatValue is a utility function that safely retrieves float values from pointers,
+// returning 0 if the pointer is nil.
 func getFloatValue(v *float64) float64 {
 	if v == nil {
 		return 0
@@ -272,6 +281,8 @@ func getFloatValue(v *float64) float64 {
 	return *v
 }
 
+// getStringValue is a utility function that safely retrieves string values from pointers,
+// returning an empty string if the pointer is nil.
 func getStringValue(v *string) string {
 	if v == nil {
 		return ""
@@ -279,6 +290,8 @@ func getStringValue(v *string) string {
 	return *v
 }
 
+// getGenres is a utility function that formats genre information from Plex API responses
+// into a comma-separated string.
 func getGenres(genres []operations.GetLibraryItemsGenre) string {
 	var genreStrings []string
 	for _, g := range genres {
@@ -293,7 +306,7 @@ func getGenres(genres []operations.GetLibraryItemsGenre) string {
 func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var movies []models.Recommendation
 	for _, lib := range libraries {
-		if lib.Type != "movie" {
+		if lib.Type != contentTypeMovie {
 			continue
 		}
 
@@ -330,7 +343,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 
 			movies = append(movies, models.Recommendation{
 				Title:     item.Title,
-				Type:      "movie",
+				Type:      contentTypeMovie,
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -347,7 +360,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var anime []models.Recommendation
 	for _, lib := range libraries {
-		if lib.Type != "show" {
+		if lib.Type != contentTypeShow {
 			continue
 		}
 
@@ -397,7 +410,7 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 
 			anime = append(anime, models.Recommendation{
 				Title:     item.Title,
-				Type:      "anime",
+				Type:      contentTypeShow,
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -414,7 +427,7 @@ func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.G
 func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var shows []models.Recommendation
 	for _, lib := range libraries {
-		if lib.Type != "show" {
+		if lib.Type != contentTypeShow {
 			continue
 		}
 
@@ -464,7 +477,7 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 
 			shows = append(shows, models.Recommendation{
 				Title:     item.Title,
-				Type:      "tvshow",
+				Type:      contentTypeShow,
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,

@@ -124,9 +124,17 @@ func main() {
 		port = "8080"
 	}
 
-	slog.Info("Starting server", slog.String("port", port))
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), r); err != nil {
-		slog.Error("Server error", slog.Any("error", err))
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%s", port),
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	slog.Info("Starting server", "port", port)
+	if err := srv.ListenAndServe(); err != nil {
+		slog.Error("Server failed", "error", err)
 		os.Exit(1)
 	}
 }
