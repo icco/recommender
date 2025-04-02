@@ -47,6 +47,44 @@ func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, err
 	}, nil
 }
 
+// GetRecommendationsForDate retrieves all recommendations for a specific date
+func (r *Recommender) GetRecommendationsForDate(ctx context.Context, date time.Time) ([]models.Recommendation, error) {
+	var recommendations []models.Recommendation
+	if err := r.db.WithContext(ctx).Where("date = ?", date).Find(&recommendations).Error; err != nil {
+		return nil, fmt.Errorf("failed to get recommendations: %w", err)
+	}
+	return recommendations, nil
+}
+
+// GetRecommendationDates retrieves a paginated list of dates with recommendations
+func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize int) ([]time.Time, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
+	}
+
+	var dates []time.Time
+	if err := r.db.WithContext(ctx).
+		Model(&models.Recommendation{}).
+		Order("date DESC").
+		Offset((page-1)*pageSize).
+		Limit(pageSize).
+		Pluck("date", &dates).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to get dates: %w", err)
+	}
+
+	return dates, total, nil
+}
+
+// CheckRecommendationsExist checks if recommendations exist for a specific date
+func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("date = ?", date).Count(&count).Error; err != nil {
+		return false, fmt.Errorf("failed to check recommendations: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (r *Recommender) loadPromptTemplate(filename string) (*template.Template, error) {
 	content, err := prompts.FS.ReadFile(filename)
 	if err != nil {
@@ -73,10 +111,13 @@ func (r *Recommender) formatContent(items []models.Recommendation) string {
 func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Time) error {
 	r.logger.Debug("Starting recommendation generation")
 
-	// Check cache first
-	cacheKey := date.Format("2006-01-02")
-	if _, exists := r.cache[cacheKey]; exists {
-		r.logger.Info("Using cached recommendations", slog.String("date", cacheKey))
+	// Check if recommendations already exist
+	exists, err := r.CheckRecommendationsExist(ctx, date)
+	if err != nil {
+		return fmt.Errorf("failed to check existing recommendations: %w", err)
+	}
+	if exists {
+		r.logger.Info("Recommendations already exist for date", slog.Time("date", date))
 		return nil
 	}
 
@@ -90,21 +131,21 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	r.logger.Debug("Fetching unwatched movies")
 	unwatchedMovies, err := r.plex.GetUnwatchedMovies(ctx, res.Object.MediaContainer.Directory)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get unwatched movies: %w", err)
 	}
 	r.logger.Debug("Found unwatched movies", slog.Int("count", len(unwatchedMovies)))
 
 	r.logger.Debug("Fetching unwatched anime")
 	unwatchedAnime, err := r.plex.GetUnwatchedAnime(ctx, res.Object.MediaContainer.Directory)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get unwatched anime: %w", err)
 	}
 	r.logger.Debug("Found unwatched anime", slog.Int("count", len(unwatchedAnime)))
 
 	r.logger.Debug("Fetching unwatched TV shows")
 	unwatchedTVShows, err := r.plex.GetUnwatchedTVShows(ctx, res.Object.MediaContainer.Directory)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get unwatched TV shows: %w", err)
 	}
 	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
 
@@ -113,58 +154,33 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Add movies
 	for _, m := range unwatchedMovies {
-		recommendations = append(recommendations, models.Recommendation{
-			Date:      date,
-			Title:     m.Title,
-			Type:      "movie",
-			Year:      m.Year,
-			Rating:    m.Rating,
-			Genre:     m.Genre,
-			PosterURL: m.PosterURL,
-			Runtime:   m.Runtime,
-			Source:    "plex",
-		})
+		m.Date = date
+		recommendations = append(recommendations, m)
 	}
 
 	// Add anime
 	for _, a := range unwatchedAnime {
-		recommendations = append(recommendations, models.Recommendation{
-			Date:      date,
-			Title:     a.Title,
-			Type:      "anime",
-			Year:      a.Year,
-			Rating:    a.Rating,
-			Genre:     a.Genre,
-			PosterURL: a.PosterURL,
-			Runtime:   a.Episodes,
-			Source:    "anilist",
-		})
+		a.Date = date
+		recommendations = append(recommendations, a)
 	}
 
 	// Add TV shows
 	for _, t := range unwatchedTVShows {
-		recommendations = append(recommendations, models.Recommendation{
-			Date:      date,
-			Title:     t.Title,
-			Type:      "tvshow",
-			Year:      t.Year,
-			Rating:    t.Rating,
-			Genre:     t.Genre,
-			PosterURL: t.PosterURL,
-			Runtime:   t.Seasons,
-			Source:    "plex",
-		})
+		t.Date = date
+		recommendations = append(recommendations, t)
 	}
 
-	// Save recommendations to database
-	for _, rec := range recommendations {
-		if err := r.db.Create(&rec).Error; err != nil {
-			return fmt.Errorf("failed to save recommendation: %w", err)
+	// Save recommendations to database in a transaction
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, rec := range recommendations {
+			if err := tx.Create(&rec).Error; err != nil {
+				return fmt.Errorf("failed to save recommendation: %w", err)
+			}
 		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to save recommendations in transaction: %w", err)
 	}
-
-	// Cache the recommendations
-	r.cache[cacheKey] = &recommendations[0] // Cache the first one as a placeholder
 
 	r.logger.Debug("Successfully generated recommendations",
 		slog.Int("total_count", len(recommendations)))

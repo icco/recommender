@@ -289,136 +289,192 @@ func getGenres(genres []operations.GetLibraryItemsGenre) string {
 	return strings.Join(genreStrings, ", ")
 }
 
-// GetUnwatchedMovies gets unwatched movies from Plex
-func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Movie, error) {
-	movieLibraryKey, err := getPlexLibraryKey(libraries, "movie", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := c.GetPlexItems(ctx, movieLibraryKey, true)
-	if err != nil {
-		return nil, err
-	}
-
-	var unwatchedMovies []models.Movie
-	for _, item := range items {
-		if item.ViewCount != nil && *item.ViewCount == 0 {
-			movie := models.Movie{
-				BaseMedia: models.BaseMedia{
-					Title:     item.Title,
-					Year:      getIntValue(item.Year),
-					Rating:    getFloatValue(item.Rating),
-					Genre:     getGenres(item.Genre),
-					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-					Source:    "plex",
-				},
-				Runtime: getIntValue(item.Duration) / 60000,
-			}
-			unwatchedMovies = append(unwatchedMovies, movie)
+// GetUnwatchedMovies retrieves unwatched movies from Plex.
+func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
+	var movies []models.Recommendation
+	for _, lib := range libraries {
+		if lib.Type != "movie" {
+			continue
 		}
-	}
 
-	return unwatchedMovies, nil
-}
-
-// GetUnwatchedAnime gets unwatched anime from Plex
-func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Anime, error) {
-	// First try to find a library with "anime" in the title
-	animeLibraryKey, err := getPlexLibraryKey(libraries, "show", func(title string) bool {
-		return strings.Contains(strings.ToLower(title), "anime")
-	})
-
-	// If no dedicated anime library found, try to find any TV library
-	if err != nil {
-		c.logger.Debug("No dedicated anime library found, searching in TV libraries")
-		tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
+		items, err := c.GetPlexItems(ctx, lib.Key, true)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find any TV library: %w", err)
+			return nil, fmt.Errorf("failed to get library items: %w", err)
 		}
-		animeLibraryKey = tvLibraryKey
-	}
 
-	items, err := c.GetPlexItems(ctx, animeLibraryKey, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get items from library: %w", err)
-	}
-
-	var unwatchedAnime []models.Anime
-	for _, item := range items {
-		// Check if the show has the anime genre
-		isAnime := false
-		for _, genre := range item.Genre {
-			if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
-				isAnime = true
-				break
+		for _, item := range items {
+			year := 0
+			if item.Year != nil {
+				year = *item.Year
 			}
-		}
 
-		if isAnime && item.ViewCount != nil && *item.ViewCount == 0 {
-			anime := models.Anime{
-				BaseMedia: models.BaseMedia{
-					Title:     item.Title,
-					Year:      getIntValue(item.Year),
-					Rating:    getFloatValue(item.Rating),
-					Genre:     getGenres(item.Genre),
-					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-					Source:    "plex",
-				},
-				Episodes: getIntValue(item.LeafCount),
+			rating := 0.0
+			if item.Rating != nil {
+				rating = *item.Rating
 			}
-			unwatchedAnime = append(unwatchedAnime, anime)
+
+			genre := ""
+			if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
+				genre = *item.Genre[0].Tag
+			}
+
+			duration := 0
+			if item.Duration != nil {
+				duration = *item.Duration / 60000 // Convert milliseconds to minutes
+			}
+
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+			}
+
+			movies = append(movies, models.Recommendation{
+				Title:     item.Title,
+				Type:      "movie",
+				Year:      year,
+				Rating:    rating,
+				Genre:     genre,
+				PosterURL: thumb,
+				Runtime:   duration,
+				Source:    "plex",
+			})
 		}
 	}
-
-	c.logger.Debug("Found unwatched anime",
-		slog.Int("count", len(unwatchedAnime)),
-		slog.String("library_key", animeLibraryKey))
-
-	return unwatchedAnime, nil
+	return movies, nil
 }
 
-// GetUnwatchedTVShows gets unwatched TV shows from Plex
-func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.TVShow, error) {
-	// First get the TV library
-	tvLibraryKey, err := getPlexLibraryKey(libraries, "show", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := c.GetPlexItems(ctx, tvLibraryKey, true)
-	if err != nil {
-		return nil, err
-	}
-
-	var unwatchedTVShows []models.TVShow
-	for _, item := range items {
-		// Skip shows with the anime genre
-		isAnime := false
-		for _, genre := range item.Genre {
-			if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
-				isAnime = true
-				break
-			}
+// GetUnwatchedAnime retrieves unwatched anime from Plex.
+func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
+	var anime []models.Recommendation
+	for _, lib := range libraries {
+		if lib.Type != "show" {
+			continue
 		}
 
-		if !isAnime && item.ViewCount != nil && *item.ViewCount == 0 {
-			tvShow := models.TVShow{
-				BaseMedia: models.BaseMedia{
-					Title:     item.Title,
-					Year:      getIntValue(item.Year),
-					Rating:    getFloatValue(item.Rating),
-					Genre:     getGenres(item.Genre),
-					PosterURL: fmt.Sprintf("%s%s", c.plexURL, getStringValue(item.Thumb)),
-					Source:    "plex",
-				},
-				Seasons: getIntValue(item.ChildCount),
+		items, err := c.GetPlexItems(ctx, lib.Key, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get library items: %w", err)
+		}
+
+		for _, item := range items {
+			// Check if the show has the anime genre
+			isAnime := false
+			for _, genre := range item.Genre {
+				if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
+					isAnime = true
+					break
+				}
 			}
-			unwatchedTVShows = append(unwatchedTVShows, tvShow)
+
+			if !isAnime {
+				continue
+			}
+
+			year := 0
+			if item.Year != nil {
+				year = *item.Year
+			}
+
+			rating := 0.0
+			if item.Rating != nil {
+				rating = *item.Rating
+			}
+
+			genre := ""
+			if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
+				genre = *item.Genre[0].Tag
+			}
+
+			episodes := 0
+			if item.LeafCount != nil {
+				episodes = *item.LeafCount
+			}
+
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+			}
+
+			anime = append(anime, models.Recommendation{
+				Title:     item.Title,
+				Type:      "anime",
+				Year:      year,
+				Rating:    rating,
+				Genre:     genre,
+				PosterURL: thumb,
+				Runtime:   episodes,
+				Source:    "plex",
+			})
 		}
 	}
+	return anime, nil
+}
 
-	return unwatchedTVShows, nil
+// GetUnwatchedTVShows retrieves unwatched TV shows from Plex.
+func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
+	var shows []models.Recommendation
+	for _, lib := range libraries {
+		if lib.Type != "show" {
+			continue
+		}
+
+		items, err := c.GetPlexItems(ctx, lib.Key, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get library items: %w", err)
+		}
+
+		for _, item := range items {
+			// Skip shows with the anime genre
+			isAnime := false
+			for _, genre := range item.Genre {
+				if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
+					isAnime = true
+					break
+				}
+			}
+
+			if isAnime {
+				continue
+			}
+
+			year := 0
+			if item.Year != nil {
+				year = *item.Year
+			}
+
+			rating := 0.0
+			if item.Rating != nil {
+				rating = *item.Rating
+			}
+
+			genre := ""
+			if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
+				genre = *item.Genre[0].Tag
+			}
+
+			seasons := 0
+			if item.ChildCount != nil {
+				seasons = *item.ChildCount
+			}
+
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+			}
+
+			shows = append(shows, models.Recommendation{
+				Title:     item.Title,
+				Type:      "tvshow",
+				Year:      year,
+				Rating:    rating,
+				Genre:     genre,
+				PosterURL: thumb,
+				Runtime:   seasons,
+				Source:    "plex",
+			})
+		}
+	}
+	return shows, nil
 }
 
 // UpdateCache updates the Plex cache by fetching all libraries and their items
@@ -447,13 +503,13 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries.Object.MediaContainer.Directory)))
 
 	// Get all content
-	movies, err := c.GetAllMovies(ctx, libraries.Object.MediaContainer.Directory)
+	movies, err := c.GetUnwatchedMovies(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
 		return fmt.Errorf("failed to get movies: %w", err)
 	}
 	c.logger.Debug("Fetched movies from Plex", slog.Int("count", len(movies)))
 
-	tvShows, err := c.GetAllTVShows(ctx, libraries.Object.MediaContainer.Directory)
+	tvShows, err := c.GetUnwatchedTVShows(ctx, libraries.Object.MediaContainer.Directory)
 	if err != nil {
 		return fmt.Errorf("failed to get TV shows: %w", err)
 	}
@@ -471,23 +527,16 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 	}()
 
-	// Ensure all tables exist first
-	if err := tx.WithContext(ctx).AutoMigrate(
-		&models.PlexMovie{},
-		&models.PlexTVShow{},
-	); err != nil {
+	// Ensure the Recommendation table exists
+	if err := tx.WithContext(ctx).AutoMigrate(&models.Recommendation{}); err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed to ensure tables exist: %w", err)
+		return fmt.Errorf("failed to ensure table exists: %w", err)
 	}
 
 	// Clear existing cache entries
-	if err := tx.WithContext(ctx).Where("1 = 1").Delete(&models.PlexMovie{}).Error; err != nil {
+	if err := tx.WithContext(ctx).Where("source = ?", "plex").Delete(&models.Recommendation{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed to clear existing movies: %w", err)
-	}
-	if err := tx.WithContext(ctx).Where("1 = 1").Delete(&models.PlexTVShow{}).Error; err != nil {
-		tx.Rollback()
-		return fmt.Errorf("failed to clear existing TV shows: %w", err)
+		return fmt.Errorf("failed to clear existing recommendations: %w", err)
 	}
 
 	// Process movies one at a time

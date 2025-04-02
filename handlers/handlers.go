@@ -13,7 +13,6 @@ import (
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/validation"
-	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
 )
 
@@ -60,20 +59,19 @@ func renderTemplate(w http.ResponseWriter, ctx context.Context, files []string, 
 
 // HandleHome serves the home page with today's recommendations.
 // It takes a database connection and recommender instance, and returns an HTTP handler.
-func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
+func HandleHome(r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
 
 		today := time.Now().Truncate(24 * time.Hour)
 
-		var recommendations []models.Recommendation
-		result := db.WithContext(ctx).Where("date = ?", today).Find(&recommendations)
-		if result.Error != nil {
-			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		recommendations, err := r.GetRecommendationsForDate(ctx, today)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				renderError(w, "No recommendations available for today. Please check back later or visit the Past Recommendations page.", http.StatusNotFound)
 			} else {
-				slog.ErrorContext(ctx, "Failed to get today's recommendations", slog.Any("error", result.Error))
+				slog.ErrorContext(ctx, "Failed to get today's recommendations", slog.Any("error", err))
 				renderError(w, "We couldn't find today's recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
@@ -86,7 +84,7 @@ func HandleHome(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 // HandleDate serves recommendations for a specific date.
 // It takes a database connection and recommender instance, and returns an HTTP handler.
 // The date should be provided in the URL path parameter.
-func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
+func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
@@ -112,16 +110,15 @@ func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		var recommendations []models.Recommendation
-		result := db.WithContext(ctx).Where("date = ?", parsedDate).Find(&recommendations)
-		if result.Error != nil {
-			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		recommendations, err := r.GetRecommendationsForDate(ctx, parsedDate)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				slog.InfoContext(ctx, "No recommendations found for date", slog.String("date", date))
 				renderError(w, "We couldn't find recommendations for this date.", http.StatusNotFound)
 			} else {
 				slog.ErrorContext(ctx, "Database error while fetching recommendations",
 					slog.String("date", date),
-					slog.Any("error", result.Error))
+					slog.Any("error", err))
 				renderError(w, "We encountered an error while fetching recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
@@ -134,7 +131,7 @@ func HandleDate(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 // HandleDates serves a paginated list of dates with recommendations.
 // It takes a database connection and recommender instance, and returns an HTTP handler.
 // Pagination parameters can be provided via query parameters 'page' and 'size'.
-func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
+func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
@@ -160,24 +157,9 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		// Get total count
-		var total int64
-		if err := db.WithContext(ctx).Model(&models.Recommendation{}).Count(&total).Error; err != nil {
-			slog.ErrorContext(ctx, "Failed to get total count", slog.Any("error", err))
-			renderError(w, "We couldn't load the list of dates.", http.StatusInternalServerError)
-			return
-		}
-
-		// Get paginated dates
-		var dates []time.Time
-		result := db.WithContext(ctx).
-			Model(&models.Recommendation{}).
-			Order("date DESC").
-			Offset((page-1)*pageSize).
-			Limit(pageSize).
-			Pluck("date", &dates)
-		if result.Error != nil {
-			slog.ErrorContext(ctx, "Failed to get dates", slog.Any("error", result.Error))
+		dates, total, err := r.GetRecommendationDates(ctx, page, pageSize)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to get dates", slog.Any("error", err))
 			renderError(w, "We couldn't load the list of dates.", http.StatusInternalServerError)
 			return
 		}
@@ -203,7 +185,7 @@ func HandleDates(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 // HandleCron handles the recommendation generation cron job.
 // It takes a database connection and recommender instance, and returns an HTTP handler.
 // The job runs asynchronously and generates recommendations for the current day.
-func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
+func HandleCron(r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
 		slog.Info("Starting recommendation cron job",
@@ -213,8 +195,8 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 
 		today := time.Now().Truncate(24 * time.Hour)
 
-		var count int64
-		if err := db.WithContext(req.Context()).Model(&models.Recommendation{}).Where("date = ?", today).Count(&count).Error; err != nil {
+		exists, err := r.CheckRecommendationsExist(req.Context(), today)
+		if err != nil {
 			slog.ErrorContext(req.Context(), "Failed to check existing recommendations",
 				slog.Any("error", err),
 				slog.Time("date", today),
@@ -223,10 +205,9 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		if count > 0 {
+		if exists {
 			slog.Info("Recommendations already exist for today",
 				slog.Time("date", today),
-				slog.Int64("count", count),
 			)
 			w.Header().Set("Content-Type", "application/json")
 			if _, err := fmt.Fprintf(w, `{"message": "Recommendations already exist for %s", "timestamp": "%s"}`,
@@ -267,7 +248,7 @@ func HandleCron(db *gorm.DB, r *recommend.Recommender) http.HandlerFunc {
 // HandleCache handles the Plex cache update cron job.
 // It takes a database connection and Plex client instance, and returns an HTTP handler.
 // The job runs asynchronously and updates the cache of available media.
-func HandleCache(db *gorm.DB, p *plex.Client) http.HandlerFunc {
+func HandleCache(p *plex.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
 		slog.Info("Starting cache update job",
