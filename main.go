@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -84,15 +83,6 @@ func main() {
 
 	// Set up Plex client
 	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB)
-
-	// Test Plex connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := plexClient.TestConnection(ctx); err != nil {
-		slog.Error("Failed to connect to Plex", slog.Any("error", err))
-		os.Exit(1)
-	}
 
 	// Set up recommender
 	recommender, err := recommend.New(gormDB, plexClient, slog.Default())

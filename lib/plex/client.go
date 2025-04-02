@@ -485,14 +485,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	// Test connection and library access first
-	c.logger.Info("Testing Plex connection and library access")
-	if err := c.TestConnection(ctx); err != nil {
-		c.logger.Error("Connection test failed", slog.Any("error", err))
-		return fmt.Errorf("connection test failed: %w", err)
-	}
-	c.logger.Info("Connection test successful")
-
 	// Get all libraries
 	c.logger.Info("Fetching all libraries")
 	libraries, err := c.GetAllLibraries(ctx)
@@ -617,37 +609,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		slog.Int("movies", len(movies)),
 		slog.Int("tv_shows", len(tvShows)),
 	)
-
-	return nil
-}
-
-// TestConnection tests the Plex connection and token access
-func (c *Client) TestConnection(ctx context.Context) error {
-	// Test basic connection
-	c.logger.Debug("Testing Plex connection", slog.String("url", c.plexURL))
-
-	// Get libraries to test token
-	libraries, err := c.GetAllLibraries(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get libraries: %w", err)
-	}
-
-	// Test access to each library
-	for _, lib := range libraries.Object.MediaContainer.Directory {
-		c.logger.Debug("Testing library access",
-			slog.String("title", lib.Title),
-			slog.String("type", lib.Type),
-			slog.String("key", lib.Key))
-
-		items, err := c.GetPlexItems(ctx, lib.Key, false)
-		if err != nil {
-			return fmt.Errorf("failed to access library %s: %w", lib.Title, err)
-		}
-
-		c.logger.Debug("Library access successful",
-			slog.String("title", lib.Title),
-			slog.Int("item_count", len(items)))
-	}
 
 	return nil
 }
