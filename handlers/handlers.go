@@ -78,7 +78,9 @@ func HandleHome(r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations)
+		if !renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations) {
+			return
+		}
 	}
 }
 
@@ -125,7 +127,9 @@ func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations)
+		if !renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations) {
+			return
+		}
 	}
 }
 
@@ -179,7 +183,9 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 			TotalPages: int((total + int64(pageSize) - 1) / int64(pageSize)),
 		}
 
-		renderTemplate(w, ctx, []string{"base.html", "dates.html"}, data)
+		if !renderTemplate(w, ctx, []string{"base.html", "dates.html"}, data) {
+			return
+		}
 	}
 }
 
