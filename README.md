@@ -51,6 +51,7 @@ It generates a new recommendation every day. It stores the recommendations in a 
  - `GET /cron/cache` - Update the cache of Plex and Anilist
  - `GET /date` - List of all dates with recommendations
  - `GET /date/2025-05-19` - Recommendations for a specific date
+ - `GET /stats` - View statistics about the recommendations database
 
 ## Repository Structure
 

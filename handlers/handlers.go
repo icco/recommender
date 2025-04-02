@@ -20,6 +20,20 @@ type errorData struct {
 	Message string
 }
 
+type statsData struct {
+	TotalRecommendations        int64
+	TotalMovies                 int64
+	TotalAnime                  int64
+	TotalTVShows                int64
+	FirstDate                   time.Time
+	LastDate                    time.Time
+	AverageDailyRecommendations float64
+	GenreDistribution           []struct {
+		Genre string
+		Count int64
+	}
+}
+
 // renderError renders an error page using the error template.
 // It takes a response writer, error message, and HTTP status code.
 func renderError(w http.ResponseWriter, message string, status int) {
@@ -282,6 +296,26 @@ func HandleCache(p *plex.Client) http.HandlerFunc {
 			time.Now().Format(time.RFC3339)); err != nil {
 			slog.Error("Failed to write response", slog.Any("error", err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+// HandleStats serves statistics about the recommendations database.
+// It takes a recommender instance and returns an HTTP handler.
+func HandleStats(r *recommend.Recommender) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+		defer cancel()
+
+		stats, err := r.GetStats(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to get stats", slog.Any("error", err))
+			renderError(w, "We couldn't load the statistics. Please try again later.", http.StatusInternalServerError)
+			return
+		}
+
+		if !renderTemplate(w, ctx, []string{"base.html", "stats.html"}, stats) {
 			return
 		}
 	}
