@@ -14,6 +14,7 @@ import (
 
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend/prompts"
+	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	openai "github.com/sashabaranov/go-openai"
 	"gorm.io/gorm"
@@ -22,6 +23,7 @@ import (
 type Recommender struct {
 	db     *gorm.DB
 	plex   *plex.Client
+	tmdb   *tmdb.Client
 	logger *slog.Logger
 	openai *openai.Client
 	cache  map[string]*models.Recommendation
@@ -39,12 +41,13 @@ type UnwatchedContent struct {
 	TVShows []models.Recommendation
 }
 
-func New(db *gorm.DB, plex *plex.Client, logger *slog.Logger) (*Recommender, error) {
+func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger) (*Recommender, error) {
 	openaiClient := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 
 	return &Recommender{
 		db:     db,
 		plex:   plex,
+		tmdb:   tmdb,
 		logger: logger,
 		openai: openaiClient,
 		cache:  make(map[string]*models.Recommendation),

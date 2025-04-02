@@ -14,6 +14,7 @@ type Movie struct {
 	PosterURL string  // URL to the poster image
 	Runtime   int     // Runtime in minutes
 	Source    string  // Source of the content (e.g., "plex")
+	TMDbID    int     // The Movie Database ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -28,6 +29,7 @@ type TVShow struct {
 	PosterURL string  // URL to the poster image
 	Seasons   int     // Number of seasons
 	Source    string  // Source of the content (e.g., "plex")
+	TMDbID    int     // The Movie Database ID
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

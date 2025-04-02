@@ -13,6 +13,7 @@ import (
 	"github.com/icco/recommender/lib/db"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
+	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -60,6 +61,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
+	if tmdbAPIKey == "" {
+		slog.Error("TMDB_API_KEY environment variable is required")
+		os.Exit(1)
+	}
+
 	// Set up database with custom JSON logger
 	gormDB, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
 		Logger: db.NewGormLogger(slog.Default()),
@@ -84,8 +91,11 @@ func main() {
 	// Set up Plex client
 	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB)
 
+	// Set up TMDb client
+	tmdbClient := tmdb.NewClient(tmdbAPIKey, slog.Default())
+
 	// Set up recommender
-	recommender, err := recommend.New(gormDB, plexClient, slog.Default())
+	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, slog.Default())
 	if err != nil {
 		slog.Error("Failed to create recommender", slog.Any("error", err))
 		os.Exit(1)
