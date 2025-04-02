@@ -35,7 +35,7 @@ type TVShow struct {
 // Recommendation represents a single recommendation item with its metadata.
 type Recommendation struct {
 	ID        uint      `gorm:"primarykey"`
-	Date      time.Time `gorm:"index"` // The date this recommendation was generated
+	Date      time.Time // The date this recommendation was generated
 	Title     string    // Title of the content
 	Type      string    // "movie", "anime", or "tvshow"
 	Year      int       // Release year

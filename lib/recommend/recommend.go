@@ -183,12 +183,12 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 
 	// Load prompt templates
-	systemPrompt, err := r.loadPromptTemplate("prompts/system_openai.txt")
+	systemPrompt, err := r.loadPromptTemplate("system_openai.txt")
 	if err != nil {
 		return fmt.Errorf("failed to load system prompt: %w", err)
 	}
 
-	recommendationPrompt, err := r.loadPromptTemplate("prompts/recommendation_openai.txt")
+	recommendationPrompt, err := r.loadPromptTemplate("recommendation_openai.txt")
 	if err != nil {
 		return fmt.Errorf("failed to load recommendation prompt: %w", err)
 	}
