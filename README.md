@@ -74,6 +74,16 @@ recommender/
 
 This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences. The cron is run once an hour, and checks to make sure there are the correct number of things recommended. If there are not, it requests OpenAI for recommendations in JSON of the things it is missing. I really like Anime, which is a genre of TV Show, so I usually have OpenAI prefer anime in its recommendations of TV shows.
 
+The system ensures complete recommendations by checking for:
+- Exactly 4 movies:
+  - 1 funny unwatched movie
+  - 1 action/drama unwatched movie
+  - 1 rewatchable movie
+  - 1 additional movie of any type
+- Exactly 3 unwatched TV shows
+
+If any of these are missing, the system will generate new recommendations to fill in the gaps. This prevents partial recommendations from being displayed.
+
 ## Running the Service
 
 ### Running with Docker Compose
