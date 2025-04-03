@@ -436,6 +436,15 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		slog.Bool("rewatched_movie", movieTypes["rewatched"]),
 		slog.Bool("additional_movie", movieTypes["additional"]))
 
+	// If we don't have exactly 4 movies and 3 TV shows, we need to try again
+	if typeCounts["movie"] != 4 || typeCounts["tvshow"] != 3 {
+		r.logger.Warn("Did not get the correct number of recommendations",
+			slog.Int("movies", typeCounts["movie"]),
+			slog.Int("tvshows", typeCounts["tvshow"]))
+		return fmt.Errorf("did not get the correct number of recommendations: got %d movies and %d TV shows, want 4 movies and 3 TV shows",
+			typeCounts["movie"], typeCounts["tvshow"])
+	}
+
 	// Save recommendations to database in a transaction
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, rec := range filteredRecommendations {
@@ -450,10 +459,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	r.logger.Debug("Successfully generated recommendations",
 		slog.Int("total_count", len(filteredRecommendations)))
-
-	if len(filteredRecommendations) == 0 {
-		return fmt.Errorf("no recommendations found")
-	}
 
 	return nil
 }
