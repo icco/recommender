@@ -112,13 +112,34 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
 func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("date = ?", date).Count(&count).Error; err != nil {
-		return false, fmt.Errorf("failed to check existing recommendations: %w", err)
+	var movieCount, animeCount, tvShowCount int64
+
+	// Count movies
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
+		Where("date = ? AND type = ?", date, "movie").
+		Count(&movieCount).Error; err != nil {
+		return false, fmt.Errorf("failed to check existing movie recommendations: %w", err)
 	}
 
-	// Consider recommendations exist if there are at least 4 items (1 movie, 1 anime, 1 TV show, and 1 additional)
-	return count >= 4, nil
+	// Count anime
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
+		Where("date = ? AND type = ?", date, "anime").
+		Count(&animeCount).Error; err != nil {
+		return false, fmt.Errorf("failed to check existing anime recommendations: %w", err)
+	}
+
+	// Count TV shows
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
+		Where("date = ? AND type = ?", date, "tvshow").
+		Count(&tvShowCount).Error; err != nil {
+		return false, fmt.Errorf("failed to check existing TV show recommendations: %w", err)
+	}
+
+	// According to README:
+	// - 4 movies (1 funny, 1 action/drama, 1 rewatched, 1 additional)
+	// - 3 anime
+	// - 3 TV shows
+	return movieCount >= 4 && animeCount >= 3 && tvShowCount >= 3, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
@@ -379,69 +400,60 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	processItems(recResponse.Anime, "anime")
 	processItems(recResponse.TVShows, "tvshow")
 
-	// Enforce limits based on content type
+	// Enforce limits based on content type and requirements
 	typeCounts := make(map[string]int)
+	movieTypes := make(map[string]bool) // Track specific movie types (funny, action/drama, rewatched)
 	filteredRecommendations := make([]models.Recommendation, 0)
 
-	// First, prioritize getting at least one of each type
-	// Find one movie, one anime, and one TV show
-	var movieFound, animeFound, tvShowFound bool
-
+	// First, process movies according to specific requirements
 	for _, rec := range recommendations {
-		switch rec.Type {
-		case "movie":
-			if !movieFound && typeCounts["movie"] < 1 {
+		if rec.Type == "movie" {
+			// Check if we need this type of movie
+			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] && rec.Source == "plex" {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
-				movieFound = true
-			}
-		case "anime":
-			if !animeFound && typeCounts["anime"] < 1 {
+				movieTypes["funny"] = true
+			} else if (strings.Contains(strings.ToLower(rec.Genre), "action") ||
+				strings.Contains(strings.ToLower(rec.Genre), "drama")) &&
+				!movieTypes["action_drama"] && rec.Source == "plex" {
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["anime"]++
-				animeFound = true
-			}
-		case "tvshow":
-			if !tvShowFound && typeCounts["tvshow"] < 1 {
+				typeCounts["movie"]++
+				movieTypes["action_drama"] = true
+			} else if rec.Source != "plex" && !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["tvshow"]++
-				tvShowFound = true
+				typeCounts["movie"]++
+				movieTypes["rewatched"] = true
+			} else if typeCounts["movie"] < 4 { // Add one more movie if we haven't reached the limit
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["movie"]++
 			}
 		}
 	}
 
-	// Then add additional recommendations up to the limits
+	// Then process anime (3 unwatched)
 	for _, rec := range recommendations {
-		// Skip if already added
-		alreadyAdded := false
-		for _, added := range filteredRecommendations {
-			if added.Title == rec.Title {
-				alreadyAdded = true
-				break
-			}
-		}
-		if alreadyAdded {
-			continue
-		}
-
-		switch rec.Type {
-		case "movie":
-			if typeCounts["movie"] < 4 { // 1 funny + 1 action/drama + 1 rewatchable + 1 additional
-				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["movie"]++
-			}
-		case "anime":
-			if typeCounts["anime"] < 3 {
-				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["anime"]++
-			}
-		case "tvshow":
-			if typeCounts["tvshow"] < 3 {
-				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["tvshow"]++
-			}
+		if rec.Type == "anime" && typeCounts["anime"] < 3 && rec.Source == "plex" {
+			filteredRecommendations = append(filteredRecommendations, rec)
+			typeCounts["anime"]++
 		}
 	}
+
+	// Finally process TV shows (3 unwatched)
+	for _, rec := range recommendations {
+		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 && rec.Source == "plex" {
+			filteredRecommendations = append(filteredRecommendations, rec)
+			typeCounts["tvshow"]++
+		}
+	}
+
+	// Log the counts for debugging
+	r.logger.Debug("Recommendation counts",
+		slog.Int("movies", typeCounts["movie"]),
+		slog.Int("anime", typeCounts["anime"]),
+		slog.Int("tvshows", typeCounts["tvshow"]),
+		slog.Bool("funny_movie", movieTypes["funny"]),
+		slog.Bool("action_drama_movie", movieTypes["action_drama"]),
+		slog.Bool("rewatched_movie", movieTypes["rewatched"]))
 
 	// Save recommendations to database in a transaction
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
