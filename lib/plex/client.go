@@ -296,9 +296,26 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				duration = *item.Duration / 60000 // Convert milliseconds to minutes
 			}
 
-			thumb := ""
+			// Default to Plex thumbnail
+			posterURL := ""
 			if item.Thumb != nil {
-				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+				posterURL = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+			}
+
+			// Try to get TMDb poster
+			if year > 0 {
+				result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
+				if err != nil {
+					c.logger.Warn("Failed to search TMDb for movie",
+						slog.String("title", item.Title),
+						slog.Int("year", year),
+						slog.Any("error", err))
+				} else if len(result.Results) > 0 {
+					// Use the first result's poster if available
+					if result.Results[0].PosterPath != "" {
+						posterURL = c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+					}
+				}
 			}
 
 			movies = append(movies, models.Recommendation{
@@ -307,7 +324,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
-				PosterURL: thumb,
+				PosterURL: posterURL,
 				Runtime:   duration,
 				Source:    "plex",
 			})
@@ -432,9 +449,26 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 				seasons = *item.ChildCount
 			}
 
-			thumb := ""
+			// Default to Plex thumbnail
+			posterURL := ""
 			if item.Thumb != nil {
-				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+				posterURL = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
+			}
+
+			// Try to get TMDb poster
+			if year > 0 {
+				result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
+				if err != nil {
+					c.logger.Warn("Failed to search TMDb for TV show",
+						slog.String("title", item.Title),
+						slog.Int("year", year),
+						slog.Any("error", err))
+				} else if len(result.Results) > 0 {
+					// Use the first result's poster if available
+					if result.Results[0].PosterPath != "" {
+						posterURL = c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+					}
+				}
 			}
 
 			shows = append(shows, models.Recommendation{
@@ -443,7 +477,7 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
-				PosterURL: thumb,
+				PosterURL: posterURL,
 				Runtime:   seasons,
 				Source:    "plex",
 			})
