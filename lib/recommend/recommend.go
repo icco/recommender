@@ -113,7 +113,13 @@ func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.T
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("date = ?", date).Count(&count).Error; err != nil {
 		return false, fmt.Errorf("failed to check recommendations: %w", err)
 	}
-	return count > 0, nil
+
+	// We need 4 movies, 3 anime, and 3 TV shows (total of 10)
+	if count < 10 {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
@@ -255,6 +261,13 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		PreviousRecommendations: r.formatContent(prevRecs),
 	}
 
+	// Log available content for debugging
+	r.logger.Debug("Available content for recommendations",
+		slog.Int("total_items", len(allContent)),
+		slog.Int("movies", len(unwatchedMovies)),
+		slog.Int("tv_shows", len(unwatchedTVShows)),
+		slog.String("content", content.Content))
+
 	// Load prompt templates
 	systemPrompt, err := r.loadPromptTemplate("system_openai.txt")
 	if err != nil {
@@ -356,7 +369,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	for _, rec := range recommendations {
 		switch rec.Type {
 		case "movie":
-			if typeCounts["movie"] < 3 { // 1 funny + 1 action/drama + 1 rewatchable
+			if typeCounts["movie"] < 4 { // 1 funny + 1 action/drama + 1 rewatchable + 1 additional
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 			}
