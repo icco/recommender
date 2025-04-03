@@ -51,6 +51,11 @@ func renderTemplate(w http.ResponseWriter, ctx context.Context, files []string, 
 	// Execute the base template, which will include the content template
 	if err := tmpl.ExecuteTemplate(w, "base.html", data); err != nil {
 		slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
+		// Clear any partial response that might have been written
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "text/html")
+		}
+		w.WriteHeader(http.StatusInternalServerError)
 		renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
 		return false
 	}
