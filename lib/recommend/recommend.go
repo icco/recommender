@@ -20,6 +20,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	// SourcePlex represents content from the Plex library
+	SourcePlex = "plex"
+)
+
 // StatsData represents statistics about the recommendations database.
 type StatsData struct {
 	TotalRecommendations        int64
@@ -397,17 +402,17 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	for _, rec := range recommendations {
 		if rec.Type == "movie" {
 			// Check if we need this type of movie
-			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] && rec.Source == "plex" {
+			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] && rec.Source == SourcePlex {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["funny"] = true
 			} else if (strings.Contains(strings.ToLower(rec.Genre), "action") ||
 				strings.Contains(strings.ToLower(rec.Genre), "drama")) &&
-				!movieTypes["action_drama"] && rec.Source == "plex" {
+				!movieTypes["action_drama"] && rec.Source == SourcePlex {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["action_drama"] = true
-			} else if rec.Source != "plex" && !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
+			} else if rec.Source != SourcePlex && !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["rewatched"] = true
@@ -421,7 +426,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Then process TV shows (3 unwatched)
 	for _, rec := range recommendations {
-		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 && rec.Source == "plex" {
+		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 && rec.Source == SourcePlex {
 			filteredRecommendations = append(filteredRecommendations, rec)
 			typeCounts["tvshow"]++
 		}
