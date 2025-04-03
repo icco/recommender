@@ -458,11 +458,11 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 
 	// Clear existing cache entries
-	if err := tx.WithContext(ctx).Where("source = ?", "plex").Delete(&models.Movie{}).Error; err != nil {
+	if err := tx.WithContext(ctx).Delete(&models.Movie{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing movies: %w", err)
 	}
-	if err := tx.WithContext(ctx).Where("source = ?", "plex").Delete(&models.TVShow{}).Error; err != nil {
+	if err := tx.WithContext(ctx).Delete(&models.TVShow{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing TV shows: %w", err)
 	}
