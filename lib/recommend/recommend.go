@@ -108,6 +108,29 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 	return dates, total, nil
 }
 
+// CheckRecommendationsComplete checks if recommendations are complete for a specific date
+// Returns true if we have exactly 4 movies and 3 TV shows
+func (r *Recommender) CheckRecommendationsComplete(ctx context.Context, date time.Time) (bool, error) {
+	var movieCount, tvShowCount int64
+
+	// Count movies for the date
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
+		Where("date = ? AND type = ?", date, "movie").
+		Count(&movieCount).Error; err != nil {
+		return false, fmt.Errorf("failed to count movies: %w", err)
+	}
+
+	// Count TV shows for the date
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
+		Where("date = ? AND type = ?", date, "tvshow").
+		Count(&tvShowCount).Error; err != nil {
+		return false, fmt.Errorf("failed to count TV shows: %w", err)
+	}
+
+	// Return true if we have exactly 4 movies and 3 TV shows
+	return movieCount == 4 && tvShowCount == 3, nil
+}
+
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
 func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
 	var count int64
@@ -119,8 +142,17 @@ func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.T
 		return false, fmt.Errorf("failed to check existing recommendations: %w", err)
 	}
 
-	// Return true if we have any recommendations for this date
-	return count > 0, nil
+	// If we have any recommendations, check if they're complete
+	if count > 0 {
+		complete, err := r.CheckRecommendationsComplete(ctx, date)
+		if err != nil {
+			return false, fmt.Errorf("failed to check recommendation completeness: %w", err)
+		}
+		return complete, nil
+	}
+
+	// Return false if we have no recommendations
+	return false, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
