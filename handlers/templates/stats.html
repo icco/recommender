@@ -12,19 +12,19 @@
     <!-- Total Movies -->
     <div class="bg-white rounded-lg shadow-md p-6">
       <h2 class="text-xl font-semibold mb-2">Total Movies</h2>
-      <p class="text-3xl font-bold text-green-600">{{.TotalMovies}}</p>
+      <p class="text-3xl font-bold text-blue-600">{{.TotalMovies}}</p>
     </div>
 
     <!-- Total Anime -->
     <div class="bg-white rounded-lg shadow-md p-6">
       <h2 class="text-xl font-semibold mb-2">Total Anime</h2>
-      <p class="text-3xl font-bold text-purple-600">{{.TotalAnime}}</p>
+      <p class="text-3xl font-bold text-blue-600">{{.TotalAnime}}</p>
     </div>
 
     <!-- Total TV Shows -->
     <div class="bg-white rounded-lg shadow-md p-6">
       <h2 class="text-xl font-semibold mb-2">Total TV Shows</h2>
-      <p class="text-3xl font-bold text-orange-600">{{.TotalTVShows}}</p>
+      <p class="text-3xl font-bold text-blue-600">{{.TotalTVShows}}</p>
     </div>
 
     <!-- Date Range -->
@@ -37,7 +37,31 @@
     <!-- Average Daily Recommendations -->
     <div class="bg-white rounded-lg shadow-md p-6">
       <h2 class="text-xl font-semibold mb-2">Average Daily Recommendations</h2>
-      <p class="text-3xl font-bold text-indigo-600">{{.AverageDailyRecommendations}}</p>
+      <p class="text-3xl font-bold text-blue-600">{{printf "%.1f" .AverageDailyRecommendations}}</p>
+    </div>
+  </div>
+
+  <!-- Cache Database Statistics -->
+  <div class="mt-8">
+    <h2 class="text-2xl font-semibold mb-4">Cache Database Statistics</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Total Cached Movies -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-2">Cached Movies</h2>
+        <p class="text-3xl font-bold text-blue-600">{{.TotalCachedMovies}}</p>
+      </div>
+
+      <!-- Total Cached TV Shows -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-2">Cached TV Shows</h2>
+        <p class="text-3xl font-bold text-blue-600">{{.TotalCachedTVShows}}</p>
+      </div>
+
+      <!-- Last Cache Update -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-2">Last Cache Update</h2>
+        <p class="text-gray-600">{{.LastCacheUpdate.Format "January 2, 2006 15:04 MST"}}</p>
+      </div>
     </div>
   </div>
 
@@ -49,7 +73,7 @@
         {{range .GenreDistribution}}
         <div class="flex justify-between items-center">
           <span class="text-gray-600">{{.Genre}}</span>
-          <span class="font-semibold">{{.Count}}</span>
+          <span class="font-semibold text-blue-600">{{.Count}}</span>
         </div>
         {{end}}
       </div>

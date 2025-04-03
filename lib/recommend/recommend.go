@@ -33,6 +33,9 @@ type StatsData struct {
 		Genre string
 		Count int64
 	}
+	TotalCachedMovies  int64
+	TotalCachedTVShows int64
+	LastCacheUpdate    time.Time
 }
 
 // Recommender handles the generation and retrieval of content recommendations.
@@ -479,6 +482,34 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 			Genre: gc.Genre,
 			Count: gc.Count,
 		}
+	}
+
+	// Get cache database statistics
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Where("source = ?", "plex").Count(&stats.TotalCachedMovies).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total cached movies: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Where("source = ?", "plex").Count(&stats.TotalCachedTVShows).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total cached TV shows: %w", err)
+	}
+
+	// Get last cache update time from the most recent movie or TV show update
+	var lastMovieUpdate, lastTVShowUpdate time.Time
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Where("source = ?", "plex").Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastMovieUpdate).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to get last movie update: %w", err)
+		}
+	}
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Where("source = ?", "plex").Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastTVShowUpdate).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to get last TV show update: %w", err)
+		}
+	}
+
+	// Use the most recent update time
+	if lastMovieUpdate.After(lastTVShowUpdate) {
+		stats.LastCacheUpdate = lastMovieUpdate
+	} else {
+		stats.LastCacheUpdate = lastTVShowUpdate
 	}
 
 	return &stats, nil
