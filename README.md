@@ -1,6 +1,6 @@
 # Recommender
 
-Recommender that uses a mixture of data from my watch history, my ratings, what is in my Plex library, what is on Anilist to recommend me stuff to watch.
+Recommender that uses a mixture of data from my watch history, my ratings, what is in my Plex library, what is on Anilist to recommend me stuff to watch. This is an experiment in entirely building an app with generative AI.
 
 The app is built using the following technologies:
 
@@ -54,13 +54,18 @@ It generates a new recommendation every day. It stores the recommendations in a 
 
 ## Repository Structure
 
+The API documentation is available at [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github.com/icco/recommender).
+
 ```
 recommender/
 ├── handlers/           # HTTP request handlers and templates
 ├── lib/               # Core libraries and business logic
-│   ├── db/           # Database utilities
+│   ├── db/           # Database utilities and migrations
+│   ├── health/       # Health check endpoints
 │   ├── plex/         # Plex API client
-│   └── recommender/  # Recommendation generation logic
+│   ├── recommend/    # Recommendation generation logic
+│   ├── tmdb/         # TMDb API client
+│   └── validation/   # Input validation utilities
 ├── models/           # Data models and database schemas
 └── data/            # Persistent data storage
 ```

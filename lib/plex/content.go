@@ -3,7 +3,6 @@ package plex
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/LukeHagar/plexgo/models/operations"
 	"github.com/icco/recommender/models"
@@ -60,7 +59,6 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 				Genre:     genre,
 				PosterURL: thumb,
 				Runtime:   duration,
-				Source:    "plex",
 			})
 		}
 	}
@@ -81,19 +79,6 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 		}
 
 		for _, item := range items {
-			// Skip shows with the anime genre
-			isAnime := false
-			for _, genre := range item.Genre {
-				if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
-					isAnime = true
-					break
-				}
-			}
-
-			if isAnime {
-				continue
-			}
-
 			year := 0
 			if item.Year != nil {
 				year = *item.Year
@@ -131,7 +116,6 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 				Genre:     genre,
 				PosterURL: thumb,
 				Runtime:   seasons,
-				Source:    "plex",
 			})
 		}
 	}

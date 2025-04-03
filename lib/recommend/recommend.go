@@ -24,7 +24,6 @@ import (
 type StatsData struct {
 	TotalRecommendations        int64
 	TotalMovies                 int64
-	TotalAnime                  int64
 	TotalTVShows                int64
 	FirstDate                   time.Time
 	LastDate                    time.Time
@@ -59,10 +58,9 @@ type RecommendationContext struct {
 }
 
 // UnwatchedContent represents the unwatched content available for recommendations,
-// organized by content type (movies, anime, TV shows).
+// organized by content type (movies and TV shows).
 type UnwatchedContent struct {
 	Movies  []models.Recommendation
-	Anime   []models.Recommendation
 	TVShows []models.Recommendation
 }
 
@@ -112,20 +110,13 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
 func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
-	var movieCount, animeCount, tvShowCount int64
+	var movieCount, tvShowCount int64
 
 	// Count movies
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
 		Where("date = ? AND type = ?", date, "movie").
 		Count(&movieCount).Error; err != nil {
 		return false, fmt.Errorf("failed to check existing movie recommendations: %w", err)
-	}
-
-	// Count anime
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
-		Where("date = ? AND type = ?", date, "anime").
-		Count(&animeCount).Error; err != nil {
-		return false, fmt.Errorf("failed to check existing anime recommendations: %w", err)
 	}
 
 	// Count TV shows
@@ -137,9 +128,8 @@ func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.T
 
 	// According to README:
 	// - 4 movies (1 funny, 1 action/drama, 1 rewatched, 1 additional)
-	// - 3 anime
 	// - 3 TV shows
-	return movieCount >= 4 && animeCount >= 3 && tvShowCount >= 3, nil
+	return movieCount >= 4 && tvShowCount >= 3, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
@@ -252,7 +242,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Genre:     movie.Genre,
 			PosterURL: posterURL,
 			Runtime:   movie.Runtime,
-			Source:    movie.Source,
 			MovieID:   &movie.ID,
 			TMDbID:    movie.TMDbID,
 		})
@@ -285,7 +274,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Genre:     tvShow.Genre,
 			PosterURL: posterURL,
 			Runtime:   tvShow.Seasons,
-			Source:    tvShow.Source,
 			TVShowID:  &tvShow.ID,
 			TMDbID:    tvShow.TMDbID,
 		})
@@ -360,7 +348,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	type RecommendationResponse struct {
 		Movies  []RecommendationItem `json:"movies"`
-		Anime   []RecommendationItem `json:"anime"`
 		TVShows []RecommendationItem `json:"tvshows"`
 	}
 
@@ -397,50 +384,42 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Process each type of recommendation
 	processItems(recResponse.Movies, "movie")
-	processItems(recResponse.Anime, "anime")
 	processItems(recResponse.TVShows, "tvshow")
 
 	// Enforce limits based on content type and requirements
 	typeCounts := make(map[string]int)
-	movieTypes := make(map[string]bool) // Track specific movie types (funny, action/drama, rewatched)
+	movieTypes := make(map[string]bool) // Track specific movie types (funny, action/drama, rewatched, additional)
 	filteredRecommendations := make([]models.Recommendation, 0)
 
 	// First, process movies according to specific requirements
 	for _, rec := range recommendations {
 		if rec.Type == "movie" {
 			// Check if we need this type of movie
-			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] && rec.Source == "plex" {
+			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["funny"] = true
 			} else if (strings.Contains(strings.ToLower(rec.Genre), "action") ||
 				strings.Contains(strings.ToLower(rec.Genre), "drama")) &&
-				!movieTypes["action_drama"] && rec.Source == "plex" {
+				!movieTypes["action_drama"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["action_drama"] = true
-			} else if rec.Source != "plex" && !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
+			} else if !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["rewatched"] = true
-			} else if typeCounts["movie"] < 4 { // Add one more movie if we haven't reached the limit
+			} else if !movieTypes["additional"] { // Add one more movie if we haven't reached the limit
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
+				movieTypes["additional"] = true
 			}
 		}
 	}
 
-	// Then process anime (3 unwatched)
+	// Then process TV shows (3 unwatched)
 	for _, rec := range recommendations {
-		if rec.Type == "anime" && typeCounts["anime"] < 3 && rec.Source == "plex" {
-			filteredRecommendations = append(filteredRecommendations, rec)
-			typeCounts["anime"]++
-		}
-	}
-
-	// Finally process TV shows (3 unwatched)
-	for _, rec := range recommendations {
-		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 && rec.Source == "plex" {
+		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 {
 			filteredRecommendations = append(filteredRecommendations, rec)
 			typeCounts["tvshow"]++
 		}
@@ -449,11 +428,20 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Log the counts for debugging
 	r.logger.Debug("Recommendation counts",
 		slog.Int("movies", typeCounts["movie"]),
-		slog.Int("anime", typeCounts["anime"]),
 		slog.Int("tvshows", typeCounts["tvshow"]),
 		slog.Bool("funny_movie", movieTypes["funny"]),
 		slog.Bool("action_drama_movie", movieTypes["action_drama"]),
-		slog.Bool("rewatched_movie", movieTypes["rewatched"]))
+		slog.Bool("rewatched_movie", movieTypes["rewatched"]),
+		slog.Bool("additional_movie", movieTypes["additional"]))
+
+	// If we don't have exactly 4 movies and 3 TV shows, we need to try again
+	if typeCounts["movie"] != 4 || typeCounts["tvshow"] != 3 {
+		r.logger.Warn("Did not get the correct number of recommendations",
+			slog.Int("movies", typeCounts["movie"]),
+			slog.Int("tvshows", typeCounts["tvshow"]))
+		return fmt.Errorf("did not get the correct number of recommendations: got %d movies and %d TV shows, want 4 movies and 3 TV shows",
+			typeCounts["movie"], typeCounts["tvshow"])
+	}
 
 	// Save recommendations to database in a transaction
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -469,10 +457,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	r.logger.Debug("Successfully generated recommendations",
 		slog.Int("total_count", len(filteredRecommendations)))
-
-	if len(filteredRecommendations) == 0 {
-		return fmt.Errorf("no recommendations found")
-	}
 
 	return nil
 }
@@ -490,9 +474,6 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	// Get counts by type
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "movie").Count(&stats.TotalMovies).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total movies: %w", err)
-	}
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "anime").Count(&stats.TotalAnime).Error; err != nil {
-		return nil, fmt.Errorf("failed to get total anime: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "tvshow").Count(&stats.TotalTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total TV shows: %w", err)
@@ -551,21 +532,21 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	}
 
 	// Get cache database statistics
-	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Where("source = ?", "plex").Count(&stats.TotalCachedMovies).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Count(&stats.TotalCachedMovies).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total cached movies: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Where("source = ?", "plex").Count(&stats.TotalCachedTVShows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Count(&stats.TotalCachedTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total cached TV shows: %w", err)
 	}
 
 	// Get last cache update time from the most recent movie or TV show update
 	var lastMovieUpdate, lastTVShowUpdate time.Time
-	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Where("source = ?", "plex").Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastMovieUpdate).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastMovieUpdate).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("failed to get last movie update: %w", err)
 		}
 	}
-	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Where("source = ?", "plex").Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastTVShowUpdate).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastTVShowUpdate).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("failed to get last TV show update: %w", err)
 		}
