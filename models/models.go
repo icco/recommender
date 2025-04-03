@@ -39,13 +39,13 @@ type Recommendation struct {
 	ID        uint      `gorm:"primarykey"`
 	Date      time.Time // The date this recommendation was generated
 	Title     string    // Title of the content
-	Type      string    // "movie", "anime", or "tvshow"
+	Type      string    // "movie" or "tvshow"
 	Year      int       // Release year
-	Rating    float64   // Rating (e.g., from IMDB, Anilist)
+	Rating    float64   // Rating (e.g., from IMDB)
 	Genre     string    // Genre(s)
 	PosterURL string    // URL to the poster image
-	Runtime   int       // Runtime in minutes (for movies) or episodes (for anime) or seasons (for TV shows)
-	Source    string    // Source of the content (e.g., "plex", "anilist")
+	Runtime   int       // Runtime in minutes (for movies) or seasons (for TV shows)
+	Source    string    // Source of the content (e.g., "plex")
 	MovieID   *uint     // Reference to Movie if Type is "movie"
 	TVShowID  *uint     // Reference to TVShow if Type is "tvshow"
 	TMDbID    int       // The Movie Database ID

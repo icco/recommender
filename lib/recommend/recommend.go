@@ -24,7 +24,6 @@ import (
 type StatsData struct {
 	TotalRecommendations        int64
 	TotalMovies                 int64
-	TotalAnime                  int64
 	TotalTVShows                int64
 	FirstDate                   time.Time
 	LastDate                    time.Time
@@ -59,10 +58,9 @@ type RecommendationContext struct {
 }
 
 // UnwatchedContent represents the unwatched content available for recommendations,
-// organized by content type (movies, anime, TV shows).
+// organized by content type (movies and TV shows).
 type UnwatchedContent struct {
 	Movies  []models.Recommendation
-	Anime   []models.Recommendation
 	TVShows []models.Recommendation
 }
 
@@ -473,9 +471,6 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	// Get counts by type
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "movie").Count(&stats.TotalMovies).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total movies: %w", err)
-	}
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "anime").Count(&stats.TotalAnime).Error; err != nil {
-		return nil, fmt.Errorf("failed to get total anime: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "tvshow").Count(&stats.TotalTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total TV shows: %w", err)

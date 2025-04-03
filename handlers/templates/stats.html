@@ -15,12 +15,6 @@
       <p class="text-3xl font-bold">{{.TotalMovies}}</p>
     </div>
 
-    <!-- Total Anime -->
-    <div class="bg-white rounded-lg shadow-md p-6">
-      <h2 class="text-xl font-semibold mb-2">Total Anime</h2>
-      <p class="text-3xl font-bold">{{.TotalAnime}}</p>
-    </div>
-
     <!-- Total TV Shows -->
     <div class="bg-white rounded-lg shadow-md p-6">
       <h2 class="text-xl font-semibold mb-2">Total TV Shows</h2>
@@ -44,39 +38,18 @@
   <!-- Cache Database Statistics -->
   <div class="mt-8">
     <h2 class="text-2xl font-semibold mb-4">Cache Database Statistics</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <!-- Total Cached Movies -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-2">Cached Movies</h2>
+        <h3 class="text-xl font-semibold mb-2">Total Cached Movies</h3>
         <p class="text-3xl font-bold">{{.TotalCachedMovies}}</p>
       </div>
-
-      <!-- Total Cached TV Shows -->
       <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-2">Cached TV Shows</h2>
+        <h3 class="text-xl font-semibold mb-2">Total Cached TV Shows</h3>
         <p class="text-3xl font-bold">{{.TotalCachedTVShows}}</p>
       </div>
-
-      <!-- Last Cache Update -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-2">Last Cache Update</h2>
-        <p class="text-gray-600">{{.LastCacheUpdate.Format "January 2, 2006 15:04 MST"}}</p>
-      </div>
     </div>
-  </div>
-
-  <!-- Genre Distribution -->
-  <div class="mt-8">
-    <h2 class="text-2xl font-semibold mb-4">Genre Distribution</h2>
-    <div class="bg-white rounded-lg shadow-md p-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {{range .GenreDistribution}}
-        <div class="flex justify-between items-center">
-          <span class="text-gray-600">{{.Genre}}</span>
-          <span class="font-semibold">{{.Count}}</span>
-        </div>
-        {{end}}
-      </div>
+    <div class="mt-6">
+      <p class="text-gray-600">Last Cache Update: {{.LastCacheUpdate.Format "January 2, 2006 15:04:05"}}</p>
     </div>
   </div>
 </div>
