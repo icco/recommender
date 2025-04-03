@@ -58,12 +58,19 @@ It generates a new recommendation every day. It stores the recommendations in a 
 recommender/
 ├── handlers/           # HTTP request handlers and templates
 ├── lib/               # Core libraries and business logic
-│   ├── db/           # Database utilities
+│   ├── db/           # Database utilities and migrations
+│   ├── health/       # Health check endpoints
 │   ├── plex/         # Plex API client
-│   └── recommender/  # Recommendation generation logic
+│   ├── recommend/    # Recommendation generation logic
+│   ├── tmdb/         # TMDb API client
+│   └── validation/   # Input validation utilities
 ├── models/           # Data models and database schemas
 └── data/            # Persistent data storage
 ```
+
+## API Documentation
+
+The API documentation is available at [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github.com/icco/recommender).
 
 ## Recommendation Logic
 
