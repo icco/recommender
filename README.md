@@ -16,8 +16,7 @@ The homepage recommends me the following:
    - One I haven't seen that is funny
    - One I haven't seen that is action or a drama
    - One I have seen before
- - Three anime I haven't seen
- - Three TV show I haven't seen
+ - Three TV shows I haven't seen
 
 it displays the following:
 
@@ -49,7 +48,7 @@ It generates a new recommendation every day. It stores the recommendations in a 
  - `GET /` - Homepage
  - `GET /cron/recommend` - Generate new recommendations
  - `GET /cron/cache` - Update the cache of Plex and Anilist
- - `GET /date` - List of all dates with recommendations
+ - `GET /dates` - List of all dates with recommendations
  - `GET /date/2025-05-19` - Recommendations for a specific date
  - `GET /stats` - View statistics about the recommendations database
 
@@ -68,7 +67,7 @@ recommender/
 
 ## Recommendation Logic
 
-This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences.
+This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences. The cron is run once an hour, and checks to make sure there are the correct number of things recommended. If there are not, it requests OpenAI for recommendations in JSON of the things it is missing. 
 
 ## Running the Service
 
