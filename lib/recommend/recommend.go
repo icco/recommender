@@ -110,19 +110,15 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 	return dates, total, nil
 }
 
-// CheckRecommendationsExist checks if recommendations exist for a specific date
+// CheckRecommendationsExist checks if recommendations already exist for a specific date
 func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("date = ?", date).Count(&count).Error; err != nil {
-		return false, fmt.Errorf("failed to check recommendations: %w", err)
+		return false, fmt.Errorf("failed to check existing recommendations: %w", err)
 	}
 
-	// We need 4 movies, 3 anime, and 3 TV shows (total of 10)
-	if count < 10 {
-		return false, nil
-	}
-
-	return true, nil
+	// Consider recommendations exist if there are at least 4 items (1 movie, 1 anime, 1 TV show, and 1 additional)
+	return count >= 4, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
@@ -215,6 +211,15 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
+				// Update the movie's TMDbID if it's not set
+				if movie.TMDbID == 0 {
+					movie.TMDbID = result.Results[0].ID
+					if err := r.db.Save(&movie).Error; err != nil {
+						r.logger.Error("Failed to update movie TMDbID", "error", err, "title", movie.Title)
+					}
+				}
+			} else if err != nil {
+				r.logger.Error("Failed to search TMDb for movie", "error", err, "title", movie.Title)
 			}
 		}
 
@@ -239,6 +244,15 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
+				// Update the TV show's TMDbID if it's not set
+				if tvShow.TMDbID == 0 {
+					tvShow.TMDbID = result.Results[0].ID
+					if err := r.db.Save(&tvShow).Error; err != nil {
+						r.logger.Error("Failed to update TV show TMDbID", "error", err, "title", tvShow.Title)
+					}
+				}
+			} else if err != nil {
+				r.logger.Error("Failed to search TMDb for TV show", "error", err, "title", tvShow.Title)
 			}
 		}
 
@@ -369,7 +383,47 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	typeCounts := make(map[string]int)
 	filteredRecommendations := make([]models.Recommendation, 0)
 
+	// First, prioritize getting at least one of each type
+	// Find one movie, one anime, and one TV show
+	var movieFound, animeFound, tvShowFound bool
+
 	for _, rec := range recommendations {
+		switch rec.Type {
+		case "movie":
+			if !movieFound && typeCounts["movie"] < 1 {
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["movie"]++
+				movieFound = true
+			}
+		case "anime":
+			if !animeFound && typeCounts["anime"] < 1 {
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["anime"]++
+				animeFound = true
+			}
+		case "tvshow":
+			if !tvShowFound && typeCounts["tvshow"] < 1 {
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["tvshow"]++
+				tvShowFound = true
+			}
+		}
+	}
+
+	// Then add additional recommendations up to the limits
+	for _, rec := range recommendations {
+		// Skip if already added
+		alreadyAdded := false
+		for _, added := range filteredRecommendations {
+			if added.Title == rec.Title {
+				alreadyAdded = true
+				break
+			}
+		}
+		if alreadyAdded {
+			continue
+		}
+
 		switch rec.Type {
 		case "movie":
 			if typeCounts["movie"] < 4 { // 1 funny + 1 action/drama + 1 rewatchable + 1 additional
