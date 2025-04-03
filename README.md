@@ -67,7 +67,7 @@ recommender/
 
 ## Recommendation Logic
 
-This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences. The cron is run once an hour, and checks to make sure there are the correct number of things recommended. If there are not, it requests OpenAI for recommendations in JSON of the things it is missing. 
+This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences. The cron is run once an hour, and checks to make sure there are the correct number of things recommended. If there are not, it requests OpenAI for recommendations in JSON of the things it is missing. I really like Anime, which is a genre of TV Show, so I usually have OpenAI prefer anime in its recommendations of TV shows.
 
 ## Running the Service
 
