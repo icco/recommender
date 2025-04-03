@@ -375,10 +375,29 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 			if year > 0 {
 				result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
 				if err != nil {
-					c.logger.Warn("Failed to search TMDb for TV show",
+					// If search with year fails, try without year
+					c.logger.Debug("Retrying TMDb search without year",
 						slog.String("title", item.Title),
-						slog.Int("year", year),
-						slog.Any("error", err))
+						slog.Int("original_year", year))
+
+					result, err = c.tmdb.SearchTVShow(ctx, item.Title, 0)
+					if err != nil {
+						c.logger.Warn("Failed to search TMDb for TV show",
+							slog.String("title", item.Title),
+							slog.Any("error", err))
+					} else if len(result.Results) > 0 {
+						// Use the first result's poster if available
+						if result.Results[0].PosterPath != "" {
+							tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+							if _, err := url.Parse(tmdbPosterURL); err != nil {
+								c.logger.Warn("Invalid TMDb poster URL",
+									slog.String("url", tmdbPosterURL),
+									slog.Any("error", err))
+							} else {
+								posterURL = tmdbPosterURL
+							}
+						}
+					}
 				} else if len(result.Results) > 0 {
 					// Use the first result's poster if available
 					if result.Results[0].PosterPath != "" {
