@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -103,6 +104,12 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 			c.logger.Error("failed to close response body", "error", err)
 		}
 	}()
+
+	// Check response status code
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDb API returned non-200 status code: %d, body: %s", resp.StatusCode, string(body))
+	}
 
 	var result TVSearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
