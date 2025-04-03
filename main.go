@@ -17,7 +17,6 @@ import (
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/tmdb"
-	"github.com/icco/recommender/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -82,13 +81,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Auto-migrate the schema first to ensure tables exist
-	if err := gormDB.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
-		slog.Error("Failed to migrate database", slog.Any("error", err))
-		os.Exit(1)
-	}
-
-	// Run migrations to drop old tables and fix indexes
 	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
 		slog.Error("Failed to run migrations", slog.Any("error", err))
 		os.Exit(1)

@@ -4,25 +4,33 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 
+	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
 )
 
 // TablesToDrop is a list of tables that should be dropped if they exist
 var (
 	tablesToDrop = []string{
-		"old_recommendations", // Example of an old table to drop
-		"plex_items",          // Old table used for Plex cache
-		"anime_items",         // Old table used for Anilist cache
-		"plex_movies",         // Old table for Plex movies
-		"plex_anime",          // Old table for Plex anime
-		"plex_tvshows",        // Old table for Plex TV shows
-		"plex_cache_movies",   // Old cache table for movies
-		"plex_cache_anime",    // Old cache table for anime
-		"plex_cache_tvshows",  // Old cache table for TV shows
-		"plex_cache",          // Old general cache table
-		"user_preferences",    // Old user preferences table
-		"user_ratings",        // Old user ratings table
+		"anime_items",
+		"animes",
+		"old_recommendations",
+		"plex_anime",
+		"plex_cache",
+		"plex_cache_anime",
+		"plex_cache_movies",
+		"plex_cache_tvshows",
+		"plex_items",
+		"plex_movies",
+		"plex_tv_shows",
+		"plex_tvshows",
+		"recommendation_anime",
+		"recommendation_movies",
+		"recommendation_tvshows",
+		"recommendations",
+		"user_preferences",
+		"user_ratings",
 	}
 	indexesToDrop = []string{
 		"idx_animes_title",
@@ -37,6 +45,12 @@ var (
 // RunMigrations runs all database migrations
 func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 	ctx := context.Background()
+
+	// Auto-migrate the schema first to ensure tables exist
+	if err := db.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
+		slog.Error("Failed to migrate database", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	// Drop old tables
 	for _, table := range tablesToDrop {
@@ -53,10 +67,8 @@ func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 	return nil
 }
 
-// dropMoviesTitleIndex drops the index on movie titles if it exists
+// dropIndexes drops the indexes if they exist
 func dropIndexes(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
-	// Drop unique indexes
-
 	for _, index := range indexesToDrop {
 		if err := db.WithContext(ctx).Exec("DROP INDEX IF EXISTS " + index).Error; err != nil {
 			return fmt.Errorf("failed to drop index %s: %w", index, err)
