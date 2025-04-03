@@ -28,7 +28,6 @@ var (
 		"recommendation_anime",
 		"recommendation_movies",
 		"recommendation_tvshows",
-		"recommendations",
 		"user_preferences",
 		"user_ratings",
 	}
