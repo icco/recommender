@@ -110,26 +110,17 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
 func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
-	var movieCount, tvShowCount int64
+	var count int64
 
-	// Count movies
+	// Count total recommendations for the date
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
-		Where("date = ? AND type = ?", date, "movie").
-		Count(&movieCount).Error; err != nil {
-		return false, fmt.Errorf("failed to check existing movie recommendations: %w", err)
+		Where("date = ?", date).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("failed to check existing recommendations: %w", err)
 	}
 
-	// Count TV shows
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
-		Where("date = ? AND type = ?", date, "tvshow").
-		Count(&tvShowCount).Error; err != nil {
-		return false, fmt.Errorf("failed to check existing TV show recommendations: %w", err)
-	}
-
-	// According to README:
-	// - 4 movies (1 funny, 1 action/drama, 1 rewatched, 1 additional)
-	// - 3 TV shows
-	return movieCount >= 4 && tvShowCount >= 3, nil
+	// Return true if we have any recommendations for this date
+	return count > 0, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
@@ -434,13 +425,10 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		slog.Bool("rewatched_movie", movieTypes["rewatched"]),
 		slog.Bool("additional_movie", movieTypes["additional"]))
 
-	// If we don't have exactly 4 movies and 3 TV shows, we need to try again
-	if typeCounts["movie"] != 4 || typeCounts["tvshow"] != 3 {
-		r.logger.Warn("Did not get the correct number of recommendations",
-			slog.Int("movies", typeCounts["movie"]),
-			slog.Int("tvshows", typeCounts["tvshow"]))
-		return fmt.Errorf("did not get the correct number of recommendations: got %d movies and %d TV shows, want 4 movies and 3 TV shows",
-			typeCounts["movie"], typeCounts["tvshow"])
+	// If we have no new recommendations to store, return an error
+	if len(filteredRecommendations) == 0 {
+		r.logger.Warn("No new recommendations to store")
+		return fmt.Errorf("no new recommendations to store")
 	}
 
 	// Save recommendations to database in a transaction
@@ -455,8 +443,10 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return fmt.Errorf("failed to save recommendations in transaction: %w", err)
 	}
 
-	r.logger.Debug("Successfully generated recommendations",
-		slog.Int("total_count", len(filteredRecommendations)))
+	r.logger.Debug("Successfully stored recommendations",
+		slog.Int("total_count", len(filteredRecommendations)),
+		slog.Int("movies", typeCounts["movie"]),
+		slog.Int("tvshows", typeCounts["tvshow"]))
 
 	return nil
 }
