@@ -20,11 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	// SourcePlex represents content from the Plex library
-	SourcePlex = "plex"
-)
-
 // StatsData represents statistics about the recommendations database.
 type StatsData struct {
 	TotalRecommendations        int64
@@ -247,7 +242,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Genre:     movie.Genre,
 			PosterURL: posterURL,
 			Runtime:   movie.Runtime,
-			Source:    movie.Source,
 			MovieID:   &movie.ID,
 			TMDbID:    movie.TMDbID,
 		})
@@ -280,7 +274,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Genre:     tvShow.Genre,
 			PosterURL: posterURL,
 			Runtime:   tvShow.Seasons,
-			Source:    tvShow.Source,
 			TVShowID:  &tvShow.ID,
 			TMDbID:    tvShow.TMDbID,
 		})
@@ -402,17 +395,17 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	for _, rec := range recommendations {
 		if rec.Type == "movie" {
 			// Check if we need this type of movie
-			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] && rec.Source == SourcePlex {
+			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["funny"] = true
 			} else if (strings.Contains(strings.ToLower(rec.Genre), "action") ||
 				strings.Contains(strings.ToLower(rec.Genre), "drama")) &&
-				!movieTypes["action_drama"] && rec.Source == SourcePlex {
+				!movieTypes["action_drama"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["action_drama"] = true
-			} else if rec.Source != SourcePlex && !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
+			} else if !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["rewatched"] = true
@@ -426,7 +419,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Then process TV shows (3 unwatched)
 	for _, rec := range recommendations {
-		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 && rec.Source == SourcePlex {
+		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 {
 			filteredRecommendations = append(filteredRecommendations, rec)
 			typeCounts["tvshow"]++
 		}
@@ -539,21 +532,21 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	}
 
 	// Get cache database statistics
-	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Where("source = ?", "plex").Count(&stats.TotalCachedMovies).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Count(&stats.TotalCachedMovies).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total cached movies: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Where("source = ?", "plex").Count(&stats.TotalCachedTVShows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Count(&stats.TotalCachedTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total cached TV shows: %w", err)
 	}
 
 	// Get last cache update time from the most recent movie or TV show update
 	var lastMovieUpdate, lastTVShowUpdate time.Time
-	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Where("source = ?", "plex").Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastMovieUpdate).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastMovieUpdate).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("failed to get last movie update: %w", err)
 		}
 	}
-	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Where("source = ?", "plex").Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastTVShowUpdate).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Order("updated_at DESC").Limit(1).Pluck("updated_at", &lastTVShowUpdate).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("failed to get last TV show update: %w", err)
 		}

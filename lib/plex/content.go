@@ -59,7 +59,6 @@ func (c *Client) GetAllMovies(ctx context.Context, libraries []operations.GetAll
 				Genre:     genre,
 				PosterURL: thumb,
 				Runtime:   duration,
-				Source:    "plex",
 			})
 		}
 	}
@@ -117,7 +116,6 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 				Genre:     genre,
 				PosterURL: thumb,
 				Runtime:   seasons,
-				Source:    "plex",
 			})
 		}
 	}
