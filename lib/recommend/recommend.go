@@ -112,20 +112,13 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
 func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.Time) (bool, error) {
-	var movieCount, animeCount, tvShowCount int64
+	var movieCount, tvShowCount int64
 
 	// Count movies
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
 		Where("date = ? AND type = ?", date, "movie").
 		Count(&movieCount).Error; err != nil {
 		return false, fmt.Errorf("failed to check existing movie recommendations: %w", err)
-	}
-
-	// Count anime
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
-		Where("date = ? AND type = ?", date, "anime").
-		Count(&animeCount).Error; err != nil {
-		return false, fmt.Errorf("failed to check existing anime recommendations: %w", err)
 	}
 
 	// Count TV shows
@@ -137,9 +130,8 @@ func (r *Recommender) CheckRecommendationsExist(ctx context.Context, date time.T
 
 	// According to README:
 	// - 4 movies (1 funny, 1 action/drama, 1 rewatched, 1 additional)
-	// - 3 anime
 	// - 3 TV shows
-	return movieCount >= 4 && animeCount >= 3 && tvShowCount >= 3, nil
+	return movieCount >= 4 && tvShowCount >= 3, nil
 }
 
 // loadPromptTemplate loads and parses a prompt template from the embedded filesystem.
@@ -360,7 +352,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	type RecommendationResponse struct {
 		Movies  []RecommendationItem `json:"movies"`
-		Anime   []RecommendationItem `json:"anime"`
 		TVShows []RecommendationItem `json:"tvshows"`
 	}
 
@@ -397,12 +388,11 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Process each type of recommendation
 	processItems(recResponse.Movies, "movie")
-	processItems(recResponse.Anime, "anime")
 	processItems(recResponse.TVShows, "tvshow")
 
 	// Enforce limits based on content type and requirements
 	typeCounts := make(map[string]int)
-	movieTypes := make(map[string]bool) // Track specific movie types (funny, action/drama, rewatched)
+	movieTypes := make(map[string]bool) // Track specific movie types (funny, action/drama, rewatched, additional)
 	filteredRecommendations := make([]models.Recommendation, 0)
 
 	// First, process movies according to specific requirements
@@ -423,22 +413,15 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["rewatched"] = true
-			} else if typeCounts["movie"] < 4 { // Add one more movie if we haven't reached the limit
+			} else if !movieTypes["additional"] { // Add one more movie if we haven't reached the limit
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
+				movieTypes["additional"] = true
 			}
 		}
 	}
 
-	// Then process anime (3 unwatched)
-	for _, rec := range recommendations {
-		if rec.Type == "anime" && typeCounts["anime"] < 3 && rec.Source == "plex" {
-			filteredRecommendations = append(filteredRecommendations, rec)
-			typeCounts["anime"]++
-		}
-	}
-
-	// Finally process TV shows (3 unwatched)
+	// Then process TV shows (3 unwatched)
 	for _, rec := range recommendations {
 		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 && rec.Source == "plex" {
 			filteredRecommendations = append(filteredRecommendations, rec)
@@ -449,11 +432,11 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Log the counts for debugging
 	r.logger.Debug("Recommendation counts",
 		slog.Int("movies", typeCounts["movie"]),
-		slog.Int("anime", typeCounts["anime"]),
 		slog.Int("tvshows", typeCounts["tvshow"]),
 		slog.Bool("funny_movie", movieTypes["funny"]),
 		slog.Bool("action_drama_movie", movieTypes["action_drama"]),
-		slog.Bool("rewatched_movie", movieTypes["rewatched"]))
+		slog.Bool("rewatched_movie", movieTypes["rewatched"]),
+		slog.Bool("additional_movie", movieTypes["additional"]))
 
 	// Save recommendations to database in a transaction
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

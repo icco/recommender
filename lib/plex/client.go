@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"log/slog"
@@ -333,76 +332,8 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 	return movies, nil
 }
 
-// GetUnwatchedAnime retrieves all unwatched anime from Plex libraries.
-// It identifies anime by checking for the "anime" genre and converts them into Recommendation models.
-func (c *Client) GetUnwatchedAnime(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
-	var anime []models.Recommendation
-	for _, lib := range libraries {
-		if lib.Type != contentTypeShow {
-			continue
-		}
-
-		items, err := c.GetPlexItems(ctx, lib.Key, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get library items: %w", err)
-		}
-
-		for _, item := range items {
-			// Check if the show has the anime genre
-			isAnime := false
-			for _, genre := range item.Genre {
-				if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
-					isAnime = true
-					break
-				}
-			}
-
-			if !isAnime {
-				continue
-			}
-
-			year := 0
-			if item.Year != nil {
-				year = *item.Year
-			}
-
-			rating := 0.0
-			if item.Rating != nil {
-				rating = *item.Rating
-			}
-
-			genre := ""
-			if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
-				genre = *item.Genre[0].Tag
-			}
-
-			episodes := 0
-			if item.LeafCount != nil {
-				episodes = *item.LeafCount
-			}
-
-			thumb := ""
-			if item.Thumb != nil {
-				thumb = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
-			}
-
-			anime = append(anime, models.Recommendation{
-				Title:     item.Title,
-				Type:      contentTypeShow,
-				Year:      year,
-				Rating:    rating,
-				Genre:     genre,
-				PosterURL: thumb,
-				Runtime:   episodes,
-				Source:    "plex",
-			})
-		}
-	}
-	return anime, nil
-}
-
 // GetUnwatchedTVShows retrieves all unwatched TV shows from Plex libraries.
-// It excludes anime shows and converts the items into Recommendation models.
+// It converts the items into Recommendation models.
 func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations.GetAllLibrariesDirectory) ([]models.Recommendation, error) {
 	var shows []models.Recommendation
 	for _, lib := range libraries {
@@ -416,19 +347,6 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 		}
 
 		for _, item := range items {
-			// Skip shows with the anime genre
-			isAnime := false
-			for _, genre := range item.Genre {
-				if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
-					isAnime = true
-					break
-				}
-			}
-
-			if isAnime {
-				continue
-			}
-
 			year := 0
 			if item.Year != nil {
 				year = *item.Year

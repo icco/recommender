@@ -3,7 +3,6 @@ package plex
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/LukeHagar/plexgo/models/operations"
 	"github.com/icco/recommender/models"
@@ -81,19 +80,6 @@ func (c *Client) GetAllTVShows(ctx context.Context, libraries []operations.GetAl
 		}
 
 		for _, item := range items {
-			// Skip shows with the anime genre
-			isAnime := false
-			for _, genre := range item.Genre {
-				if genre.Tag != nil && strings.EqualFold(*genre.Tag, "anime") {
-					isAnime = true
-					break
-				}
-			}
-
-			if isAnime {
-				continue
-			}
-
 			year := 0
 			if item.Year != nil {
 				year = *item.Year

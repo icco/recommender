@@ -4,6 +4,7 @@ Movies:
 - 1 funny unwatched movie
 - 1 action/drama unwatched movie
 - 1 rewatchable movie
+- 1 additional movie of any type
 
 Anime:
 - 3 unwatched series matching preferences
@@ -25,7 +26,7 @@ Format your response as a JSON object with the following structure:
   "movies": [
     {
       "title": "exact title from available content",
-      "type": "funny|action_drama|rewatchable",
+      "type": "funny|action_drama|rewatchable|additional",
       "tmdb_id": 12345,
       "explanation": "brief explanation of why this was chosen"
     }
