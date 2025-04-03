@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -27,8 +28,9 @@ type Client struct {
 }
 
 const (
-	contentTypeMovie = "movie"
-	contentTypeShow  = "show"
+	contentTypeMovie  = "movie"
+	contentTypeShow   = "show"
+	fallbackPosterURL = "https://via.placeholder.com/500x750?text=No+Poster+Available"
 )
 
 // NewClient creates a new Plex client with the provided configuration.
@@ -295,13 +297,8 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				duration = *item.Duration / 60000 // Convert milliseconds to minutes
 			}
 
-			// Default to Plex thumbnail
-			posterURL := ""
-			if item.Thumb != nil {
-				posterURL = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
-			}
-
 			// Try to get TMDb poster
+			posterURL := fallbackPosterURL
 			if year > 0 {
 				result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
 				if err != nil {
@@ -312,7 +309,14 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				} else if len(result.Results) > 0 {
 					// Use the first result's poster if available
 					if result.Results[0].PosterPath != "" {
-						posterURL = c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+						if _, err := url.Parse(tmdbPosterURL); err != nil {
+							c.logger.Warn("Invalid TMDb poster URL",
+								slog.String("url", tmdbPosterURL),
+								slog.Any("error", err))
+						} else {
+							posterURL = tmdbPosterURL
+						}
 					}
 				}
 			}
@@ -366,13 +370,8 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 				seasons = *item.ChildCount
 			}
 
-			// Default to Plex thumbnail
-			posterURL := ""
-			if item.Thumb != nil {
-				posterURL = fmt.Sprintf("%s%s", c.plexURL, *item.Thumb)
-			}
-
 			// Try to get TMDb poster
+			posterURL := fallbackPosterURL
 			if year > 0 {
 				result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
 				if err != nil {
@@ -383,7 +382,14 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 				} else if len(result.Results) > 0 {
 					// Use the first result's poster if available
 					if result.Results[0].PosterPath != "" {
-						posterURL = c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+						if _, err := url.Parse(tmdbPosterURL); err != nil {
+							c.logger.Warn("Invalid TMDb poster URL",
+								slog.String("url", tmdbPosterURL),
+								slog.Any("error", err))
+						} else {
+							posterURL = tmdbPosterURL
+						}
 					}
 				}
 			}
