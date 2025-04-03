@@ -248,7 +248,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				// Update the movie's TMDbID if it's not set
 				if movie.TMDbID == 0 {
 					movie.TMDbID = result.Results[0].ID
-					if err := r.db.Save(&movie).Error; err != nil {
+					if err := r.db.WithContext(ctx).Save(&movie).Error; err != nil {
 						r.logger.Error("Failed to update movie TMDbID", "error", err, "title", movie.Title)
 					}
 				}
@@ -280,7 +280,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				// Update the TV show's TMDbID if it's not set
 				if tvShow.TMDbID == 0 {
 					tvShow.TMDbID = result.Results[0].ID
-					if err := r.db.Save(&tvShow).Error; err != nil {
+					if err := r.db.WithContext(ctx).Save(&tvShow).Error; err != nil {
 						r.logger.Error("Failed to update TV show TMDbID", "error", err, "title", tvShow.Title)
 					}
 				}

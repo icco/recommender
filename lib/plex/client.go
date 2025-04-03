@@ -445,119 +445,203 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries.Object.MediaContainer.Directory)))
 
-	// Get all content
-	movies, err := c.GetUnwatchedMovies(ctx, libraries.Object.MediaContainer.Directory)
-	if err != nil {
-		return fmt.Errorf("failed to get movies: %w", err)
-	}
-	c.logger.Debug("Fetched movies from Plex", slog.Int("count", len(movies)))
+	// Get all content from each library
+	var allMovies []PlexItem
+	var allTVShows []PlexItem
 
-	tvShows, err := c.GetUnwatchedTVShows(ctx, libraries.Object.MediaContainer.Directory)
-	if err != nil {
-		return fmt.Errorf("failed to get TV shows: %w", err)
-	}
-	c.logger.Debug("Fetched TV shows from Plex", slog.Int("count", len(tvShows)))
+	for _, lib := range libraries.Object.MediaContainer.Directory {
+		items, err := c.GetPlexItems(ctx, lib.Key, false) // false means get all content, not just unwatched
+		if err != nil {
+			c.logger.Error("Failed to get items from library",
+				slog.String("library", lib.Title),
+				slog.Any("error", err))
+			continue
+		}
 
-	// Start a transaction to ensure all operations succeed or none do
+		for _, item := range items {
+			if item.Type == contentTypeMovie {
+				allMovies = append(allMovies, item)
+			} else if item.Type == contentTypeShow {
+				allTVShows = append(allTVShows, item)
+			}
+		}
+	}
+
+	c.logger.Info("Successfully fetched movies", slog.Int("count", len(allMovies)))
+	c.logger.Info("Successfully fetched TV shows", slog.Int("count", len(allTVShows)))
+
+	// Start a transaction
 	tx := c.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return fmt.Errorf("failed to start transaction: %w", tx.Error)
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-			panic(r)
-		}
-	}()
 
 	// Ensure the tables exist
-	if err := tx.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}); err != nil {
+	if err := tx.AutoMigrate(&models.Movie{}, &models.TVShow{}); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
 	// Clear existing cache entries
-	if err := tx.WithContext(ctx).Delete(&models.Movie{}).Error; err != nil {
+	if err := tx.Delete(&models.Movie{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing movies: %w", err)
 	}
-	if err := tx.WithContext(ctx).Delete(&models.TVShow{}).Error; err != nil {
+	if err := tx.Delete(&models.TVShow{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing TV shows: %w", err)
 	}
 
 	// Process movies one at a time
-	if len(movies) > 0 {
-		c.logger.Debug("Processing movies", slog.Int("total", len(movies)))
-		for i, movie := range movies {
-			// Log progress every 100 items
-			if i%100 == 0 {
-				c.logger.Debug("Processing movies progress",
-					slog.Int("processed", i),
-					slog.Int("total", len(movies)),
-					slog.Float64("percent", float64(i)/float64(len(movies))*100))
-			}
+	for _, item := range allMovies {
+		year := 0
+		if item.Year != nil {
+			year = *item.Year
+		}
 
-			// Convert to Movie model
-			dbMovie := models.Movie{
-				Title:     movie.Title,
-				Year:      movie.Year,
-				Rating:    movie.Rating,
-				Genre:     movie.Genre,
-				PosterURL: movie.PosterURL,
-				Runtime:   movie.Runtime,
-			}
+		rating := 0.0
+		if item.Rating != nil {
+			rating = *item.Rating
+		}
 
-			// Save the movie
-			if err := tx.WithContext(ctx).Create(&dbMovie).Error; err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to save movie %d: %w", i, err)
+		genre := ""
+		if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
+			genre = *item.Genre[0].Tag
+		}
+
+		runtime := 0
+		if item.Duration != nil {
+			runtime = *item.Duration / 60000 // Convert milliseconds to minutes
+		}
+
+		// Try to get TMDb poster
+		posterURL := fallbackPosterURL
+		if year > 0 {
+			result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
+			if err != nil {
+				c.logger.Warn("Failed to search TMDb for movie",
+					slog.String("title", item.Title),
+					slog.Int("year", year),
+					slog.Any("error", err))
+			} else if len(result.Results) > 0 {
+				// Use the first result's poster if available
+				if result.Results[0].PosterPath != "" {
+					tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+					if _, err := url.Parse(tmdbPosterURL); err != nil {
+						c.logger.Warn("Invalid TMDb poster URL",
+							slog.String("url", tmdbPosterURL),
+							slog.Any("error", err))
+					} else {
+						posterURL = tmdbPosterURL
+					}
+				}
 			}
 		}
-		c.logger.Debug("Successfully processed movies", slog.Int("count", len(movies)))
+
+		// Create movie record
+		movie := models.Movie{
+			Title:     item.Title,
+			Year:      year,
+			Rating:    rating,
+			Genre:     genre,
+			PosterURL: posterURL,
+			Runtime:   runtime,
+			TMDbID:    0, // Will be updated later if needed
+		}
+
+		if err := tx.Create(&movie).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to create movie: %w", err)
+		}
 	}
 
 	// Process TV shows one at a time
-	if len(tvShows) > 0 {
-		c.logger.Debug("Processing TV shows", slog.Int("total", len(tvShows)))
-		for i, tvShow := range tvShows {
-			// Log progress every 100 items
-			if i%100 == 0 {
-				c.logger.Debug("Processing TV shows progress",
-					slog.Int("processed", i),
-					slog.Int("total", len(tvShows)),
-					slog.Float64("percent", float64(i)/float64(len(tvShows))*100))
-			}
+	for _, item := range allTVShows {
+		year := 0
+		if item.Year != nil {
+			year = *item.Year
+		}
 
-			// Convert to TVShow model
-			dbTVShow := models.TVShow{
-				Title:     tvShow.Title,
-				Year:      tvShow.Year,
-				Rating:    tvShow.Rating,
-				Genre:     tvShow.Genre,
-				PosterURL: tvShow.PosterURL,
-				Seasons:   tvShow.Runtime, // Runtime field contains seasons for TV shows
-			}
+		rating := 0.0
+		if item.Rating != nil {
+			rating = *item.Rating
+		}
 
-			// Save the TV show
-			if err := tx.WithContext(ctx).Create(&dbTVShow).Error; err != nil {
-				tx.Rollback()
-				return fmt.Errorf("failed to save TV show %d: %w", i, err)
+		genre := ""
+		if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
+			genre = *item.Genre[0].Tag
+		}
+
+		seasons := 0
+		if item.ChildCount != nil {
+			seasons = *item.ChildCount
+		}
+
+		// Try to get TMDb poster
+		posterURL := fallbackPosterURL
+		if year > 0 {
+			result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
+			if err != nil {
+				// If search with year fails, try without year
+				c.logger.Debug("Retrying TMDb search without year",
+					slog.String("title", item.Title),
+					slog.Int("original_year", year))
+
+				result, err = c.tmdb.SearchTVShow(ctx, item.Title, 0)
+				if err != nil {
+					c.logger.Warn("Failed to search TMDb for TV show",
+						slog.String("title", item.Title),
+						slog.Any("error", err))
+				} else if len(result.Results) > 0 {
+					// Use the first result's poster if available
+					if result.Results[0].PosterPath != "" {
+						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+						if _, err := url.Parse(tmdbPosterURL); err != nil {
+							c.logger.Warn("Invalid TMDb poster URL",
+								slog.String("url", tmdbPosterURL),
+								slog.Any("error", err))
+						} else {
+							posterURL = tmdbPosterURL
+						}
+					}
+				}
+			} else if len(result.Results) > 0 {
+				// Use the first result's poster if available
+				if result.Results[0].PosterPath != "" {
+					tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
+					if _, err := url.Parse(tmdbPosterURL); err != nil {
+						c.logger.Warn("Invalid TMDb poster URL",
+							slog.String("url", tmdbPosterURL),
+							slog.Any("error", err))
+					} else {
+						posterURL = tmdbPosterURL
+					}
+				}
 			}
 		}
-		c.logger.Debug("Successfully processed TV shows", slog.Int("count", len(tvShows)))
+
+		// Create TV show record
+		tvShow := models.TVShow{
+			Title:     item.Title,
+			Year:      year,
+			Rating:    rating,
+			Genre:     genre,
+			PosterURL: posterURL,
+			Seasons:   seasons,
+			TMDbID:    0, // Will be updated later if needed
+		}
+
+		if err := tx.Create(&tvShow).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to create TV show: %w", err)
+		}
 	}
 
 	// Commit the transaction
-	if err := tx.WithContext(ctx).Commit().Error; err != nil {
+	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
-	c.logger.Debug("Successfully committed transaction")
 
-	c.logger.Info("Cache updated successfully",
-		slog.Int("movies", len(movies)),
-		slog.Int("tv_shows", len(tvShows)),
-	)
-
+	c.logger.Info("Successfully updated cache")
 	return nil
 }
