@@ -325,7 +325,6 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				Genre:     genre,
 				PosterURL: posterURL,
 				Runtime:   duration,
-				Source:    "plex",
 			})
 		}
 	}
@@ -397,7 +396,6 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 				Genre:     genre,
 				PosterURL: posterURL,
 				Runtime:   seasons,
-				Source:    "plex",
 			})
 		}
 	}
@@ -483,7 +481,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				Genre:     movie.Genre,
 				PosterURL: movie.PosterURL,
 				Runtime:   movie.Runtime,
-				Source:    movie.Source,
 			}
 
 			// Save the movie
@@ -515,7 +512,6 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 				Genre:     tvShow.Genre,
 				PosterURL: tvShow.PosterURL,
 				Seasons:   tvShow.Runtime, // Runtime field contains seasons for TV shows
-				Source:    tvShow.Source,
 			}
 
 			// Save the TV show
