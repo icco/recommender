@@ -483,11 +483,11 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 
 	// Clear existing cache entries
-	if err := tx.Delete(&models.Movie{}).Error; err != nil {
+	if err := tx.Where("1=1").Delete(&models.Movie{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing movies: %w", err)
 	}
-	if err := tx.Delete(&models.TVShow{}).Error; err != nil {
+	if err := tx.Where("1=1").Delete(&models.TVShow{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to clear existing TV shows: %w", err)
 	}
