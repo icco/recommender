@@ -459,9 +459,10 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 
 		for _, item := range items {
-			if item.Type == contentTypeMovie {
+			switch item.Type {
+			case contentTypeMovie:
 				allMovies = append(allMovies, item)
-			} else if item.Type == contentTypeShow {
+			case contentTypeShow:
 				allTVShows = append(allTVShows, item)
 			}
 		}
