@@ -152,7 +152,7 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 	var librarySection string
 	for _, lib := range libraries.Object.MediaContainer.Directory {
 		if lib.Key == libraryKey {
-			librarySection = lib.Type
+			librarySection = string(lib.Type)
 			switch lib.Type {
 			case contentTypeMovie:
 				libraryType = operations.GetLibraryItemsQueryParamType(1)
