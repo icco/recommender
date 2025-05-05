@@ -5,7 +5,7 @@ go 1.24.1
 require (
 	github.com/LukeHagar/plexgo v0.21.1
 	github.com/go-chi/chi/v5 v5.2.1
-	github.com/sashabaranov/go-openai v1.38.1
+	github.com/sashabaranov/go-openai v1.39.1
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 )
