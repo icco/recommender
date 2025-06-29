@@ -33,3 +33,4 @@ go.work.sum
 *.swp
 *.swo
 *.log
+.DS_Store
