@@ -110,7 +110,7 @@ type PlexItem struct {
 	RatingKey  string
 	Key        string
 	Title      string
-	Type       operations.GetLibraryItemsLibraryType
+	Type       string
 	Year       *int
 	Rating     *float64
 	Summary    string
@@ -198,9 +198,24 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 			slog.String("title1", resp.Object.MediaContainer.Title1),
 			slog.String("title2", resp.Object.MediaContainer.Title2),
 			slog.String("identifier", resp.Object.MediaContainer.Identifier),
-			slog.String("library_section_id", strconv.FormatInt(resp.Object.MediaContainer.LibrarySectionID, 10)),
-			slog.String("library_section_title", resp.Object.MediaContainer.LibrarySectionTitle),
-			slog.String("library_section_uuid", resp.Object.MediaContainer.LibrarySectionUUID),
+			slog.String("library_section_id", func() string {
+				if resp.Object.MediaContainer.LibrarySectionID != nil {
+					return strconv.FormatInt(*resp.Object.MediaContainer.LibrarySectionID, 10)
+				}
+				return "0"
+			}()),
+			slog.String("library_section_title", func() string {
+				if resp.Object.MediaContainer.LibrarySectionTitle != nil {
+					return *resp.Object.MediaContainer.LibrarySectionTitle
+				}
+				return ""
+			}()),
+			slog.String("library_section_uuid", func() string {
+				if resp.Object.MediaContainer.LibrarySectionUUID != nil {
+					return *resp.Object.MediaContainer.LibrarySectionUUID
+				}
+				return ""
+			}()),
 			slog.Bool("allow_sync", resp.Object.MediaContainer.AllowSync),
 			slog.String("content", resp.Object.MediaContainer.Content),
 			slog.String("view_group", resp.Object.MediaContainer.ViewGroup),
@@ -229,23 +244,53 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 				continue
 			}
 
+			// Convert float32 rating to *float64
+			var rating *float64
+			if item.Rating != 0 {
+				ratingVal := float64(item.Rating)
+				rating = &ratingVal
+			}
+
+			// Convert string fields to *string
+			var thumb *string
+			if item.Thumb != "" {
+				thumb = &item.Thumb
+			}
+
+			var art *string
+			if item.Art != "" {
+				art = &item.Art
+			}
+
+			// Convert int duration to *int
+			var duration *int
+			if item.Duration != 0 {
+				duration = &item.Duration
+			}
+
+			// Convert int childCount to *int
+			var childCount *int
+			if item.ChildCount != 0 {
+				childCount = &item.ChildCount
+			}
+
 			allItems = append(allItems, PlexItem{
 				RatingKey:  item.RatingKey,
 				Key:        item.Key,
 				Title:      item.Title,
-				Type:       item.Type,
+				Type:       string(item.Type),
 				Year:       item.Year,
-				Rating:     item.Rating,
+				Rating:     rating,
 				Summary:    item.Summary,
-				Thumb:      item.Thumb,
-				Art:        item.Art,
-				Duration:   item.Duration,
+				Thumb:      thumb,
+				Art:        art,
+				Duration:   duration,
 				AddedAt:    item.AddedAt,
 				UpdatedAt:  item.UpdatedAt,
 				ViewCount:  item.ViewCount,
 				Genre:      item.Genre,
 				LeafCount:  item.LeafCount,
-				ChildCount: item.ChildCount,
+				ChildCount: childCount,
 			})
 		}
 
@@ -288,8 +333,8 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 			}
 
 			genre := ""
-			if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
-				genre = *item.Genre[0].Tag
+			if len(item.Genre) > 0 && item.Genre[0].Tag != "" {
+				genre = item.Genre[0].Tag
 			}
 
 			duration := 0
@@ -361,8 +406,8 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 			}
 
 			genre := ""
-			if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
-				genre = *item.Genre[0].Tag
+			if len(item.Genre) > 0 && item.Genre[0].Tag != "" {
+				genre = item.Genre[0].Tag
 			}
 
 			seasons := 0
@@ -506,8 +551,8 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 
 		genre := ""
-		if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
-			genre = *item.Genre[0].Tag
+		if len(item.Genre) > 0 && item.Genre[0].Tag != "" {
+			genre = item.Genre[0].Tag
 		}
 
 		runtime := 0
@@ -569,8 +614,8 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 
 		genre := ""
-		if len(item.Genre) > 0 && item.Genre[0].Tag != nil {
-			genre = *item.Genre[0].Tag
+		if len(item.Genre) > 0 && item.Genre[0].Tag != "" {
+			genre = item.Genre[0].Tag
 		}
 
 		seasons := 0
