@@ -3,23 +3,10 @@ module github.com/icco/recommender
 go 1.24.1
 
 require (
-<<<<<<< HEAD
 	github.com/LukeHagar/plexgo v0.23.0
 	github.com/go-chi/chi/v5 v5.2.2
 	github.com/sashabaranov/go-openai v1.40.3
 	gorm.io/driver/sqlite v1.6.0
-||||||| 68f7f1c49281
-	github.com/LukeHagar/plexgo v0.21.1
-	github.com/go-chi/chi/v5 v5.2.1
-	github.com/sashabaranov/go-openai v1.38.1
-	gorm.io/driver/sqlite v1.5.7
-	gorm.io/gorm v1.25.12
-=======
-	github.com/LukeHagar/plexgo v0.21.1
-	github.com/go-chi/chi/v5 v5.2.1
-	github.com/sashabaranov/go-openai v1.38.1
-	gorm.io/driver/sqlite v1.5.7
->>>>>>> origin/main
 	gorm.io/gorm v1.30.0
 )
 
