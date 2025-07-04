@@ -27,7 +27,7 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 	lockFile := fl.getLockFilePath(key)
 	
 	// Ensure the lock directory exists
-	if err := os.MkdirAll(filepath.Dir(lockFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(lockFile), 0750); err != nil {
 		return false, fmt.Errorf("failed to create lock directory: %w", err)
 	}
 	
@@ -97,7 +97,8 @@ func (fl *FileLock) Close() error {
 func (fl *FileLock) getLockFilePath(key string) string {
 	// Use a temporary directory for lock files
 	lockDir := filepath.Join(os.TempDir(), "recommender-locks")
-	return filepath.Join(lockDir, key+".lock")
+	// Clean the path to prevent path traversal attacks
+	return filepath.Clean(filepath.Join(lockDir, key+".lock"))
 }
 
 // isLockStale checks if a lock file is older than the given duration
