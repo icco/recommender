@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +20,48 @@ import (
 
 type errorData struct {
 	Message string
+}
+
+// writeError writes an error response in the appropriate format (JSON or HTML)
+// based on the request's Accept header or Content-Type preference.
+func writeError(w http.ResponseWriter, r *http.Request, message string, status int) {
+	// Check if the request prefers JSON
+	if wantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if err := json.NewEncoder(w).Encode(map[string]string{
+			"error": message,
+		}); err != nil {
+			slog.Error("Failed to encode JSON error response", slog.Any("error", err))
+		}
+		return
+	}
+	
+	// Default to HTML error response
+	renderError(w, message, status)
+}
+
+// wantsJSON checks if the request accepts JSON responses
+func wantsJSON(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	contentType := r.Header.Get("Content-Type")
+	
+	// Check Accept header
+	if strings.Contains(accept, "application/json") {
+		return true
+	}
+	
+	// Check Content-Type header
+	if strings.Contains(contentType, "application/json") {
+		return true
+	}
+	
+	// Check for AJAX requests
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		return true
+	}
+	
+	return false
 }
 
 // renderError renders an error page using the error template.
@@ -48,19 +92,34 @@ func renderTemplate(w http.ResponseWriter, ctx context.Context, files []string, 
 		return false
 	}
 
+	// Set content type for HTML responses
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
 	// Execute the base template, which will include the content template
 	if err := tmpl.ExecuteTemplate(w, "base.html", data); err != nil {
 		slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
-		// Clear any partial response that might have been written
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "text/html")
+		// Only attempt to write error if headers haven't been sent yet
+		// Check if response has already been started by looking for a written status
+		if !isResponseStarted(w) {
+			renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
 		}
-		w.WriteHeader(http.StatusInternalServerError)
-		renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
 		return false
 	}
 
 	return true
+}
+
+// isResponseStarted checks if the response has already been started (headers sent)
+func isResponseStarted(w http.ResponseWriter) bool {
+	// Try to set a dummy header - if response has started, this will be ignored
+	// but won't cause an error. We check by seeing if we can still modify headers.
+	beforeLen := len(w.Header())
+	w.Header().Set("X-Check-Response-Started", "test")
+	afterLen := len(w.Header())
+	w.Header().Del("X-Check-Response-Started")
+	
+	// If header was added and removed successfully, response hasn't started
+	return beforeLen == afterLen
 }
 
 // HandleHome serves the home page with today's recommendations.
@@ -75,10 +134,10 @@ func HandleHome(r *recommend.Recommender) http.HandlerFunc {
 		recommendations, err := r.GetRecommendationsForDate(ctx, today)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				renderError(w, "No recommendations available for today. Please check back later or visit the Past Recommendations page.", http.StatusNotFound)
+				writeError(w, req, "No recommendations available for today. Please check back later or visit the Past Recommendations page.", http.StatusNotFound)
 			} else {
 				slog.ErrorContext(ctx, "Failed to get today's recommendations", slog.Any("error", err))
-				renderError(w, "We couldn't find today's recommendations. Please try again later.", http.StatusInternalServerError)
+				writeError(w, req, "We couldn't find today's recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
 		}
@@ -100,21 +159,21 @@ func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 		date := chi.URLParam(req, "date")
 		if date == "" {
 			slog.ErrorContext(ctx, "Missing date parameter")
-			validation.WriteError(w, fmt.Errorf("date parameter is required"), http.StatusBadRequest)
+			writeError(w, req, "date parameter is required", http.StatusBadRequest)
 			return
 		}
 
 		// Validate date format
 		if err := validation.ValidateDate(date); err != nil {
 			slog.ErrorContext(ctx, "Invalid date format", slog.String("date", date), slog.Any("error", err))
-			validation.WriteError(w, err, http.StatusBadRequest)
+			writeError(w, req, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		parsedDate, err := time.Parse("2006-01-02", date)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to parse date", slog.String("date", date), slog.Any("error", err))
-			validation.WriteError(w, fmt.Errorf("invalid date format: %w", err), http.StatusBadRequest)
+			writeError(w, req, fmt.Sprintf("invalid date format: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -122,12 +181,12 @@ func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				slog.InfoContext(ctx, "No recommendations found for date", slog.String("date", date))
-				renderError(w, "We couldn't find recommendations for this date.", http.StatusNotFound)
+				writeError(w, req, "We couldn't find recommendations for this date.", http.StatusNotFound)
 			} else {
 				slog.ErrorContext(ctx, "Database error while fetching recommendations",
 					slog.String("date", date),
 					slog.Any("error", err))
-				renderError(w, "We encountered an error while fetching recommendations. Please try again later.", http.StatusInternalServerError)
+				writeError(w, req, "We encountered an error while fetching recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
 		}
@@ -151,26 +210,26 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 		pageSize := 20
 		if pageStr := req.URL.Query().Get("page"); pageStr != "" {
 			if _, err := fmt.Sscanf(pageStr, "%d", &page); err != nil {
-				validation.WriteError(w, fmt.Errorf("invalid page parameter"), http.StatusBadRequest)
+				writeError(w, req, "invalid page parameter", http.StatusBadRequest)
 				return
 			}
 		}
 		if sizeStr := req.URL.Query().Get("size"); sizeStr != "" {
 			if _, err := fmt.Sscanf(sizeStr, "%d", &pageSize); err != nil {
-				validation.WriteError(w, fmt.Errorf("invalid size parameter"), http.StatusBadRequest)
+				writeError(w, req, "invalid size parameter", http.StatusBadRequest)
 				return
 			}
 		}
 
 		if err := validation.ValidatePagination(page, pageSize); err != nil {
-			validation.WriteError(w, err, http.StatusBadRequest)
+			writeError(w, req, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		dates, total, err := r.GetRecommendationDates(ctx, page, pageSize)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to get dates", slog.Any("error", err))
-			renderError(w, "We couldn't load the list of dates.", http.StatusInternalServerError)
+			writeError(w, req, "We couldn't load the list of dates.", http.StatusInternalServerError)
 			return
 		}
 
@@ -232,15 +291,17 @@ func HandleCron(r *recommend.Recommender) http.HandlerFunc {
 		}
 
 		// Create a new background context with a timeout for the recommendation generation
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		genCtx, genCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		go func() {
-			defer cancel()
+			defer func() {
+				genCancel()
+			}()
 			slog.Info("Starting recommendation generation in background",
 				slog.Time("date", today),
 				slog.Duration("timeout", 5*time.Minute),
 			)
-			if err := r.GenerateRecommendations(ctx, today); err != nil {
-				slog.ErrorContext(ctx, "Failed to generate recommendations",
+			if err := r.GenerateRecommendations(genCtx, today); err != nil {
+				slog.ErrorContext(genCtx, "Failed to generate recommendations",
 					slog.Any("error", err),
 					slog.Time("date", today),
 				)
@@ -267,6 +328,7 @@ func HandleCache(p *plex.Client) http.HandlerFunc {
 			slog.Time("start_time", startTime),
 			slog.String("remote_addr", req.RemoteAddr),
 		)
+
 
 		// Create a new background context with a timeout for the cache update
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -302,7 +364,7 @@ func HandleStats(r *recommend.Recommender) http.HandlerFunc {
 		stats, err := r.GetStats(ctx)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to get stats", slog.Any("error", err))
-			renderError(w, "We couldn't load the statistics. Please try again later.", http.StatusInternalServerError)
+			writeError(w, req, "We couldn't load the statistics. Please try again later.", http.StatusInternalServerError)
 			return
 		}
 
