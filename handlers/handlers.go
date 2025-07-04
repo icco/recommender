@@ -296,7 +296,9 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 
 		exists, err := r.CheckRecommendationsExist(req.Context(), today)
 		if err != nil {
-			fl.Unlock(req.Context(), lockKey)
+			if unlockErr := fl.Unlock(req.Context(), lockKey); unlockErr != nil {
+				slog.ErrorContext(req.Context(), "Failed to unlock after error", slog.Any("error", unlockErr))
+			}
 			slog.ErrorContext(req.Context(), "Failed to check existing recommendations",
 				slog.Any("error", err),
 				slog.Time("date", today),
@@ -307,7 +309,9 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		}
 
 		if exists {
-			fl.Unlock(req.Context(), lockKey)
+			if unlockErr := fl.Unlock(req.Context(), lockKey); unlockErr != nil {
+				slog.ErrorContext(req.Context(), "Failed to unlock after exists check", slog.Any("error", unlockErr))
+			}
 			slog.Info("Recommendations already exist for today",
 				slog.Time("date", today),
 			)
