@@ -19,8 +19,8 @@ This is a personalized content recommendation service that uses OpenAI to genera
 - `lib/plex/`: Plex API client for fetching library data
 - `lib/tmdb/`: TMDb API client with rate limiting and circuit breaker
 - `lib/db/`: Database utilities, migrations, and custom GORM JSON logger
-- `lib/lock/`: Distributed locking system for concurrency control
-- `lib/validation/`: JSON schema validation for external API responses
+- `lib/lock/`: File-based locking system for concurrency control
+- `lib/validation/`: JSON validation for external API responses
 
 **Data Flow:**
 1. Cron endpoints (`/cron/recommend`, `/cron/cache`) trigger data collection from Plex/TMDb
@@ -61,7 +61,6 @@ docker compose down
 - `PORT`: HTTP server port (defaults to 8080)
 
 **Optional Environment Variables:**
-- `ETCD_ENDPOINTS`: Comma-separated etcd endpoints for distributed locking
 - `DB_PATH`: Database file path (defaults to recommender.db)
 
 ## Database
@@ -82,8 +81,8 @@ Migrations are automatically run on startup via `lib/db/migrations.go`.
 - `GET /`: Homepage with today's recommendations
 - `GET /date/{date}`: Recommendations for specific date (YYYY-MM-DD)
 - `GET /dates`: List all available recommendation dates
-- `GET /cron/recommend`: Generate new recommendations (runs hourly) - uses distributed locking
-- `GET /cron/cache`: Update Plex/TMDb cache - uses distributed locking
+- `GET /cron/recommend`: Generate new recommendations (runs hourly) - uses file-based locking
+- `GET /cron/cache`: Update Plex/TMDb cache - uses file-based locking
 - `GET /stats`: View recommendation statistics
 - `GET /health`: Health check endpoint
 - `GET /static/*`: Static file serving (favicon, CSS, JS)
@@ -95,9 +94,9 @@ The system generates exactly:
 - 3 unwatched TV shows (with anime preference)
 
 **Concurrency Control:**
-- Distributed locking prevents concurrent cron job execution
+- File-based locking prevents concurrent cron job execution
 - Cache management with TTL and automatic cleanup
-- JSON schema validation for OpenAI responses
+- JSON validation for OpenAI responses
 - Batch processing for large database operations
 
 OpenAI prompts are in `lib/recommend/prompts/` and use Go templates with user data.
@@ -123,7 +122,7 @@ OpenAI prompts are in `lib/recommend/prompts/` and use Go templates with user da
 ## Production Considerations
 
 **Concurrency:**
-- All cron operations use distributed locking
+- All cron operations use file-based locking
 - Thread-safe cache management
 - Proper resource cleanup on shutdown
 
@@ -137,7 +136,38 @@ OpenAI prompts are in `lib/recommend/prompts/` and use Go templates with user da
 - Connection pooling and resource limits
 - Efficient batch processing
 
-## Common Issues and Solutions
+## Known Issues and Fixes
+
+### Critical Issues Addressed
+
+**Database Performance:**
+- Added comprehensive indexing on frequently queried columns (date, type, title, year, tmdb_id)
+- Implemented unique constraints on title+year combinations to prevent duplicates
+- Added proper foreign key relationships with cascade deletes
+- Enabled SQLite optimizations (WAL mode, connection pooling)
+
+**API Integration Reliability:**
+- Added OpenAI API key validation in startup
+- Implemented TMDb rate limiting (40 requests per 10 seconds) with sliding window
+- Added exponential backoff retry logic for failed API requests
+- Implemented circuit breaker pattern for external service resilience
+- Added comprehensive error handling with proper status codes
+
+**Concurrency Control:**
+- Added file-based locking to prevent concurrent cron job execution
+- Prevented race conditions in HandleCron and HandleCache functions
+- Implemented proper cache management with TTL and automatic cleanup
+- Added JSON validation for OpenAI responses
+- Improved transaction management with batch processing
+
+**Template and Handler Improvements:**
+- Fixed broken navigation link in home.html (/date → /dates)
+- Added health check route registration
+- Fixed template rendering race conditions
+- Added favicon support and static file serving
+- Standardized error response formats (JSON vs HTML)
+
+### Monitoring and Troubleshooting
 
 **Build Issues:**
 - Ensure all required environment variables are set
@@ -147,20 +177,37 @@ OpenAI prompts are in `lib/recommend/prompts/` and use Go templates with user da
 **Runtime Issues:**
 - Check logs for API rate limiting errors
 - Verify external API connectivity (Plex, TMDb, OpenAI)
-- Monitor distributed lock status for cron job coordination
+- Monitor file lock status for cron job coordination in `/tmp/recommender-locks/`
+- Check cache cleanup logs every 30 minutes
 
 **Database Issues:**
 - Migrations run automatically on startup
 - Check disk space for SQLite database growth
 - Monitor index usage with EXPLAIN QUERY PLAN
+- Review transaction batch processing logs
+
+**Performance Monitoring:**
+- Track API request success/failure rates
+- Monitor cache hit/miss ratios and memory usage
+- Check database query performance with logging
+- Watch for lock acquisition failures or timeouts
 
 ## Logging
 
 All logging uses `log/slog` with JSON output format. Custom GORM logger in `lib/db/logger.go` integrates database queries with structured logging.
 
 **Key Log Areas:**
-- API integration (rate limiting, retries, errors)
-- Database operations (migrations, queries, transactions)
-- Cron job execution (locking, completion status)
-- Cache management (cleanup, expiration)
-- Recommendation generation (OpenAI responses, validation)
+- API integration (rate limiting, retries, errors, circuit breaker status)
+- Database operations (migrations, queries, transactions, batch processing)
+- Cron job execution (file locking, completion status, conflicts)
+- Cache management (cleanup, expiration, memory usage)
+- Recommendation generation (OpenAI responses, validation, parsing errors)
+- Template rendering (error handling, static file serving)
+
+**Critical Log Messages to Monitor:**
+- "Failed to acquire lock" or "already in progress" - indicates concurrent cron job attempts
+- "Circuit breaker opened" - external API service degradation
+- "JSON validation failed" - malformed OpenAI responses
+- "Cache cleanup completed" - normal maintenance (every 30min)
+- "Rate limit exceeded" - TMDb API quota issues
+- "Removing stale lock file" - cleanup of old lock files

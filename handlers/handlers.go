@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/icco/recommender/handlers/templates"
+	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/validation"
@@ -254,29 +255,59 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 }
 
 // HandleCron handles the recommendation generation cron job.
-// It takes a database connection and recommender instance, and returns an HTTP handler.
+// It takes a recommender instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and generates recommendations for the current day.
-func HandleCron(r *recommend.Recommender) http.HandlerFunc {
+func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
+		today := time.Now().Truncate(24 * time.Hour)
+		lockKey := fmt.Sprintf("cron-recommendations-%s", today.Format("2006-01-02"))
+		
 		slog.Info("Starting recommendation cron job",
 			slog.Time("start_time", startTime),
 			slog.String("remote_addr", req.RemoteAddr),
+			slog.String("lock_key", lockKey),
 		)
 
-		today := time.Now().Truncate(24 * time.Hour)
+		// Try to acquire lock with 10 second timeout
+		acquired, err := fl.TryLock(req.Context(), lockKey, 10*time.Second)
+		if err != nil {
+			slog.ErrorContext(req.Context(), "Failed to acquire lock for cron job",
+				slog.Any("error", err),
+				slog.String("lock_key", lockKey),
+			)
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error": "Failed to acquire lock", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		if !acquired {
+			slog.Info("Recommendation generation already in progress",
+				slog.String("lock_key", lockKey),
+				slog.Time("date", today),
+			)
+			w.Header().Set("Content-Type", "application/json")
+			if _, err := fmt.Fprintf(w, `{"message": "Recommendation generation already in progress for %s", "timestamp": "%s"}`,
+				today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
+				slog.Error("Failed to write response", slog.Any("error", err))
+			}
+			return
+		}
 
 		exists, err := r.CheckRecommendationsExist(req.Context(), today)
 		if err != nil {
+			fl.Unlock(req.Context(), lockKey)
 			slog.ErrorContext(req.Context(), "Failed to check existing recommendations",
 				slog.Any("error", err),
 				slog.Time("date", today),
 			)
+			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Failed to check existing recommendations", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
 			return
 		}
 
 		if exists {
+			fl.Unlock(req.Context(), lockKey)
 			slog.Info("Recommendations already exist for today",
 				slog.Time("date", today),
 			)
@@ -284,8 +315,6 @@ func HandleCron(r *recommend.Recommender) http.HandlerFunc {
 			if _, err := fmt.Fprintf(w, `{"message": "Recommendations already exist for %s", "timestamp": "%s"}`,
 				today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
 				slog.Error("Failed to write response", slog.Any("error", err))
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
-				return
 			}
 			return
 		}
@@ -295,15 +324,28 @@ func HandleCron(r *recommend.Recommender) http.HandlerFunc {
 		go func() {
 			defer func() {
 				genCancel()
+				// Always release the lock
+				if err := fl.Unlock(context.Background(), lockKey); err != nil {
+					slog.Error("Failed to release lock after recommendation generation",
+						slog.Any("error", err),
+						slog.String("lock_key", lockKey),
+					)
+				}
 			}()
 			slog.Info("Starting recommendation generation in background",
 				slog.Time("date", today),
 				slog.Duration("timeout", 5*time.Minute),
+				slog.String("lock_key", lockKey),
 			)
 			if err := r.GenerateRecommendations(genCtx, today); err != nil {
 				slog.ErrorContext(genCtx, "Failed to generate recommendations",
 					slog.Any("error", err),
 					slog.Time("date", today),
+				)
+			} else {
+				slog.Info("Recommendation generation completed successfully",
+					slog.Time("date", today),
+					slog.Duration("duration", time.Since(startTime)),
 				)
 			}
 		}()
@@ -312,34 +354,72 @@ func HandleCron(r *recommend.Recommender) http.HandlerFunc {
 		if _, err := fmt.Fprintf(w, `{"message": "Recommendation generation started for %s", "timestamp": "%s"}`,
 			today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
 			slog.Error("Failed to write response", slog.Any("error", err))
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
 		}
 	}
 }
 
 // HandleCache handles the Plex cache update cron job.
-// It takes a database connection and Plex client instance, and returns an HTTP handler.
+// It takes a Plex client instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and updates the cache of available media.
-func HandleCache(p *plex.Client) http.HandlerFunc {
+func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
+		lockKey := "cache-update"
+		
 		slog.Info("Starting cache update job",
 			slog.Time("start_time", startTime),
 			slog.String("remote_addr", req.RemoteAddr),
+			slog.String("lock_key", lockKey),
 		)
 
+		// Try to acquire lock with 10 second timeout
+		acquired, err := fl.TryLock(req.Context(), lockKey, 10*time.Second)
+		if err != nil {
+			slog.ErrorContext(req.Context(), "Failed to acquire lock for cache update",
+				slog.Any("error", err),
+				slog.String("lock_key", lockKey),
+			)
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error": "Failed to acquire lock", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		if !acquired {
+			slog.Info("Cache update already in progress",
+				slog.String("lock_key", lockKey),
+			)
+			w.Header().Set("Content-Type", "application/json")
+			if _, err := fmt.Fprintf(w, `{"message": "Cache update already in progress", "timestamp": "%s"}`,
+				time.Now().Format(time.RFC3339)); err != nil {
+				slog.Error("Failed to write response", slog.Any("error", err))
+			}
+			return
+		}
 
 		// Create a new background context with a timeout for the cache update
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		go func() {
-			defer cancel()
+			defer func() {
+				cancel()
+				// Always release the lock
+				if err := fl.Unlock(context.Background(), lockKey); err != nil {
+					slog.Error("Failed to release lock after cache update",
+						slog.Any("error", err),
+						slog.String("lock_key", lockKey),
+					)
+				}
+			}()
 			slog.Info("Starting cache update in background",
 				slog.Duration("timeout", 5*time.Minute),
+				slog.String("lock_key", lockKey),
 			)
 			if err := p.UpdateCache(ctx); err != nil {
 				slog.ErrorContext(ctx, "Failed to update cache",
 					slog.Any("error", err),
+				)
+			} else {
+				slog.Info("Cache update completed successfully",
+					slog.Duration("duration", time.Since(startTime)),
 				)
 			}
 		}()
@@ -348,8 +428,6 @@ func HandleCache(p *plex.Client) http.HandlerFunc {
 		if _, err := fmt.Fprintf(w, `{"message": "Cache update started", "timestamp": "%s"}`,
 			time.Now().Format(time.RFC3339)); err != nil {
 			slog.Error("Failed to write response", slog.Any("error", err))
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
 		}
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -98,17 +97,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set up distributed locking
-	var etcdEndpoints []string
-	if etcdEndpointsStr := os.Getenv("ETCD_ENDPOINTS"); etcdEndpointsStr != "" {
-		etcdEndpoints = strings.Split(etcdEndpointsStr, ",")
-	}
-	
-	distributedLock, err := lock.NewDistributedLock(etcdEndpoints, slog.Default())
-	if err != nil {
-		slog.Error("Failed to create distributed lock", slog.Any("error", err))
-		os.Exit(1)
-	}
+	// Set up file-based locking
+	fileLock := lock.NewFileLock(slog.Default())
 
 	// Set up TMDb client
 	tmdbClient := tmdb.NewClient(tmdbAPIKey, slog.Default())
@@ -140,8 +130,8 @@ func main() {
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
 	r.Get("/dates", handlers.HandleDates(recommender))
-	r.Get("/cron/recommend", handlers.HandleCron(recommender))
-	r.Get("/cron/cache", handlers.HandleCache(plexClient))
+	r.Get("/cron/recommend", handlers.HandleCron(recommender, fileLock))
+	r.Get("/cron/cache", handlers.HandleCache(plexClient, fileLock))
 	r.Get("/stats", handlers.HandleStats(recommender))
 	r.Get("/health", health.Check(gormDB))
 
@@ -184,9 +174,9 @@ func main() {
 		slog.Error("Server shutdown error", slog.Any("error", err))
 	}
 
-	// Close distributed lock
-	if err := distributedLock.Close(); err != nil {
-		slog.Error("Failed to close distributed lock", slog.Any("error", err))
+	// Close file lock
+	if err := fileLock.Close(); err != nil {
+		slog.Error("Failed to close file lock", slog.Any("error", err))
 	}
 
 	slog.Info("Server stopped")
