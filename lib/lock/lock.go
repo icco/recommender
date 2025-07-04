@@ -35,6 +35,7 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 	
 	for time.Now().Before(deadline) {
 		// Try to create the lock file exclusively
+		// #nosec G304 - lockFile is generated through controlled logic in getLockFilePath
 		file, err := os.OpenFile(lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 		if err != nil {
 			if os.IsExist(err) {
@@ -61,7 +62,9 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 		// Write current timestamp and process info to the lock file
 		if _, err := fmt.Fprintf(file, "%d\n%d\n", time.Now().Unix(), os.Getpid()); err != nil {
 			fl.logger.Error("Failed to write to lock file", slog.String("file", lockFile), slog.Any("error", err))
-			file.Close()
+			if closeErr := file.Close(); closeErr != nil {
+				fl.logger.Error("Failed to close lock file after write error", slog.String("file", lockFile), slog.Any("error", closeErr))
+			}
 			return false, fmt.Errorf("failed to write to lock file: %w", err)
 		}
 		if err := file.Close(); err != nil {
