@@ -117,14 +117,6 @@ func NewClient(apiKey string, logger *slog.Logger) *Client {
 	}
 }
 
-// newRateLimiter creates a new rate limiter instance
-func newRateLimiter(maxRequests int, window time.Duration) *rateLimiter {
-	return &rateLimiter{
-		maxRequests: maxRequests,
-		window:      window,
-	}
-}
-
 // allow checks if a request can be made based on the rate limit
 func (rl *rateLimiter) allow() bool {
 	rl.mu.Lock()
