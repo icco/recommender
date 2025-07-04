@@ -13,7 +13,7 @@ type Movie struct {
 	Genre     string  `gorm:"type:varchar(255);index:idx_movies_genre"`          // Genre(s)
 	PosterURL string  `gorm:"type:varchar(1000)"`                               // URL to the poster image
 	Runtime   int     `gorm:"default:0"`                                        // Runtime in minutes
-	TMDbID    int     `gorm:"uniqueIndex:idx_movies_tmdb_id"`                   // The Movie Database ID
+	TMDbID    *int    `gorm:"uniqueIndex:idx_movies_tmdb_id"`                   // The Movie Database ID (nullable)
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -30,7 +30,7 @@ type TVShow struct {
 	Genre     string  `gorm:"type:varchar(255);index:idx_tvshows_genre"`          // Genre(s)
 	PosterURL string  `gorm:"type:varchar(1000)"`                                // URL to the poster image
 	Seasons   int     `gorm:"default:0"`                                          // Number of seasons
-	TMDbID    int     `gorm:"uniqueIndex:idx_tvshows_tmdb_id"`                    // The Movie Database ID
+	TMDbID    *int    `gorm:"uniqueIndex:idx_tvshows_tmdb_id"`                    // The Movie Database ID (nullable)
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
