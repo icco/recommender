@@ -45,6 +45,11 @@ var (
 func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 	ctx := context.Background()
 
+	// Enable SQLite optimizations
+	if err := enableSQLiteOptimizations(ctx, db, logger); err != nil {
+		return fmt.Errorf("failed to enable SQLite optimizations: %w", err)
+	}
+
 	// Auto-migrate the schema first to ensure tables exist
 	if err := db.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
 		slog.Error("Failed to migrate database", slog.Any("error", err))
@@ -61,6 +66,11 @@ func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 	// Drop indexes if it exists
 	if err := dropIndexes(ctx, db, logger); err != nil {
 		return fmt.Errorf("failed to drop indexes: %w", err)
+	}
+
+	// Create additional indexes and constraints
+	if err := createAdditionalIndexes(ctx, db, logger); err != nil {
+		return fmt.Errorf("failed to create additional indexes: %w", err)
 	}
 
 	return nil
@@ -84,6 +94,53 @@ func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string, logge
 		return fmt.Errorf("failed to drop table: %w", err)
 	} else {
 		logger.Info("Successfully dropped table", slog.String("table", tableName))
+	}
+
+	return nil
+}
+
+// enableSQLiteOptimizations enables SQLite-specific optimizations
+func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+	optimizations := []string{
+		"PRAGMA journal_mode=WAL",         // Enable WAL mode for better concurrency
+		"PRAGMA synchronous=NORMAL",       // Faster writes while maintaining safety
+		"PRAGMA cache_size=1000",          // Increase cache size
+		"PRAGMA foreign_keys=ON",          // Enable foreign key constraints
+		"PRAGMA temp_store=MEMORY",        // Store temporary tables in memory
+		"PRAGMA mmap_size=134217728",      // Enable memory-mapped I/O (128MB)
+		"PRAGMA optimize",                 // Enable query optimization
+	}
+
+	for _, pragma := range optimizations {
+		if err := db.WithContext(ctx).Exec(pragma).Error; err != nil {
+			logger.Warn("Failed to execute pragma", slog.String("pragma", pragma), slog.Any("error", err))
+		} else {
+			logger.Info("Successfully executed pragma", slog.String("pragma", pragma))
+		}
+	}
+
+	return nil
+}
+
+// createAdditionalIndexes creates additional indexes for performance
+func createAdditionalIndexes(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+	// Additional composite indexes for common queries
+	additionalIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_movies_rating_year ON movies(rating, year)",
+		"CREATE INDEX IF NOT EXISTS idx_movies_genre_year ON movies(genre, year)",
+		"CREATE INDEX IF NOT EXISTS idx_tvshows_rating_year ON tv_shows(rating, year)",
+		"CREATE INDEX IF NOT EXISTS idx_tvshows_genre_year ON tv_shows(genre, year)",
+		"CREATE INDEX IF NOT EXISTS idx_recommendations_date_type ON recommendations(date, type)",
+		"CREATE INDEX IF NOT EXISTS idx_recommendations_rating_year ON recommendations(rating, year)",
+		"CREATE INDEX IF NOT EXISTS idx_recommendations_genre_type ON recommendations(genre, type)",
+	}
+
+	for _, indexSQL := range additionalIndexes {
+		if err := db.WithContext(ctx).Exec(indexSQL).Error; err != nil {
+			logger.Warn("Failed to create index", slog.String("sql", indexSQL), slog.Any("error", err))
+		} else {
+			logger.Info("Successfully created index", slog.String("sql", indexSQL))
+		}
 	}
 
 	return nil

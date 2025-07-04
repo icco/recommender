@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
 	"os"
 	"strings"
 	"text/template"
@@ -46,7 +48,14 @@ type Recommender struct {
 	tmdb   *tmdb.Client
 	logger *slog.Logger
 	openai *openai.Client
-	cache  map[string]*models.Recommendation
+	cache  map[string]*CacheEntry
+}
+
+// CacheEntry represents a cached recommendation with metadata
+type CacheEntry struct {
+	Recommendation *models.Recommendation
+	Timestamp      time.Time
+	TTL            time.Duration
 }
 
 // RecommendationContext contains the context used for generating recommendations.
@@ -65,18 +74,39 @@ type UnwatchedContent struct {
 }
 
 // New creates a new Recommender instance with the provided dependencies.
-// It initializes the OpenAI client and sets up the recommendation cache.
+// It initializes the OpenAI client with proper timeout and retry configuration.
 func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger) (*Recommender, error) {
-	openaiClient := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
+	// Create HTTP client with timeout for OpenAI
+	httpClient := &http.Client{
+		Timeout: 120 * time.Second, // Longer timeout for OpenAI API
+		Transport: &http.Transport{
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+		},
+	}
 
-	return &Recommender{
+	// Create OpenAI client with configuration
+	config := openai.DefaultConfig(os.Getenv("OPENAI_API_KEY"))
+	config.HTTPClient = httpClient
+
+	openaiClient := openai.NewClientWithConfig(config)
+
+	r := &Recommender{
 		db:     db,
 		plex:   plex,
 		tmdb:   tmdb,
 		logger: logger,
 		openai: openaiClient,
-		cache:  make(map[string]*models.Recommendation),
-	}, nil
+		cache:  make(map[string]*CacheEntry),
+	}
+
+	// Start cache cleanup goroutine
+	go r.startCacheCleanup()
+
+	return r, nil
 }
 
 // GetRecommendationsForDate retrieves all recommendations for a specific date
@@ -109,7 +139,7 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 }
 
 // CheckRecommendationsComplete checks if recommendations are complete for a specific date
-// Returns true if we have exactly 4 movies and 3 TV shows
+// Returns true if we have at least some recommendations (flexible approach)
 func (r *Recommender) CheckRecommendationsComplete(ctx context.Context, date time.Time) (bool, error) {
 	var movieCount, tvShowCount int64
 
@@ -127,8 +157,9 @@ func (r *Recommender) CheckRecommendationsComplete(ctx context.Context, date tim
 		return false, fmt.Errorf("failed to count TV shows: %w", err)
 	}
 
-	// Return true if we have exactly 4 movies and 3 TV shows
-	return movieCount == 4 && tvShowCount == 3, nil
+	// Return true if we have at least 1 movie and 1 TV show
+	// This makes the system more flexible and resilient to content availability
+	return movieCount > 0 && tvShowCount > 0, nil
 }
 
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
@@ -337,26 +368,24 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return fmt.Errorf("failed to execute recommendation prompt: %w", err)
 	}
 
-	resp, err := r.openai.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model: openai.GPT4oMini,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleSystem,
-					Content: systemMsg.String(),
-				},
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: userMsg.String(),
-				},
+	// Retry OpenAI API call with exponential backoff
+	resp, err := r.retryOpenAIRequest(ctx, openai.ChatCompletionRequest{
+		Model: openai.GPT4oMini,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemMsg.String(),
 			},
-			Temperature: 0.7,
-			ResponseFormat: &openai.ChatCompletionResponseFormat{
-				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: userMsg.String(),
 			},
 		},
-	)
+		Temperature: 0.7,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get OpenAI completion: %w", err)
 	}
@@ -582,4 +611,111 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	}
 
 	return &stats, nil
+}
+
+// startCacheCleanup starts a goroutine that periodically cleans up expired cache entries
+func (r *Recommender) startCacheCleanup() {
+	ticker := time.NewTicker(30 * time.Minute) // Clean every 30 minutes
+	defer ticker.Stop()
+
+	for range ticker.C {
+		r.cleanupCache()
+	}
+}
+
+// cleanupCache removes expired entries from the cache
+func (r *Recommender) cleanupCache() {
+	now := time.Now()
+	var expiredKeys []string
+
+	for key, entry := range r.cache {
+		if now.Sub(entry.Timestamp) > entry.TTL {
+			expiredKeys = append(expiredKeys, key)
+		}
+	}
+
+	for _, key := range expiredKeys {
+		delete(r.cache, key)
+	}
+
+	if len(expiredKeys) > 0 {
+		r.logger.Debug("Cleaned up expired cache entries", 
+			slog.Int("expired_count", len(expiredKeys)),
+			slog.Int("remaining_count", len(r.cache)))
+	}
+}
+
+// SetCache adds or updates a cache entry
+func (r *Recommender) SetCache(key string, recommendation *models.Recommendation, ttl time.Duration) {
+	r.cache[key] = &CacheEntry{
+		Recommendation: recommendation,
+		Timestamp:      time.Now(),
+		TTL:            ttl,
+	}
+}
+
+// GetCache retrieves a cache entry if it exists and is not expired
+func (r *Recommender) GetCache(key string) (*models.Recommendation, bool) {
+	entry, exists := r.cache[key]
+	if !exists {
+		return nil, false
+	}
+
+	// Check if entry is expired
+	if time.Since(entry.Timestamp) > entry.TTL {
+		delete(r.cache, key)
+		return nil, false
+	}
+
+	return entry.Recommendation, true
+}
+
+// ClearCache removes all cache entries
+func (r *Recommender) ClearCache() {
+	r.cache = make(map[string]*CacheEntry)
+	r.logger.Debug("Cache cleared")
+}
+
+// retryOpenAIRequest implements retry logic for OpenAI API calls with exponential backoff
+func (r *Recommender) retryOpenAIRequest(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+	var resp openai.ChatCompletionResponse
+	maxRetries := 3
+	baseDelay := 2 * time.Second
+	maxDelay := 30 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, err := r.openai.CreateChatCompletion(ctx, req)
+		if err == nil {
+			return result, nil
+		}
+
+		// If this is the last attempt, return the error
+		if attempt == maxRetries {
+			r.logger.Error("OpenAI API max retries exceeded",
+				slog.Int("attempts", attempt+1),
+				slog.String("error", err.Error()))
+			return resp, err
+		}
+
+		// Calculate delay with exponential backoff
+		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attempt)))
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+
+		r.logger.Warn("Retrying OpenAI API request",
+			slog.Int("attempt", attempt+1),
+			slog.Duration("delay", delay),
+			slog.String("error", err.Error()))
+
+		// Wait before retrying
+		select {
+		case <-ctx.Done():
+			return resp, ctx.Err()
+		case <-time.After(delay):
+			// Continue to next attempt
+		}
+	}
+
+	return resp, fmt.Errorf("unreachable code")
 }

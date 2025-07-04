@@ -4,16 +4,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/icco/recommender/handlers"
 	"github.com/icco/recommender/lib/db"
+	"github.com/icco/recommender/lib/health"
+	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/tmdb"
@@ -72,6 +77,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
+	if openaiAPIKey == "" {
+		slog.Error("OPENAI_API_KEY environment variable is required")
+		os.Exit(1)
+	}
+
 	// Set up database with custom JSON logger
 	gormDB, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
 		Logger: db.NewGormLogger(slog.Default()),
@@ -85,6 +96,9 @@ func main() {
 		slog.Error("Failed to run migrations", slog.Any("error", err))
 		os.Exit(1)
 	}
+
+	// Set up file-based locking
+	fileLock := lock.NewFileLock(slog.Default())
 
 	// Set up TMDb client
 	tmdbClient := tmdb.NewClient(tmdbAPIKey, slog.Default())
@@ -109,13 +123,17 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
+	// Static file serving
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+
 	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
 	r.Get("/dates", handlers.HandleDates(recommender))
-	r.Get("/cron/recommend", handlers.HandleCron(recommender))
-	r.Get("/cron/cache", handlers.HandleCache(plexClient))
+	r.Get("/cron/recommend", handlers.HandleCron(recommender, fileLock))
+	r.Get("/cron/cache", handlers.HandleCache(plexClient, fileLock))
 	r.Get("/stats", handlers.HandleStats(recommender))
+	r.Get("/health", health.Check(gormDB))
 
 	// Start server
 	port := os.Getenv("PORT")
@@ -123,7 +141,6 @@ func main() {
 		port = "8080"
 	}
 
-	slog.Info("Starting server", slog.String("port", port))
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", port),
 		Handler:      r,
@@ -131,8 +148,36 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
-	if err := server.ListenAndServe(); err != nil {
-		slog.Error("Server error", slog.Any("error", err))
-		os.Exit(1)
+
+	// Set up graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		slog.Info("Starting server", slog.String("port", port))
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("Server error", slog.Any("error", err))
+			stop()
+		}
+	}()
+
+	// Wait for interrupt signal
+	<-ctx.Done()
+	stop()
+
+	// Gracefully shutdown the server with a timeout
+	slog.Info("Shutting down server gracefully...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Server shutdown error", slog.Any("error", err))
 	}
+
+	// Close file lock
+	if err := fileLock.Close(); err != nil {
+		slog.Error("Failed to close file lock", slog.Any("error", err))
+	}
+
+	slog.Info("Server stopped")
 }
