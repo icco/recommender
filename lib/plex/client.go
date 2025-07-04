@@ -621,7 +621,7 @@ func (c *Client) procesMovieBatch(ctx context.Context, movies []PlexItem) error 
 				Genre:     genre,
 				PosterURL: posterURL,
 				Runtime:   runtime,
-				TMDbID:    0, // Will be updated later if needed
+				TMDbID:    nil, // Will be updated later if needed
 			}
 
 			if err := tx.Create(&movie).Error; err != nil {
@@ -707,7 +707,7 @@ func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error
 				Genre:     genre,
 				PosterURL: posterURL,
 				Seasons:   seasons,
-				TMDbID:    0, // Will be updated later if needed
+				TMDbID:    nil, // Will be updated later if needed
 			}
 
 			if err := tx.Create(&tvShow).Error; err != nil {

@@ -272,16 +272,33 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	for _, movie := range unwatchedMovies {
 		// Get TMDB poster URL if available
 		posterURL := movie.PosterURL
-		if movie.TMDbID > 0 {
+		tmdbID := 0
+		if movie.TMDbID != nil && *movie.TMDbID > 0 {
+			tmdbID = *movie.TMDbID
 			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
 				// Update the movie's TMDbID if it's not set
-				if movie.TMDbID == 0 {
-					movie.TMDbID = result.Results[0].ID
+				if movie.TMDbID == nil {
+					newTMDbID := result.Results[0].ID
+					movie.TMDbID = &newTMDbID
 					if err := r.db.WithContext(ctx).Save(&movie).Error; err != nil {
 						r.logger.Error("Failed to update movie TMDbID", "error", err, "title", movie.Title)
 					}
+				}
+			} else if err != nil {
+				r.logger.Error("Failed to search TMDb for movie", "error", err, "title", movie.Title)
+			}
+		} else {
+			// Try to fetch TMDb data if we don't have it
+			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
+			if err == nil && len(result.Results) > 0 {
+				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
+				tmdbID = result.Results[0].ID
+				newTMDbID := result.Results[0].ID
+				movie.TMDbID = &newTMDbID
+				if err := r.db.WithContext(ctx).Save(&movie).Error; err != nil {
+					r.logger.Error("Failed to update movie TMDbID", "error", err, "title", movie.Title)
 				}
 			} else if err != nil {
 				r.logger.Error("Failed to search TMDb for movie", "error", err, "title", movie.Title)
@@ -297,23 +314,40 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			PosterURL: posterURL,
 			Runtime:   movie.Runtime,
 			MovieID:   &movie.ID,
-			TMDbID:    movie.TMDbID,
+			TMDbID:    tmdbID,
 		})
 	}
 
 	for _, tvShow := range unwatchedTVShows {
 		// Get TMDB poster URL if available
 		posterURL := tvShow.PosterURL
-		if tvShow.TMDbID > 0 {
+		tmdbID := 0
+		if tvShow.TMDbID != nil && *tvShow.TMDbID > 0 {
+			tmdbID = *tvShow.TMDbID
 			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
 				// Update the TV show's TMDbID if it's not set
-				if tvShow.TMDbID == 0 {
-					tvShow.TMDbID = result.Results[0].ID
+				if tvShow.TMDbID == nil {
+					newTMDbID := result.Results[0].ID
+					tvShow.TMDbID = &newTMDbID
 					if err := r.db.WithContext(ctx).Save(&tvShow).Error; err != nil {
 						r.logger.Error("Failed to update TV show TMDbID", "error", err, "title", tvShow.Title)
 					}
+				}
+			} else if err != nil {
+				r.logger.Error("Failed to search TMDb for TV show", "error", err, "title", tvShow.Title)
+			}
+		} else {
+			// Try to fetch TMDb data if we don't have it
+			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
+			if err == nil && len(result.Results) > 0 {
+				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
+				tmdbID = result.Results[0].ID
+				newTMDbID := result.Results[0].ID
+				tvShow.TMDbID = &newTMDbID
+				if err := r.db.WithContext(ctx).Save(&tvShow).Error; err != nil {
+					r.logger.Error("Failed to update TV show TMDbID", "error", err, "title", tvShow.Title)
 				}
 			} else if err != nil {
 				r.logger.Error("Failed to search TMDb for TV show", "error", err, "title", tvShow.Title)
@@ -329,7 +363,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			PosterURL: posterURL,
 			Runtime:   tvShow.Seasons,
 			TVShowID:  &tvShow.ID,
-			TMDbID:    tvShow.TMDbID,
+			TMDbID:    tmdbID,
 		})
 	}
 
