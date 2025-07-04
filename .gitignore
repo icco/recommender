@@ -26,6 +26,8 @@ go.work.sum
 .env
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # IDE files
 .idea/
