@@ -157,9 +157,32 @@ func (r *Recommender) CheckRecommendationsComplete(ctx context.Context, date tim
 		return false, fmt.Errorf("failed to count TV shows: %w", err)
 	}
 
-	// Return true if we have at least 1 movie and 1 TV show
-	// This makes the system more flexible and resilient to content availability
-	return movieCount > 0 && tvShowCount > 0, nil
+	// Check what content is available in the cache to determine completeness criteria
+	var cachedMoviesCount, cachedTVShowsCount int64
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Count(&cachedMoviesCount).Error; err != nil {
+		return false, fmt.Errorf("failed to count cached movies: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Count(&cachedTVShowsCount).Error; err != nil {
+		return false, fmt.Errorf("failed to count cached TV shows: %w", err)
+	}
+
+	// If we have both types of content cached, require both types of recommendations
+	if cachedMoviesCount > 0 && cachedTVShowsCount > 0 {
+		return movieCount > 0 && tvShowCount > 0, nil
+	}
+	
+	// If only movies are cached, only require movie recommendations
+	if cachedMoviesCount > 0 && cachedTVShowsCount == 0 {
+		return movieCount > 0, nil
+	}
+	
+	// If only TV shows are cached, only require TV show recommendations
+	if cachedMoviesCount == 0 && cachedTVShowsCount > 0 {
+		return tvShowCount > 0, nil
+	}
+	
+	// If no content is cached, we can't generate recommendations
+	return false, nil
 }
 
 // CheckRecommendationsExist checks if recommendations already exist for a specific date
@@ -477,10 +500,31 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	movieTypes := make(map[string]bool) // Track specific movie types (funny, action/drama, rewatched, additional)
 	filteredRecommendations := make([]models.Recommendation, 0)
 
-	// First, process movies according to specific requirements
+	// Check what content types are available to determine recommendation targets
+	var availableMovies, availableTVShows int64
+	if err := r.db.WithContext(ctx).Model(&models.Movie{}).Count(&availableMovies).Error; err != nil {
+		return fmt.Errorf("failed to count available movies: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Count(&availableTVShows).Error; err != nil {
+		return fmt.Errorf("failed to count available TV shows: %w", err)
+	}
+
+	// Determine target counts based on available content
+	targetMovieCount := 4  // Standard target
+	targetTVShowCount := 3 // Standard target
+	
+	// If no TV shows are available, increase movie recommendations to compensate
+	if availableTVShows == 0 && availableMovies > 0 {
+		targetMovieCount = 7 // Increase to 7 movies when no TV shows available
+		targetTVShowCount = 0
+		r.logger.Info("No TV shows available, generating movie-only recommendations",
+			slog.Int("target_movies", targetMovieCount))
+	}
+
+	// Process movies according to requirements
 	for _, rec := range recommendations {
-		if rec.Type == "movie" {
-			// Check if we need this type of movie
+		if rec.Type == "movie" && typeCounts["movie"] < targetMovieCount {
+			// Try to get diverse genres, but be flexible if content is limited
 			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
@@ -491,23 +535,24 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["action_drama"] = true
-			} else if !movieTypes["rewatched"] { // Movies not from Plex are ones we've seen before
+			} else if !movieTypes["rewatched"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
 				movieTypes["rewatched"] = true
-			} else if !movieTypes["additional"] { // Add one more movie if we haven't reached the limit
+			} else if typeCounts["movie"] < targetMovieCount { // Add additional movies up to target
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts["movie"]++
-				movieTypes["additional"] = true
 			}
 		}
 	}
 
-	// Then process TV shows (3 unwatched)
-	for _, rec := range recommendations {
-		if rec.Type == "tvshow" && typeCounts["tvshow"] < 3 {
-			filteredRecommendations = append(filteredRecommendations, rec)
-			typeCounts["tvshow"]++
+	// Process TV shows if available
+	if availableTVShows > 0 {
+		for _, rec := range recommendations {
+			if rec.Type == "tvshow" && typeCounts["tvshow"] < targetTVShowCount {
+				filteredRecommendations = append(filteredRecommendations, rec)
+				typeCounts["tvshow"]++
+			}
 		}
 	}
 
