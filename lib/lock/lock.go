@@ -41,7 +41,9 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 				// Check if the existing lock is stale
 				if fl.isLockStale(lockFile, timeout*2) {
 					fl.logger.Warn("Removing stale lock file", slog.String("file", lockFile))
-					os.Remove(lockFile)
+					if err := os.Remove(lockFile); err != nil {
+						fl.logger.Error("Failed to remove stale lock file", slog.String("file", lockFile), slog.Any("error", err))
+					}
 					continue
 				}
 				
@@ -57,8 +59,15 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 		}
 		
 		// Write current timestamp and process info to the lock file
-		fmt.Fprintf(file, "%d\n%d\n", time.Now().Unix(), os.Getpid())
-		file.Close()
+		if _, err := fmt.Fprintf(file, "%d\n%d\n", time.Now().Unix(), os.Getpid()); err != nil {
+			fl.logger.Error("Failed to write to lock file", slog.String("file", lockFile), slog.Any("error", err))
+			file.Close()
+			return false, fmt.Errorf("failed to write to lock file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			fl.logger.Error("Failed to close lock file", slog.String("file", lockFile), slog.Any("error", err))
+			return false, fmt.Errorf("failed to close lock file: %w", err)
+		}
 		
 		fl.logger.Debug("Acquired lock", slog.String("key", key), slog.String("file", lockFile))
 		return true, nil
