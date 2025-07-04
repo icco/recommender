@@ -36,7 +36,7 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 	for time.Now().Before(deadline) {
 		// Try to create the lock file exclusively
 		// #nosec G304 - lockFile is generated through controlled logic in getLockFilePath
-		file, err := os.OpenFile(lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		file, err := os.OpenFile(lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
 			if os.IsExist(err) {
 				// Check if the existing lock is stale
