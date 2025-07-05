@@ -345,3 +345,255 @@ curl -X GET http://localhost:8080/health
 # View recommendations
 curl -X GET http://localhost:8080/
 ```
+
+## Critical Issues and Resolutions
+
+### Duplicate Recommendations and Concurrency Issues (PR #31)
+
+**Problems Identified:**
+1. **Duplicate recommendations** being generated for the same date
+2. **Multiple daily recommendation sets** created by concurrent cron jobs
+3. **UI displaying excessive decimal places** for ratings (e.g., 8.567823/10)
+
+**Root Causes:**
+- No database-level constraints preventing duplicate titles on same date
+- Race conditions in concurrent recommendation generation requests
+- Template formatting not limiting decimal precision for user display
+- File locking insufficient to prevent all concurrency edge cases
+
+**Solutions Implemented:**
+
+#### 1. Database-Level Duplicate Prevention
+```sql
+-- Added unique constraint on (date, title) combination
+CREATE UNIQUE INDEX idx_recommendations_date_title ON recommendations(date, title);
+```
+
+#### 2. Application-Level Duplicate Checking
+```go
+// Enhanced transaction logic with duplicate detection
+if err := tx.Where("title = ? AND date = ?", rec.Title, rec.Date).First(&duplicate).Error; err == nil {
+    r.logger.Warn("Skipping duplicate recommendation", 
+        slog.String("title", rec.Title),
+        slog.Time("date", rec.Date))
+    continue
+}
+```
+
+#### 3. Improved Concurrency Control
+```go
+// Double-check for existing recommendations within lock to prevent race conditions
+exists, err := r.CheckRecommendationsExist(req.Context(), today)
+if exists {
+    // Release lock and return early
+    return
+}
+```
+
+#### 4. UI Template Formatting Fix
+```html
+<!-- Before: Many decimal places -->
+<p class="text-gray-600">Rating: {{.Rating}}/10</p>
+
+<!-- After: One decimal place -->
+<p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
+```
+
+**Testing and Validation:**
+- ✅ Database constraints prevent duplicate inserts at schema level
+- ✅ Application logic detects and skips duplicates during processing  
+- ✅ Transaction safety ensures atomicity of batch recommendations
+- ✅ File locking prevents multiple recommendation processes
+- ✅ UI formatting displays clean ratings (8.6/10)
+- ✅ Race condition prevention with proper double-checking
+
+### Best Practices and Lessons Learned
+
+#### Database Design Principles
+
+**Unique Constraints for Business Logic:**
+- Always add database-level constraints for business rules
+- Use composite unique indexes for multi-column uniqueness (date + title)
+- Implement constraints early to prevent data integrity issues
+- Log constraint violations to identify application logic gaps
+
+**Example:**
+```go
+// Model with proper constraints
+type Recommendation struct {
+    Date  time.Time `gorm:"not null;index:idx_recommendations_date;uniqueIndex:idx_recommendations_date_title"`
+    Title string    `gorm:"type:varchar(500);not null;uniqueIndex:idx_recommendations_date_title"`
+    // ... other fields
+}
+```
+
+#### Concurrency Control Patterns
+
+**File-Based Locking Best Practices:**
+1. **Always use timeouts** to prevent deadlocks
+2. **Double-check conditions** within locks to handle race conditions
+3. **Proper cleanup** in defer statements and error cases
+4. **Comprehensive logging** for lock acquisition and release
+
+**Example Pattern:**
+```go
+// Acquire lock with timeout
+acquired, err := fl.TryLock(ctx, lockKey, 10*time.Second)
+if !acquired {
+    return // Another process is running
+}
+defer func() {
+    if err := fl.Unlock(ctx, lockKey); err != nil {
+        logger.Error("Failed to release lock", slog.Any("error", err))
+    }
+}()
+
+// Double-check condition within lock
+if exists, _ := checkExists(ctx); exists {
+    return // Someone else completed the work
+}
+```
+
+#### Template and UI Best Practices
+
+**Numeric Formatting:**
+- Always format numeric displays for user consumption
+- Use `printf` template functions for precise control
+- Maintain full precision in database, format only for display
+- Apply formatting consistently across all templates
+
+**Example:**
+```html
+<!-- Ratings -->
+Rating: {{printf "%.1f" .Rating}}/10
+
+<!-- Percentages -->
+{{printf "%.0f" .Percentage}}%
+
+<!-- Currency -->
+${{printf "%.2f" .Price}}
+```
+
+#### Database Transaction Patterns
+
+**Safe Batch Processing:**
+```go
+// Always use transactions for batch operations
+err := db.Transaction(func(tx *gorm.DB) error {
+    // Check constraints within transaction
+    var existingCount int64
+    if err := tx.Model(&Model{}).Where("date = ?", date).Count(&existingCount).Error; err != nil {
+        return err
+    }
+    
+    if existingCount > 0 {
+        return fmt.Errorf("data already exists for date %s", date.Format("2006-01-02"))
+    }
+    
+    // Process batch with individual duplicate checking
+    for _, item := range items {
+        var duplicate Model
+        if err := tx.Where("unique_field = ?", item.UniqueField).First(&duplicate).Error; err == nil {
+            logger.Warn("Skipping duplicate", slog.String("field", item.UniqueField))
+            continue
+        }
+        
+        if err := tx.Create(&item).Error; err != nil {
+            return fmt.Errorf("failed to create item: %w", err)
+        }
+    }
+    
+    return nil
+})
+```
+
+#### Error Handling and Logging
+
+**Structured Logging for Concurrency Issues:**
+```go
+logger.Info("Starting operation", 
+    slog.String("lock_key", lockKey),
+    slog.Time("date", date),
+    slog.String("remote_addr", req.RemoteAddr))
+
+logger.Warn("Skipping duplicate item",
+    slog.String("title", item.Title),
+    slog.Time("date", item.Date),
+    slog.String("reason", "already_exists"))
+
+logger.Error("Failed operation",
+    slog.Any("error", err),
+    slog.String("operation", "recommendation_generation"),
+    slog.Duration("elapsed", time.Since(start)))
+```
+
+#### Development and Testing Practices
+
+**Testing Database Constraints:**
+1. Create test scenarios that trigger constraint violations
+2. Verify proper error handling for duplicate insertions
+3. Test concurrent operations with multiple goroutines/processes
+4. Validate cleanup and rollback behavior on failures
+
+**Testing Concurrency:**
+1. Use multiple concurrent requests to test race conditions
+2. Verify file locking prevents overlapping operations
+3. Test lock timeout and cleanup scenarios
+4. Monitor logs for proper synchronization behavior
+
+**Example Test Pattern:**
+```go
+func TestConcurrentRecommendationGeneration(t *testing.T) {
+    var wg sync.WaitGroup
+    results := make(chan error, 5)
+    
+    // Launch 5 concurrent generation attempts
+    for i := 0; i < 5; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            err := service.GenerateRecommendations(ctx, today)
+            results <- err
+        }()
+    }
+    
+    wg.Wait()
+    close(results)
+    
+    // Verify only one succeeded, others were properly blocked
+    successCount := 0
+    for err := range results {
+        if err == nil {
+            successCount++
+        }
+    }
+    
+    assert.Equal(t, 1, successCount, "Only one generation should succeed")
+}
+```
+
+#### Production Monitoring and Alerting
+
+**Key Metrics to Monitor:**
+- Lock acquisition failures and timeouts
+- Duplicate constraint violations
+- Recommendation generation success/failure rates
+- Database transaction rollback counts
+- Template rendering errors
+
+**Log Patterns to Alert On:**
+```bash
+# Excessive lock contention
+"Failed to acquire lock" OR "already in progress"
+
+# Database constraint violations  
+"UNIQUE constraint failed" OR "duplicate key"
+
+# Template rendering issues
+"error executing template" OR "template not found"
+
+# Concurrency issues
+"context deadline exceeded" OR "connection timeout"
+```
+
+This comprehensive update captures all the critical learnings from investigating and resolving the duplicate recommendations, concurrency issues, and UI formatting problems. These patterns and practices will help prevent similar issues in future development.
