@@ -571,9 +571,32 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return fmt.Errorf("no new recommendations to store")
 	}
 
-	// Save recommendations to database in a transaction
+	// Save recommendations to database in a transaction with duplicate checking
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// First, check if any recommendations already exist for this date
+		var existingCount int64
+		if err := tx.Model(&models.Recommendation{}).Where("date = ?", date).Count(&existingCount).Error; err != nil {
+			return fmt.Errorf("failed to check existing recommendations in transaction: %w", err)
+		}
+		
+		if existingCount > 0 {
+			return fmt.Errorf("recommendations already exist for date %s (found %d existing)", date.Format("2006-01-02"), existingCount)
+		}
+		
+		// Create recommendations with duplicate checking
 		for _, rec := range filteredRecommendations {
+			// Check for duplicate title on the same date
+			var duplicate models.Recommendation
+			err := tx.Where("title = ? AND date = ?", rec.Title, rec.Date).First(&duplicate).Error
+			if err == nil {
+				r.logger.Warn("Skipping duplicate recommendation", 
+					slog.String("title", rec.Title),
+					slog.Time("date", rec.Date))
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("failed to check for duplicate recommendation: %w", err)
+			}
+			
 			if err := tx.Create(&rec).Error; err != nil {
 				return fmt.Errorf("failed to save recommendation: %w", err)
 			}
