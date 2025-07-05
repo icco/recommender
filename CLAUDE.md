@@ -63,6 +63,248 @@ docker compose down
 **Optional Environment Variables:**
 - `DB_PATH`: Database file path (defaults to recommender.db)
 
+## Development Workflow and Best Practices
+
+### Branching Strategy and Pull Request Process
+
+**🔄 ALL NEW WORK MUST BE DONE IN BRANCHES - NEVER COMMIT DIRECTLY TO MAIN**
+
+#### Required Workflow Steps:
+
+1. **Create Feature Branch**
+   ```bash
+   # Always start from latest main
+   git checkout main
+   git pull origin main
+   
+   # Create descriptive branch name
+   git checkout -b fix-recommendation-duplicates
+   git checkout -b feature-user-preferences
+   git checkout -b optimize-cache-performance
+   ```
+
+2. **Frequent Commits During Development**
+   ```bash
+   # Commit early and often with descriptive messages
+   git add specific-files
+   git commit -m "Fix database constraint for duplicate recommendations
+   
+   - Add unique index on (date, title) combination
+   - Handle constraint violations gracefully in application logic
+   
+   🤖 Generated with [Claude Code](https://claude.ai/code)
+   
+   Co-Authored-By: Claude <noreply@anthropic.com>"
+   
+   # Continue working and commit frequently
+   git add .
+   git commit -m "Add comprehensive duplicate detection in transaction logic"
+   git commit -m "Update templates to format ratings with 1 decimal place"
+   ```
+
+3. **Push Branch and Create Pull Request**
+   ```bash
+   # Push branch to remote
+   git push -u origin fix-recommendation-duplicates
+   
+   # Create PR immediately after pushing
+   gh pr create --title "Fix duplicate recommendations and UI formatting" --body "
+   ## Summary
+   Addresses three critical issues:
+   1. Duplicate recommendations being generated
+   2. Multiple daily recommendation sets
+   3. UI showing too many decimal places
+   
+   ## Changes
+   - Added database unique constraints
+   - Enhanced transaction logic with duplicate checking
+   - Fixed template formatting for ratings
+   
+   ## Testing
+   - ✅ Database constraints prevent duplicates
+   - ✅ Concurrency control prevents race conditions
+   - ✅ UI displays clean rating format (8.6/10)
+   
+   🤖 Generated with [Claude Code](https://claude.ai/code)
+   "
+   ```
+
+4. **Monitor PR Checks After Every Push**
+   ```bash
+   # After each push, immediately check PR status
+   gh pr view --web  # Opens PR in browser
+   
+   # Or check status in terminal
+   gh pr checks
+   
+   # Watch for:
+   # ✅ All GitHub Actions pass (build, test, lint)
+   # ✅ No merge conflicts
+   # ✅ Required reviews completed
+   # ❌ Any failing checks need immediate attention
+   ```
+
+#### Commit Message Standards
+
+**Required Format:**
+```
+Brief summary line (imperative mood, <72 chars)
+
+- Detailed explanation of what changed
+- Why the change was needed
+- Any breaking changes or important notes
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Examples:**
+```bash
+# Good commit messages
+git commit -m "Add unique constraint to prevent duplicate recommendations
+
+- Create composite index on (date, title) fields
+- Prevents database-level duplicate insertions
+- Maintains data integrity for daily recommendations"
+
+git commit -m "Optimize cache update by removing TMDb API calls
+
+- Skip TMDb lookups during Plex cache population
+- Reduces cache time from 15+ minutes to ~10 seconds
+- Use Plex poster URLs during cache phase for performance"
+
+git commit -m "Fix UI rating display to show one decimal place
+
+- Format ratings using printf '%.1f' in templates
+- Improves user experience (8.6/10 vs 8.567823/10)
+- Applied consistently to movies and TV shows"
+```
+
+#### GitHub Actions and PR Checks
+
+**🚨 CRITICAL: Always Monitor PR Checks After Pushing**
+
+After every `git push`, you MUST:
+
+1. **Check PR Status Immediately**
+   ```bash
+   # View PR checks status
+   gh pr checks
+   
+   # Example output to watch for:
+   # ✅ build (main) - 2m 34s
+   # ✅ test (main) - 1m 12s  
+   # ✅ lint (main) - 45s
+   # ❌ security-scan (main) - Failed
+   ```
+
+2. **Monitor for Common Check Failures**
+   - **Build Failures**: Compilation errors, missing dependencies
+   - **Test Failures**: Unit tests, integration tests, coverage requirements
+   - **Lint Failures**: Code style, formatting, unused imports
+   - **Security Scans**: Vulnerability detection, secret leaks
+   - **Type Checking**: Go vet, staticcheck violations
+
+3. **Fix Failures Immediately**
+   ```bash
+   # If checks fail, fix and push again
+   git add .
+   git commit -m "Fix lint errors and remove unused imports"
+   git push
+   
+   # Re-check status
+   gh pr checks
+   ```
+
+4. **Wait for All Checks to Pass Before Requesting Review**
+   - Never request review with failing checks
+   - All ✅ green checks required before merge consideration
+   - Address any security or vulnerability warnings
+
+#### Pull Request Quality Standards
+
+**Required PR Components:**
+
+1. **Descriptive Title**
+   - Clear, concise summary of changes
+   - Mention issue type (fix, feature, optimization)
+
+2. **Comprehensive Description**
+   ```markdown
+   ## Summary
+   Brief overview of what this PR accomplishes
+   
+   ## Changes Made
+   - Specific change 1 with technical details
+   - Specific change 2 with rationale
+   - Specific change 3 with impact
+   
+   ## Testing Performed
+   - ✅ Unit tests pass
+   - ✅ Integration tests pass
+   - ✅ Manual testing performed
+   - ✅ Edge cases validated
+   
+   ## Breaking Changes
+   - None / List any breaking changes
+   
+   ## Additional Notes
+   - Performance impact
+   - Dependencies updated
+   - Configuration changes needed
+   ```
+
+3. **Small, Focused Changes**
+   - One logical change per PR
+   - Keep PRs under 400 lines when possible
+   - Split large features into multiple PRs
+
+4. **Self-Review Before Submission**
+   - Review your own code changes
+   - Verify all files included are intentional
+   - Check for debug code, commented code, TODO items
+   - Ensure consistent formatting and style
+
+#### Branch Management
+
+**Branch Naming Conventions:**
+```bash
+# Feature development
+feature/user-authentication
+feature/recommendation-weights
+
+# Bug fixes  
+fix/duplicate-recommendations
+fix/cache-timeout-issues
+
+# Performance improvements
+optimize/database-queries
+optimize/api-response-times
+
+# Documentation updates
+docs/api-endpoints
+docs/deployment-guide
+```
+
+**Branch Lifecycle:**
+1. Create branch from latest main
+2. Develop with frequent commits
+3. Push and create PR early
+4. Monitor checks continuously
+5. Address review feedback
+6. Merge when approved and checks pass
+7. Delete branch after merge
+
+**Never:**
+- Commit directly to main branch
+- Force push to shared branches
+- Merge without PR review
+- Ignore failing PR checks
+- Leave stale branches open
+
+This workflow ensures code quality, prevents integration issues, and maintains a clean git history while leveraging GitHub's automation and review process effectively.
+
 ## Database
 
 Uses SQLite with GORM ORM. Database file: `recommender.db` (or `/data/recommender.db` in Docker).
