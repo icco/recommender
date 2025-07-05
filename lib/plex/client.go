@@ -3,7 +3,6 @@ package plex
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -342,28 +341,12 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				duration = *item.Duration / 60000 // Convert milliseconds to minutes
 			}
 
-			// Try to get TMDb poster
+			// Use Plex poster URL if available, otherwise use fallback
+			// Skip TMDb lookup during cache update for performance
 			posterURL := fallbackPosterURL
-			if year > 0 {
-				result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
-				if err != nil {
-					c.logger.Warn("Failed to search TMDb for movie",
-						slog.String("title", item.Title),
-						slog.Int("year", year),
-						slog.Any("error", err))
-				} else if len(result.Results) > 0 {
-					// Use the first result's poster if available
-					if result.Results[0].PosterPath != "" {
-						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-						if _, err := url.Parse(tmdbPosterURL); err != nil {
-							c.logger.Warn("Invalid TMDb poster URL",
-								slog.String("url", tmdbPosterURL),
-								slog.Any("error", err))
-						} else {
-							posterURL = tmdbPosterURL
-						}
-					}
-				}
+			if item.Thumb != nil && *item.Thumb != "" {
+				// Use Plex thumb as poster URL for cache
+				posterURL = *item.Thumb
 			}
 
 			movies = append(movies, models.Recommendation{
