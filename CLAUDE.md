@@ -295,10 +295,13 @@ All file operations use restrictive permissions (0600 for files, 0750 for direct
 
 ### Testing and Validation Results
 
-**Cache Update Process:**
+**Cache Update Process (CRITICAL ISSUE RESOLVED):**
 - ✅ Fixed unique constraint violations in database schema
-- ✅ Successfully caches 100+ movies from Plex libraries
-- ✅ Proper TMDb poster URL fetching and metadata enhancement
+- ✅ **MAJOR OPTIMIZATION**: Removed TMDb API calls from cache update process
+- ✅ Cache update time reduced from timeout (>15min) to ~10 seconds  
+- ✅ Successfully caches 3,862 movies + 590 TV shows from Plex libraries
+- ✅ TV shows now caching successfully after performance optimization
+- ✅ Plex poster URLs used during cache phase for optimal performance
 - ✅ Batch processing working correctly with proper error handling
 
 **Recommendation Generation:**

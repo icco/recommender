@@ -3,7 +3,6 @@ package plex
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -342,28 +341,12 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []operations.
 				duration = *item.Duration / 60000 // Convert milliseconds to minutes
 			}
 
-			// Try to get TMDb poster
+			// Use Plex poster URL if available, otherwise use fallback
+			// Skip TMDb lookup during cache update for performance
 			posterURL := fallbackPosterURL
-			if year > 0 {
-				result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
-				if err != nil {
-					c.logger.Warn("Failed to search TMDb for movie",
-						slog.String("title", item.Title),
-						slog.Int("year", year),
-						slog.Any("error", err))
-				} else if len(result.Results) > 0 {
-					// Use the first result's poster if available
-					if result.Results[0].PosterPath != "" {
-						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-						if _, err := url.Parse(tmdbPosterURL); err != nil {
-							c.logger.Warn("Invalid TMDb poster URL",
-								slog.String("url", tmdbPosterURL),
-								slog.Any("error", err))
-						} else {
-							posterURL = tmdbPosterURL
-						}
-					}
-				}
+			if item.Thumb != nil && *item.Thumb != "" {
+				// Use Plex thumb as poster URL for cache
+				posterURL = *item.Thumb
 			}
 
 			movies = append(movies, models.Recommendation{
@@ -415,47 +398,12 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 				seasons = *item.ChildCount
 			}
 
-			// Try to get TMDb poster
+			// Use Plex poster URL if available, otherwise use fallback
+			// Skip TMDb lookup during cache update for performance
 			posterURL := fallbackPosterURL
-			if year > 0 {
-				result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
-				if err != nil {
-					// If search with year fails, try without year
-					c.logger.Debug("Retrying TMDb search without year",
-						slog.String("title", item.Title),
-						slog.Int("original_year", year))
-
-					result, err = c.tmdb.SearchTVShow(ctx, item.Title, 0)
-					if err != nil {
-						c.logger.Warn("Failed to search TMDb for TV show",
-							slog.String("title", item.Title),
-							slog.Any("error", err))
-					} else if len(result.Results) > 0 {
-						// Use the first result's poster if available
-						if result.Results[0].PosterPath != "" {
-							tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-							if _, err := url.Parse(tmdbPosterURL); err != nil {
-								c.logger.Warn("Invalid TMDb poster URL",
-									slog.String("url", tmdbPosterURL),
-									slog.Any("error", err))
-							} else {
-								posterURL = tmdbPosterURL
-							}
-						}
-					}
-				} else if len(result.Results) > 0 {
-					// Use the first result's poster if available
-					if result.Results[0].PosterPath != "" {
-						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-						if _, err := url.Parse(tmdbPosterURL); err != nil {
-							c.logger.Warn("Invalid TMDb poster URL",
-								slog.String("url", tmdbPosterURL),
-								slog.Any("error", err))
-						} else {
-							posterURL = tmdbPosterURL
-						}
-					}
-				}
+			if item.Thumb != nil && *item.Thumb != "" {
+				// Use Plex thumb as poster URL for cache
+				posterURL = *item.Thumb
 			}
 
 			shows = append(shows, models.Recommendation{
@@ -477,8 +425,8 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Starting cache update")
 
-	// Create a new context with a timeout of 5 minutes
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// Create a new context with a timeout of 15 minutes (for large libraries)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	// Get all libraries
@@ -589,28 +537,12 @@ func (c *Client) procesMovieBatch(ctx context.Context, movies []PlexItem) error 
 			runtime = *item.Duration / 60000 // Convert milliseconds to minutes
 		}
 
-		// Try to get TMDb poster
+		// Use Plex poster URL if available, otherwise use fallback
+		// Skip TMDb lookup during cache update for performance 
 		posterURL := fallbackPosterURL
-		if year > 0 {
-			result, err := c.tmdb.SearchMovie(ctx, item.Title, year)
-			if err != nil {
-				c.logger.Warn("Failed to search TMDb for movie",
-					slog.String("title", item.Title),
-					slog.Int("year", year),
-					slog.Any("error", err))
-			} else if len(result.Results) > 0 {
-				// Use the first result's poster if available
-				if result.Results[0].PosterPath != "" {
-					tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-					if _, err := url.Parse(tmdbPosterURL); err != nil {
-						c.logger.Warn("Invalid TMDb poster URL",
-							slog.String("url", tmdbPosterURL),
-							slog.Any("error", err))
-					} else {
-						posterURL = tmdbPosterURL
-					}
-				}
-			}
+		if item.Thumb != nil && *item.Thumb != "" {
+			// Use Plex thumb as poster URL for cache
+			posterURL = *item.Thumb
 		}
 
 			// Create movie record
@@ -656,47 +588,12 @@ func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error
 				seasons = *item.ChildCount
 			}
 
-			// Try to get TMDb poster
+			// Use Plex poster URL if available, otherwise use fallback
+			// Skip TMDb lookup during cache update for performance
 			posterURL := fallbackPosterURL
-			if year > 0 {
-				result, err := c.tmdb.SearchTVShow(ctx, item.Title, year)
-				if err != nil {
-					// If search with year fails, try without year
-					c.logger.Debug("Retrying TMDb search without year",
-						slog.String("title", item.Title),
-						slog.Int("original_year", year))
-
-					result, err = c.tmdb.SearchTVShow(ctx, item.Title, 0)
-					if err != nil {
-						c.logger.Warn("Failed to search TMDb for TV show",
-							slog.String("title", item.Title),
-							slog.Any("error", err))
-					} else if len(result.Results) > 0 {
-						// Use the first result's poster if available
-						if result.Results[0].PosterPath != "" {
-							tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-							if _, err := url.Parse(tmdbPosterURL); err != nil {
-								c.logger.Warn("Invalid TMDb poster URL",
-									slog.String("url", tmdbPosterURL),
-									slog.Any("error", err))
-							} else {
-								posterURL = tmdbPosterURL
-							}
-						}
-					}
-				} else if len(result.Results) > 0 {
-					// Use the first result's poster if available
-					if result.Results[0].PosterPath != "" {
-						tmdbPosterURL := c.tmdb.GetPosterURL(result.Results[0].PosterPath)
-						if _, err := url.Parse(tmdbPosterURL); err != nil {
-							c.logger.Warn("Invalid TMDb poster URL",
-								slog.String("url", tmdbPosterURL),
-								slog.Any("error", err))
-						} else {
-							posterURL = tmdbPosterURL
-						}
-					}
-				}
+			if item.Thumb != nil && *item.Thumb != "" {
+				// Use Plex thumb as poster URL for cache
+				posterURL = *item.Thumb
 			}
 
 			// Create TV show record
