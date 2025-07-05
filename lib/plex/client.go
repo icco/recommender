@@ -442,8 +442,8 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []operations
 func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Starting cache update")
 
-	// Create a new context with a timeout of 5 minutes
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// Create a new context with a timeout of 15 minutes (for large libraries)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	// Get all libraries
