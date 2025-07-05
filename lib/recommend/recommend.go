@@ -112,7 +112,9 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger)
 // GetRecommendationsForDate retrieves all recommendations for a specific date
 func (r *Recommender) GetRecommendationsForDate(ctx context.Context, date time.Time) ([]models.Recommendation, error) {
 	var recommendations []models.Recommendation
-	if err := r.db.WithContext(ctx).Where("date = ?", date).Find(&recommendations).Error; err != nil {
+	// Use date() function to match only the date part, ignoring time and timezone
+	dateStr := date.Format("2006-01-02")
+	if err := r.db.WithContext(ctx).Where("date(date) = ?", dateStr).Find(&recommendations).Error; err != nil {
 		return nil, fmt.Errorf("failed to get recommendations: %w", err)
 	}
 	return recommendations, nil

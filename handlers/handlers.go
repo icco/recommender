@@ -130,7 +130,7 @@ func HandleHome(r *recommend.Recommender) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
 
-		today := time.Now().Truncate(24 * time.Hour)
+		today := time.Now().UTC().Truncate(24 * time.Hour)
 
 		recommendations, err := r.GetRecommendationsForDate(ctx, today)
 		if err != nil {
@@ -177,6 +177,8 @@ func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 			writeError(w, req, fmt.Sprintf("invalid date format: %v", err), http.StatusBadRequest)
 			return
 		}
+		// Convert to UTC to match database timezone
+		parsedDate = parsedDate.UTC()
 
 		recommendations, err := r.GetRecommendationsForDate(ctx, parsedDate)
 		if err != nil {
@@ -260,7 +262,7 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
-		today := time.Now().Truncate(24 * time.Hour)
+		today := time.Now().UTC().Truncate(24 * time.Hour)
 		lockKey := fmt.Sprintf("cron-recommendations-%s", today.Format("2006-01-02"))
 		
 		slog.Info("Starting recommendation cron job",
