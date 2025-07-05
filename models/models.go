@@ -41,8 +41,8 @@ type TVShow struct {
 // Recommendation represents a single recommendation item with its metadata.
 type Recommendation struct {
 	ID        uint      `gorm:"primarykey"`
-	Date      time.Time `gorm:"not null;index:idx_recommendations_date"`          // The date this recommendation was generated
-	Title     string    `gorm:"type:varchar(500);not null;index:idx_recommendations_title"` // Title of the content
+	Date      time.Time `gorm:"not null;index:idx_recommendations_date;uniqueIndex:idx_recommendations_date_title"`          // The date this recommendation was generated
+	Title     string    `gorm:"type:varchar(500);not null;index:idx_recommendations_title;uniqueIndex:idx_recommendations_date_title"` // Title of the content
 	Type      string    `gorm:"type:varchar(20);not null;index:idx_recommendations_type;check:type IN ('movie', 'tvshow')"` // "movie" or "tvshow"
 	Year      int       `gorm:"not null;index:idx_recommendations_year"`          // Release year
 	Rating    float64   `gorm:"index:idx_recommendations_rating"`                 // Rating (e.g., from IMDB)

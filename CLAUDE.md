@@ -63,6 +63,248 @@ docker compose down
 **Optional Environment Variables:**
 - `DB_PATH`: Database file path (defaults to recommender.db)
 
+## Development Workflow and Best Practices
+
+### Branching Strategy and Pull Request Process
+
+**🔄 ALL NEW WORK MUST BE DONE IN BRANCHES - NEVER COMMIT DIRECTLY TO MAIN**
+
+#### Required Workflow Steps:
+
+1. **Create Feature Branch**
+   ```bash
+   # Always start from latest main
+   git checkout main
+   git pull origin main
+   
+   # Create descriptive branch name
+   git checkout -b fix-recommendation-duplicates
+   git checkout -b feature-user-preferences
+   git checkout -b optimize-cache-performance
+   ```
+
+2. **Frequent Commits During Development**
+   ```bash
+   # Commit early and often with descriptive messages
+   git add specific-files
+   git commit -m "Fix database constraint for duplicate recommendations
+   
+   - Add unique index on (date, title) combination
+   - Handle constraint violations gracefully in application logic
+   
+   🤖 Generated with [Claude Code](https://claude.ai/code)
+   
+   Co-Authored-By: Claude <noreply@anthropic.com>"
+   
+   # Continue working and commit frequently
+   git add .
+   git commit -m "Add comprehensive duplicate detection in transaction logic"
+   git commit -m "Update templates to format ratings with 1 decimal place"
+   ```
+
+3. **Push Branch and Create Pull Request**
+   ```bash
+   # Push branch to remote
+   git push -u origin fix-recommendation-duplicates
+   
+   # Create PR immediately after pushing
+   gh pr create --title "Fix duplicate recommendations and UI formatting" --body "
+   ## Summary
+   Addresses three critical issues:
+   1. Duplicate recommendations being generated
+   2. Multiple daily recommendation sets
+   3. UI showing too many decimal places
+   
+   ## Changes
+   - Added database unique constraints
+   - Enhanced transaction logic with duplicate checking
+   - Fixed template formatting for ratings
+   
+   ## Testing
+   - ✅ Database constraints prevent duplicates
+   - ✅ Concurrency control prevents race conditions
+   - ✅ UI displays clean rating format (8.6/10)
+   
+   🤖 Generated with [Claude Code](https://claude.ai/code)
+   "
+   ```
+
+4. **Monitor PR Checks After Every Push**
+   ```bash
+   # After each push, immediately check PR status
+   gh pr view --web  # Opens PR in browser
+   
+   # Or check status in terminal
+   gh pr checks
+   
+   # Watch for:
+   # ✅ All GitHub Actions pass (build, test, lint)
+   # ✅ No merge conflicts
+   # ✅ Required reviews completed
+   # ❌ Any failing checks need immediate attention
+   ```
+
+#### Commit Message Standards
+
+**Required Format:**
+```
+Brief summary line (imperative mood, <72 chars)
+
+- Detailed explanation of what changed
+- Why the change was needed
+- Any breaking changes or important notes
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Examples:**
+```bash
+# Good commit messages
+git commit -m "Add unique constraint to prevent duplicate recommendations
+
+- Create composite index on (date, title) fields
+- Prevents database-level duplicate insertions
+- Maintains data integrity for daily recommendations"
+
+git commit -m "Optimize cache update by removing TMDb API calls
+
+- Skip TMDb lookups during Plex cache population
+- Reduces cache time from 15+ minutes to ~10 seconds
+- Use Plex poster URLs during cache phase for performance"
+
+git commit -m "Fix UI rating display to show one decimal place
+
+- Format ratings using printf '%.1f' in templates
+- Improves user experience (8.6/10 vs 8.567823/10)
+- Applied consistently to movies and TV shows"
+```
+
+#### GitHub Actions and PR Checks
+
+**🚨 CRITICAL: Always Monitor PR Checks After Pushing**
+
+After every `git push`, you MUST:
+
+1. **Check PR Status Immediately**
+   ```bash
+   # View PR checks status
+   gh pr checks
+   
+   # Example output to watch for:
+   # ✅ build (main) - 2m 34s
+   # ✅ test (main) - 1m 12s  
+   # ✅ lint (main) - 45s
+   # ❌ security-scan (main) - Failed
+   ```
+
+2. **Monitor for Common Check Failures**
+   - **Build Failures**: Compilation errors, missing dependencies
+   - **Test Failures**: Unit tests, integration tests, coverage requirements
+   - **Lint Failures**: Code style, formatting, unused imports
+   - **Security Scans**: Vulnerability detection, secret leaks
+   - **Type Checking**: Go vet, staticcheck violations
+
+3. **Fix Failures Immediately**
+   ```bash
+   # If checks fail, fix and push again
+   git add .
+   git commit -m "Fix lint errors and remove unused imports"
+   git push
+   
+   # Re-check status
+   gh pr checks
+   ```
+
+4. **Wait for All Checks to Pass Before Requesting Review**
+   - Never request review with failing checks
+   - All ✅ green checks required before merge consideration
+   - Address any security or vulnerability warnings
+
+#### Pull Request Quality Standards
+
+**Required PR Components:**
+
+1. **Descriptive Title**
+   - Clear, concise summary of changes
+   - Mention issue type (fix, feature, optimization)
+
+2. **Comprehensive Description**
+   ```markdown
+   ## Summary
+   Brief overview of what this PR accomplishes
+   
+   ## Changes Made
+   - Specific change 1 with technical details
+   - Specific change 2 with rationale
+   - Specific change 3 with impact
+   
+   ## Testing Performed
+   - ✅ Unit tests pass
+   - ✅ Integration tests pass
+   - ✅ Manual testing performed
+   - ✅ Edge cases validated
+   
+   ## Breaking Changes
+   - None / List any breaking changes
+   
+   ## Additional Notes
+   - Performance impact
+   - Dependencies updated
+   - Configuration changes needed
+   ```
+
+3. **Small, Focused Changes**
+   - One logical change per PR
+   - Keep PRs under 400 lines when possible
+   - Split large features into multiple PRs
+
+4. **Self-Review Before Submission**
+   - Review your own code changes
+   - Verify all files included are intentional
+   - Check for debug code, commented code, TODO items
+   - Ensure consistent formatting and style
+
+#### Branch Management
+
+**Branch Naming Conventions:**
+```bash
+# Feature development
+feature/user-authentication
+feature/recommendation-weights
+
+# Bug fixes  
+fix/duplicate-recommendations
+fix/cache-timeout-issues
+
+# Performance improvements
+optimize/database-queries
+optimize/api-response-times
+
+# Documentation updates
+docs/api-endpoints
+docs/deployment-guide
+```
+
+**Branch Lifecycle:**
+1. Create branch from latest main
+2. Develop with frequent commits
+3. Push and create PR early
+4. Monitor checks continuously
+5. Address review feedback
+6. Merge when approved and checks pass
+7. Delete branch after merge
+
+**Never:**
+- Commit directly to main branch
+- Force push to shared branches
+- Merge without PR review
+- Ignore failing PR checks
+- Leave stale branches open
+
+This workflow ensures code quality, prevents integration issues, and maintains a clean git history while leveraging GitHub's automation and review process effectively.
+
 ## Database
 
 Uses SQLite with GORM ORM. Database file: `recommender.db` (or `/data/recommender.db` in Docker).
@@ -345,3 +587,255 @@ curl -X GET http://localhost:8080/health
 # View recommendations
 curl -X GET http://localhost:8080/
 ```
+
+## Critical Issues and Resolutions
+
+### Duplicate Recommendations and Concurrency Issues (PR #31)
+
+**Problems Identified:**
+1. **Duplicate recommendations** being generated for the same date
+2. **Multiple daily recommendation sets** created by concurrent cron jobs
+3. **UI displaying excessive decimal places** for ratings (e.g., 8.567823/10)
+
+**Root Causes:**
+- No database-level constraints preventing duplicate titles on same date
+- Race conditions in concurrent recommendation generation requests
+- Template formatting not limiting decimal precision for user display
+- File locking insufficient to prevent all concurrency edge cases
+
+**Solutions Implemented:**
+
+#### 1. Database-Level Duplicate Prevention
+```sql
+-- Added unique constraint on (date, title) combination
+CREATE UNIQUE INDEX idx_recommendations_date_title ON recommendations(date, title);
+```
+
+#### 2. Application-Level Duplicate Checking
+```go
+// Enhanced transaction logic with duplicate detection
+if err := tx.Where("title = ? AND date = ?", rec.Title, rec.Date).First(&duplicate).Error; err == nil {
+    r.logger.Warn("Skipping duplicate recommendation", 
+        slog.String("title", rec.Title),
+        slog.Time("date", rec.Date))
+    continue
+}
+```
+
+#### 3. Improved Concurrency Control
+```go
+// Double-check for existing recommendations within lock to prevent race conditions
+exists, err := r.CheckRecommendationsExist(req.Context(), today)
+if exists {
+    // Release lock and return early
+    return
+}
+```
+
+#### 4. UI Template Formatting Fix
+```html
+<!-- Before: Many decimal places -->
+<p class="text-gray-600">Rating: {{.Rating}}/10</p>
+
+<!-- After: One decimal place -->
+<p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
+```
+
+**Testing and Validation:**
+- ✅ Database constraints prevent duplicate inserts at schema level
+- ✅ Application logic detects and skips duplicates during processing  
+- ✅ Transaction safety ensures atomicity of batch recommendations
+- ✅ File locking prevents multiple recommendation processes
+- ✅ UI formatting displays clean ratings (8.6/10)
+- ✅ Race condition prevention with proper double-checking
+
+### Best Practices and Lessons Learned
+
+#### Database Design Principles
+
+**Unique Constraints for Business Logic:**
+- Always add database-level constraints for business rules
+- Use composite unique indexes for multi-column uniqueness (date + title)
+- Implement constraints early to prevent data integrity issues
+- Log constraint violations to identify application logic gaps
+
+**Example:**
+```go
+// Model with proper constraints
+type Recommendation struct {
+    Date  time.Time `gorm:"not null;index:idx_recommendations_date;uniqueIndex:idx_recommendations_date_title"`
+    Title string    `gorm:"type:varchar(500);not null;uniqueIndex:idx_recommendations_date_title"`
+    // ... other fields
+}
+```
+
+#### Concurrency Control Patterns
+
+**File-Based Locking Best Practices:**
+1. **Always use timeouts** to prevent deadlocks
+2. **Double-check conditions** within locks to handle race conditions
+3. **Proper cleanup** in defer statements and error cases
+4. **Comprehensive logging** for lock acquisition and release
+
+**Example Pattern:**
+```go
+// Acquire lock with timeout
+acquired, err := fl.TryLock(ctx, lockKey, 10*time.Second)
+if !acquired {
+    return // Another process is running
+}
+defer func() {
+    if err := fl.Unlock(ctx, lockKey); err != nil {
+        logger.Error("Failed to release lock", slog.Any("error", err))
+    }
+}()
+
+// Double-check condition within lock
+if exists, _ := checkExists(ctx); exists {
+    return // Someone else completed the work
+}
+```
+
+#### Template and UI Best Practices
+
+**Numeric Formatting:**
+- Always format numeric displays for user consumption
+- Use `printf` template functions for precise control
+- Maintain full precision in database, format only for display
+- Apply formatting consistently across all templates
+
+**Example:**
+```html
+<!-- Ratings -->
+Rating: {{printf "%.1f" .Rating}}/10
+
+<!-- Percentages -->
+{{printf "%.0f" .Percentage}}%
+
+<!-- Currency -->
+${{printf "%.2f" .Price}}
+```
+
+#### Database Transaction Patterns
+
+**Safe Batch Processing:**
+```go
+// Always use transactions for batch operations
+err := db.Transaction(func(tx *gorm.DB) error {
+    // Check constraints within transaction
+    var existingCount int64
+    if err := tx.Model(&Model{}).Where("date = ?", date).Count(&existingCount).Error; err != nil {
+        return err
+    }
+    
+    if existingCount > 0 {
+        return fmt.Errorf("data already exists for date %s", date.Format("2006-01-02"))
+    }
+    
+    // Process batch with individual duplicate checking
+    for _, item := range items {
+        var duplicate Model
+        if err := tx.Where("unique_field = ?", item.UniqueField).First(&duplicate).Error; err == nil {
+            logger.Warn("Skipping duplicate", slog.String("field", item.UniqueField))
+            continue
+        }
+        
+        if err := tx.Create(&item).Error; err != nil {
+            return fmt.Errorf("failed to create item: %w", err)
+        }
+    }
+    
+    return nil
+})
+```
+
+#### Error Handling and Logging
+
+**Structured Logging for Concurrency Issues:**
+```go
+logger.Info("Starting operation", 
+    slog.String("lock_key", lockKey),
+    slog.Time("date", date),
+    slog.String("remote_addr", req.RemoteAddr))
+
+logger.Warn("Skipping duplicate item",
+    slog.String("title", item.Title),
+    slog.Time("date", item.Date),
+    slog.String("reason", "already_exists"))
+
+logger.Error("Failed operation",
+    slog.Any("error", err),
+    slog.String("operation", "recommendation_generation"),
+    slog.Duration("elapsed", time.Since(start)))
+```
+
+#### Development and Testing Practices
+
+**Testing Database Constraints:**
+1. Create test scenarios that trigger constraint violations
+2. Verify proper error handling for duplicate insertions
+3. Test concurrent operations with multiple goroutines/processes
+4. Validate cleanup and rollback behavior on failures
+
+**Testing Concurrency:**
+1. Use multiple concurrent requests to test race conditions
+2. Verify file locking prevents overlapping operations
+3. Test lock timeout and cleanup scenarios
+4. Monitor logs for proper synchronization behavior
+
+**Example Test Pattern:**
+```go
+func TestConcurrentRecommendationGeneration(t *testing.T) {
+    var wg sync.WaitGroup
+    results := make(chan error, 5)
+    
+    // Launch 5 concurrent generation attempts
+    for i := 0; i < 5; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            err := service.GenerateRecommendations(ctx, today)
+            results <- err
+        }()
+    }
+    
+    wg.Wait()
+    close(results)
+    
+    // Verify only one succeeded, others were properly blocked
+    successCount := 0
+    for err := range results {
+        if err == nil {
+            successCount++
+        }
+    }
+    
+    assert.Equal(t, 1, successCount, "Only one generation should succeed")
+}
+```
+
+#### Production Monitoring and Alerting
+
+**Key Metrics to Monitor:**
+- Lock acquisition failures and timeouts
+- Duplicate constraint violations
+- Recommendation generation success/failure rates
+- Database transaction rollback counts
+- Template rendering errors
+
+**Log Patterns to Alert On:**
+```bash
+# Excessive lock contention
+"Failed to acquire lock" OR "already in progress"
+
+# Database constraint violations  
+"UNIQUE constraint failed" OR "duplicate key"
+
+# Template rendering issues
+"error executing template" OR "template not found"
+
+# Concurrency issues
+"context deadline exceeded" OR "connection timeout"
+```
+
+This comprehensive update captures all the critical learnings from investigating and resolving the duplicate recommendations, concurrency issues, and UI formatting problems. These patterns and practices will help prevent similar issues in future development.

@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   recommender:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - 8080:8080
     environment:
       - PLEX_URL=${PLEX_URL}
       - PLEX_TOKEN=${PLEX_TOKEN}
@@ -16,4 +14,4 @@ services:
       - PORT=${PORT:-8080}
     volumes:
       - ./data:/data
-    restart: unless-stopped 
+    restart: unless-stopped

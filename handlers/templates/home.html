@@ -14,7 +14,7 @@
         <div class="p-4">
           <h3 class="text-lg font-semibold">{{.Title}}</h3>
           <p class="text-gray-600">{{.Year}}</p>
-          <p class="text-gray-600">Rating: {{.Rating}}/10</p>
+          <p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
           <p class="text-gray-600">Genre: {{.Genre}}</p>
           <p class="text-gray-600">Runtime: {{.Runtime}} minutes</p>
         </div>
@@ -35,7 +35,7 @@
         <div class="p-4">
           <h3 class="text-lg font-semibold">{{.Title}}</h3>
           <p class="text-gray-600">{{.Year}}</p>
-          <p class="text-gray-600">Rating: {{.Rating}}/10</p>
+          <p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
           <p class="text-gray-600">Genre: {{.Genre}}</p>
           <p class="text-gray-600">Seasons: {{.Runtime}}</p>
         </div>
