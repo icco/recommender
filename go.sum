@@ -1,5 +1,5 @@
-github.com/LukeHagar/plexgo v0.23.0 h1:tR0VSSy004/1RSPnN0T/lUCJkSJaBdC8IPWNaXgzYJQ=
-github.com/LukeHagar/plexgo v0.23.0/go.mod h1:xY1MRvK3P0WxG0eOm0NvsAicKNDgmAhhMYWdoYPVFro=
+github.com/LukeHagar/plexgo v0.24.2 h1:HncCIZUQBrLXmXQU/sMlLs//GbBpsZy6y0jB0fiejRQ=
+github.com/LukeHagar/plexgo v0.24.2/go.mod h1:xY1MRvK3P0WxG0eOm0NvsAicKNDgmAhhMYWdoYPVFro=
 github.com/ericlagergren/decimal v0.0.0-20240411145413-00de7ca16731 h1:R/ZjJpjQKsZ6L/+Gf9WHbt31GG8NMVcpRqUE+1mMIyo=
 github.com/ericlagergren/decimal v0.0.0-20240411145413-00de7ca16731/go.mod h1:M9R1FoZ3y//hwwnJtO51ypFGwm8ZfpxPT/ZLtO1mcgQ=
 github.com/go-chi/chi/v5 v5.2.2 h1:CMwsvRVTbXVytCk1Wd72Zy1LAsAh9GxMmSNWLHCG618=
