@@ -27,8 +27,6 @@ type Client struct {
 }
 
 const (
-	contentTypeMovie  = "movie"
-	contentTypeShow   = "show"
 	fallbackPosterURL = "https://via.placeholder.com/500x750?text=No+Poster+Available"
 )
 
@@ -127,167 +125,103 @@ type PlexItem struct {
 // GetPlexItems retrieves items from a specific Plex library.
 // It supports pagination and filtering for unwatched items only.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
-	// Set up pagination parameters
-	containerSize := 50 // Reduced for better reliability
-	containerStart := int64(0)
+	// Get library details first to understand the library type
+	request := operations.GetLibraryDetailsRequest{
+		SectionID: libraryKey,
+	}
 
-	// Get library type first
-	libraries, err := c.GetAllLibraries(ctx)
+	c.logger.Debug("Getting library details from Plex API",
+		slog.String("section_key", libraryKey))
+
+	resp, err := c.api.Library.GetLibraryDetails(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get libraries: %w", err)
+		return nil, fmt.Errorf("failed to get library details: %w", err)
 	}
 
-	var libraryType components.MediaType
-	var librarySection string
-	for _, lib := range libraries.Object.MediaContainer.Directory {
-		if lib.Key != nil && *lib.Key == libraryKey {
-			librarySection = string(lib.Type)
-			switch lib.Type {
-			case components.MediaTypeStringMovie:
-				libraryType = components.MediaTypeMovie
-			case components.MediaTypeStringTvShow:
-				libraryType = components.MediaTypeTvShow
-			case components.MediaTypeStringArtist:
-				libraryType = components.MediaTypeArtist
-			default:
-				return nil, fmt.Errorf("unsupported library type: %s", lib.Type)
-			}
-			break
-		}
+	if resp.Object == nil || resp.Object.MediaContainer == nil {
+		return nil, fmt.Errorf("invalid response from Plex API")
 	}
+
+	container := resp.Object.MediaContainer
+
+	c.logger.Debug("Got library details from Plex API",
+		slog.Int("directory_count", len(container.Directory)),
+		slog.String("identifier", func() string {
+			if container.Identifier != nil {
+				return *container.Identifier
+			}
+			return ""
+		}()))
 
 	var allItems []PlexItem
-	for {
-		// Build media query
-		mediaQuery := &components.MediaQuery{
-			Type: &libraryType,
+
+	// Convert response to slice of PlexItem
+	for _, item := range container.Directory {
+		// Skip watched items if unwatchedOnly is true
+		if unwatchedOnly && item.ViewCount != nil && *item.ViewCount > 0 {
+			continue
 		}
 
-		// Make request to Plex API with reliable parameters
-		request := operations.GetLibraryItemsRequest{
-			MediaQuery: mediaQuery,
+		// Convert float32 rating to *float64
+		var rating *float64
+		if item.Rating != nil && *item.Rating != 0 {
+			ratingVal := float64(*item.Rating)
+			rating = &ratingVal
 		}
 
-		c.logger.Debug("Making request to Plex API",
-			slog.Any("request", request),
-			slog.Int64("container_start", containerStart),
-			slog.String("library_type", librarySection),
-			slog.String("section_key", libraryKey))
-
-		resp, err := c.api.Library.GetLibraryItems(ctx, request)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get items from library: %w", err)
+		// Convert string fields to *string
+		var thumb *string
+		if item.Thumb != nil && *item.Thumb != "" {
+			thumb = item.Thumb
 		}
 
-		if resp.MediaContainerWithMetadata == nil || resp.MediaContainerWithMetadata.MediaContainer == nil {
-			return nil, fmt.Errorf("invalid response from Plex API")
+		var art *string
+		if item.Art != nil && *item.Art != "" {
+			art = item.Art
 		}
 
-		container := resp.MediaContainerWithMetadata.MediaContainer
-
-		c.logger.Debug("Got response from Plex API",
-			slog.Int("total_size", func() int {
-				if container.TotalSize != nil {
-					return int(*container.TotalSize)
-				}
-				return 0
-			}()),
-			slog.Int("size", func() int {
-				if container.Size != nil {
-					return int(*container.Size)
-				}
-				return 0
-			}()),
-			slog.Int("metadata_count", len(container.Metadata)),
-			slog.String("identifier", func() string {
-				if container.Identifier != nil {
-					return *container.Identifier
-				}
-				return ""
-			}()))
-
-		// Convert response to slice of PlexItem
-		for _, item := range container.Metadata {
-			// Skip watched items if unwatchedOnly is true
-			if unwatchedOnly && item.ViewCount != nil && *item.ViewCount > 0 {
-				continue
-			}
-
-			// Convert float32 rating to *float64
-			var rating *float64
-			if item.Rating != nil && *item.Rating != 0 {
-				ratingVal := float64(*item.Rating)
-				rating = &ratingVal
-			}
-
-			// Convert string fields to *string
-			var thumb *string
-			if item.Thumb != nil && *item.Thumb != "" {
-				thumb = item.Thumb
-			}
-
-			var art *string
-			if item.Art != nil && *item.Art != "" {
-				art = item.Art
-			}
-
-			// Convert int duration to *int
-			var duration *int
-			if item.Duration != nil && *item.Duration != 0 {
-				duration = item.Duration
-			}
-
-			// Convert int childCount to *int
-			var childCount *int
-			if item.ChildCount != nil && *item.ChildCount != 0 {
-				childCount = item.ChildCount
-			}
-
-			// Get ratingKey
-			ratingKey := ""
-			if item.RatingKey != nil {
-				ratingKey = *item.RatingKey
-			}
-
-			// Get summary
-			summary := ""
-			if item.Summary != nil {
-				summary = *item.Summary
-			}
-
-			allItems = append(allItems, PlexItem{
-				RatingKey:  ratingKey,
-				Key:        item.Key,
-				Title:      item.Title,
-				Type:       item.Type,
-				Year:       item.Year,
-				Rating:     rating,
-				Summary:    summary,
-				Thumb:      thumb,
-				Art:        art,
-				Duration:   duration,
-				AddedAt:    item.AddedAt,
-				UpdatedAt:  item.UpdatedAt,
-				ViewCount:  item.ViewCount,
-				Genre:      item.Genre,
-				LeafCount:  item.LeafCount,
-				ChildCount: childCount,
-			})
+		// Convert int duration to *int
+		var duration *int
+		if item.Duration != nil && *item.Duration != 0 {
+			duration = item.Duration
 		}
 
-		// Check if we've retrieved all items
-		totalSize := int64(0)
-		if container.TotalSize != nil {
-			totalSize = *container.TotalSize
+		// Convert int childCount to *int
+		var childCount *int
+		if item.ChildCount != nil && *item.ChildCount != 0 {
+			childCount = item.ChildCount
 		}
 
-		if len(container.Metadata) == 0 ||
-			containerStart+int64(len(container.Metadata)) >= totalSize {
-			break
+		// Get ratingKey
+		ratingKey := ""
+		if item.RatingKey != nil {
+			ratingKey = *item.RatingKey
 		}
 
-		// Move to next page
-		containerStart += int64(containerSize)
+		// Get summary
+		summary := ""
+		if item.Summary != nil {
+			summary = *item.Summary
+		}
+
+		allItems = append(allItems, PlexItem{
+			RatingKey:  ratingKey,
+			Key:        item.Key,
+			Title:      item.Title,
+			Type:       item.Type,
+			Year:       item.Year,
+			Rating:     rating,
+			Summary:    summary,
+			Thumb:      thumb,
+			Art:        art,
+			Duration:   duration,
+			AddedAt:    item.AddedAt,
+			UpdatedAt:  item.UpdatedAt,
+			ViewCount:  item.ViewCount,
+			Genre:      item.Genre,
+			LeafCount:  item.LeafCount,
+			ChildCount: childCount,
+		})
 	}
 
 	return allItems, nil
@@ -343,7 +277,7 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []components.
 
 			movies = append(movies, models.Recommendation{
 				Title:     item.Title,
-				Type:      contentTypeMovie,
+				Type:      string(components.MediaTypeStringMovie),
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -405,7 +339,7 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []components
 
 			shows = append(shows, models.Recommendation{
 				Title:     item.Title,
-				Type:      contentTypeShow,
+				Type:      string(components.MediaTypeStringTvShow),
 				Year:      year,
 				Rating:    rating,
 				Genre:     genre,
@@ -459,9 +393,9 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 		for _, item := range items {
 			switch item.Type {
-			case contentTypeMovie:
+			case string(components.MediaTypeStringMovie):
 				allMovies = append(allMovies, item)
-			case contentTypeShow:
+			case string(components.MediaTypeStringTvShow):
 				allTVShows = append(allTVShows, item)
 			}
 		}
