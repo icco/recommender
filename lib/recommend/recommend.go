@@ -258,8 +258,8 @@ func (r *Recommender) formatContent(items []models.Recommendation) string {
 		if item.ViewCount > 0 {
 			watched = " (watched)"
 		}
-		content.WriteString(fmt.Sprintf("- %s (%d)%s - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
-			item.Title, item.Year, watched, item.Rating, item.Genre, item.Runtime, item.TMDbID))
+		_, _ = fmt.Fprintf(&content, "- %s (%d)%s - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
+			item.Title, item.Year, watched, item.Rating, item.Genre, item.Runtime, item.TMDbID)
 	}
 	return content.String()
 }

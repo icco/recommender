@@ -22,6 +22,7 @@ import (
 	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
+	"github.com/icco/recommender/lib/sanitize"
 	"github.com/icco/recommender/lib/tmdb"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -44,10 +45,10 @@ func JSONLogger(next http.Handler) http.Handler {
 
 		// Log the request details
 		slog.Info("HTTP Request",
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.String("user_agent", r.UserAgent()),
+			slog.String("method", sanitize.ForLog(r.Method)),
+			slog.String("path", sanitize.ForLog(r.URL.Path)),
+			slog.String("remote_addr", sanitize.ForLog(r.RemoteAddr)),
+			slog.String("user_agent", sanitize.ForLog(r.UserAgent())),
 			slog.Int("status", ww.Status()),
 			slog.Duration("duration", time.Since(start)),
 		)

@@ -15,6 +15,7 @@ import (
 	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
+	"github.com/icco/recommender/lib/sanitize"
 	"github.com/icco/recommender/lib/validation"
 	"gorm.io/gorm"
 )
@@ -267,7 +268,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		
 		slog.Info("Starting recommendation cron job",
 			slog.Time("start_time", startTime),
-			slog.String("remote_addr", req.RemoteAddr),
+			slog.String("remote_addr", sanitize.ForLog(req.RemoteAddr)),
 			slog.String("lock_key", lockKey),
 		)
 
@@ -375,7 +376,7 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 		
 		slog.Info("Starting cache update job",
 			slog.Time("start_time", startTime),
-			slog.String("remote_addr", req.RemoteAddr),
+			slog.String("remote_addr", sanitize.ForLog(req.RemoteAddr)),
 			slog.String("lock_key", lockKey),
 		)
 
