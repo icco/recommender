@@ -84,7 +84,8 @@ func (c *Client) GetLibrary() *plexgo.Library {
 func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetSectionsResponse, error) {
 	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
 
-	resp, err := c.api.Library.GetSections(ctx)
+	// Avoid plexgo JSON decode: some PMS versions return numeric 0/1 for fields typed as bool.
+	resp, err := c.fetchLibrarySectionsViaJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
@@ -141,103 +142,24 @@ type PlexItem struct {
 // GetPlexItems retrieves items from a specific Plex library.
 // It supports pagination and filtering for unwatched items only.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
-	// Get library details first to understand the library type
-	request := operations.GetLibraryDetailsRequest{
-		SectionID: libraryKey,
-	}
-
 	c.logger.Debug("Getting library details from Plex API",
 		slog.String("section_key", libraryKey))
 
-	resp, err := c.api.Library.GetLibraryDetails(ctx, request)
+	// Same tolerant JSON path as GetAllLibraries (plexgo fails on 0/1 bool fields).
+	rawItems, err := c.fetchLibraryItemsViaJSON(ctx, libraryKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library details: %w", err)
 	}
 
-	if resp.Object == nil || resp.Object.MediaContainer == nil {
-		return nil, fmt.Errorf("invalid response from Plex API")
-	}
-
-	container := resp.Object.MediaContainer
-
 	c.logger.Debug("Got library details from Plex API",
-		slog.Int("directory_count", len(container.Directory)),
-		slog.String("identifier", func() string {
-			if container.Identifier != nil {
-				return *container.Identifier
-			}
-			return ""
-		}()))
+		slog.Int("directory_count", len(rawItems)))
 
 	var allItems []PlexItem
-
-	// Convert response to slice of PlexItem
-	for _, item := range container.Directory {
-		// Skip watched items if unwatchedOnly is true
+	for _, item := range rawItems {
 		if unwatchedOnly && item.ViewCount != nil && *item.ViewCount > 0 {
 			continue
 		}
-
-		// Convert float32 rating to *float64
-		var rating *float64
-		if item.Rating != nil && *item.Rating != 0 {
-			ratingVal := float64(*item.Rating)
-			rating = &ratingVal
-		}
-
-		// Convert string fields to *string
-		var thumb *string
-		if item.Thumb != nil && *item.Thumb != "" {
-			thumb = item.Thumb
-		}
-
-		var art *string
-		if item.Art != nil && *item.Art != "" {
-			art = item.Art
-		}
-
-		// Convert int duration to *int
-		var duration *int
-		if item.Duration != nil && *item.Duration != 0 {
-			duration = item.Duration
-		}
-
-		// Convert int childCount to *int
-		var childCount *int
-		if item.ChildCount != nil && *item.ChildCount != 0 {
-			childCount = item.ChildCount
-		}
-
-		// Get ratingKey
-		ratingKey := ""
-		if item.RatingKey != nil {
-			ratingKey = *item.RatingKey
-		}
-
-		// Get summary
-		summary := ""
-		if item.Summary != nil {
-			summary = *item.Summary
-		}
-
-		allItems = append(allItems, PlexItem{
-			RatingKey:  ratingKey,
-			Key:        item.Key,
-			Title:      item.Title,
-			Type:       item.Type,
-			Year:       item.Year,
-			Rating:     rating,
-			Summary:    summary,
-			Thumb:      thumb,
-			Art:        art,
-			Duration:   duration,
-			AddedAt:    item.AddedAt,
-			UpdatedAt:  item.UpdatedAt,
-			ViewCount:  item.ViewCount,
-			Genre:      item.Genre,
-			LeafCount:  item.LeafCount,
-			ChildCount: childCount,
-		})
+		allItems = append(allItems, item)
 	}
 
 	return allItems, nil
