@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,7 +22,9 @@ import (
 	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
+	"github.com/icco/recommender/lib/sanitize"
 	"github.com/icco/recommender/lib/tmdb"
+	"github.com/icco/recommender/static"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -38,14 +41,9 @@ func JSONLogger(next http.Handler) http.Handler {
 		// Process request
 		next.ServeHTTP(ww, r)
 
-		// Log the request details
-		slog.Info("HTTP Request",
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.String("remote_addr", r.RemoteAddr),
-			slog.String("user_agent", r.UserAgent()),
-			slog.Int("status", ww.Status()),
-			slog.Duration("duration", time.Since(start)),
+		sanitize.LogHTTPRequest(
+			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(),
+			ww.Status(), time.Since(start),
 		)
 	})
 }
@@ -83,8 +81,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "recommender.db"
+	}
+
 	// Set up database with custom JSON logger
-	gormDB, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
+	gormDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		Logger: db.NewGormLogger(slog.Default()),
 	})
 	if err != nil {
@@ -123,8 +126,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	// Static file serving
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(static.Files))))
 
 	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
@@ -136,13 +138,22 @@ func main() {
 	r.Get("/health", health.Check(gormDB))
 
 	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	portStr := os.Getenv("PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	portNum, err := strconv.Atoi(portStr)
+	if err != nil {
+		slog.Error("PORT must be a valid integer", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if portNum < 1 || portNum > 65535 {
+		slog.Error("PORT must be between 1 and 65535", slog.Int("port", portNum))
+		os.Exit(1)
 	}
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", port),
+		Addr:         fmt.Sprintf(":%d", portNum),
 		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -154,7 +165,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("Starting server", slog.String("port", port))
+		slog.Info("Starting server", slog.Int("port", portNum))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("Server error", slog.Any("error", err))
 			stop()

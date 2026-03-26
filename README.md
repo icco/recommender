@@ -1,110 +1,106 @@
 # Recommender
 
-Recommender that uses a mixture of data from my watch history, my ratings, what is in my Plex library, what is on Anilist to recommend me stuff to watch. This is an experiment in entirely building an app with generative AI.
+Daily movie and TV recommendations from your **Plex** library, enriched with **TMDb** metadata and chosen by **OpenAI**. This is an experiment in building an app with generative AI.
 
-The app is built using the following technologies:
+Stack: **Go**, **Chi** (routing), **GORM** (ORM), **SQLite**, **log/slog** (JSON logs).
 
- - Go
- - Chi v5 for routing
- - Gorm for ORM
- - SQLite for storage
- - log/slog for all logs in json
+## What you get
 
-The homepage recommends me the following: 
+The home page shows one set of recommendations per calendar day:
 
- - Four movies:
-   - One I haven't seen that is funny
-   - One I haven't seen that is action or a drama
-   - One I have seen before
- - Three TV shows I haven't seen
+- Up to **four movies** (targets: comedy-leaning, action/drama, “rewatch” from titles marked watched in Plex, plus extras). Slot filling uses genre heuristics on the model output.
+- Up to **three TV shows**, drawn only from **unwatched** shows in the Plex cache (`ViewCount == 0`).
 
-it displays the following:
+Each card shows poster, title, year, rating, genre, and runtime (movies) or season count (TV).
 
- - The movie poster
- - The title
- - The year
- - The rating
- - The genre
- - The runtime
+Past days are listed at `/dates` (one row per distinct day, paginated).
 
-It generates a new recommendation every day. It stores the recommendations in a SQLite database. You can view past recomendations by going to other date pages.
+## Data sources (implemented)
 
-## Data Sources
+- **Plex** — library scan and watch counts during cache update
+- **TMDb** — posters and IDs during recommendation generation (not during bulk cache, for speed)
+- **OpenAI** — JSON recommendations from a constrained prompt
 
- - My Plex library
- - My Anilist library
- - My Letterboxd ratings
- - My Traktv watch history
+### Not implemented (possible future work)
 
-### Future Data Sources
+- AniList, Letterboxd, Trakt, and other catalogs mentioned in earlier notes
+- Incremental “fill missing slots only” runs (each successful run replaces the whole day’s rows when incomplete)
 
- - Goodreads
- - My Kindle Library
- - My Spotify Library
- - My Kavita Library
+## API endpoints
 
-## API Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Today’s recommendations (UTC date) |
+| GET | `/date/YYYY-MM-DD` | Recommendations for that day |
+| GET | `/dates` | Paginated list of days (`?page`, `?size`) |
+| GET | `/cron/recommend` | Start recommendation generation (async; file lock) |
+| GET | `/cron/cache` | Refresh Plex → SQLite cache (async; file lock) |
+| GET | `/stats` | DB statistics |
+| GET | `/health` | JSON health including DB ping |
+| GET | `/static/*` | Embedded static files (e.g. favicon) |
 
- - `GET /` - Homepage
- - `GET /cron/recommend` - Generate new recommendations
- - `GET /cron/cache` - Update the cache of Plex and Anilist
- - `GET /dates` - List of all dates with recommendations
- - `GET /date/2025-05-19` - Recommendations for a specific date
- - `GET /stats` - View statistics about the recommendations database
+## Environment variables
 
-## Repository Structure
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PLEX_URL` | yes | Plex server base URL |
+| `PLEX_TOKEN` | yes | Plex token |
+| `TMDB_API_KEY` | yes | TMDb API key |
+| `OPENAI_API_KEY` | yes | OpenAI API key |
+| `PORT` | no | HTTP port (default `8080`) |
+| `DB_PATH` | no | SQLite file path (default `recommender.db`; Docker Compose uses `/data/recommender.db`) |
 
-The API documentation is available at [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github.com/icco/recommender).
+## Repository layout
 
 ```
 recommender/
-├── handlers/           # HTTP request handlers and templates
-├── lib/               # Core libraries and business logic
-│   ├── db/           # Database utilities and migrations
-│   ├── health/       # Health check endpoints
-│   ├── plex/         # Plex API client
-│   ├── recommend/    # Recommendation generation logic
-│   ├── tmdb/         # TMDb API client
-│   └── validation/   # Input validation utilities
-├── models/           # Data models and database schemas
-└── data/            # Persistent data storage
+├── handlers/          # HTTP handlers and HTML templates (embedded)
+├── lib/
+│   ├── db/           # Migrations and GORM logger
+│   ├── health/       # Health check
+│   ├── lock/         # File locks for cron endpoints
+│   ├── plex/         # Plex client and cache update
+│   ├── recommend/    # OpenAI generation and queries
+│   ├── tmdb/         # TMDb client
+│   └── validation/   # Request and response validation helpers
+├── models/           # GORM models
+├── static/           # Assets embedded into the binary (e.g. favicon)
+└── data/             # Docker volume mount target for the DB (optional locally)
 ```
 
-## Recommendation Logic
+Package docs: [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github.com/icco/recommender).
 
-This uses OpenAI to generate personalized recommendations based on your watch history, ratings, and preferences. The cron is run once an hour, and checks to make sure there are the correct number of things recommended. If there are not, it requests OpenAI for recommendations in JSON of the things it is missing. I really like Anime, which is a genre of TV Show, so I usually have OpenAI prefer anime in its recommendations of TV shows.
+## Running
 
-The system ensures complete recommendations by checking for:
-- Exactly 4 movies:
-  - 1 funny unwatched movie
-  - 1 action/drama unwatched movie
-  - 1 rewatchable movie
-  - 1 additional movie of any type
-- Exactly 3 unwatched TV shows
+### Local
 
-If any of these are missing, the system will generate new recommendations to fill in the gaps. This prevents partial recommendations from being displayed.
+```bash
+export PLEX_URL=... PLEX_TOKEN=... TMDB_API_KEY=... OPENAI_API_KEY=...
+go run .
+```
 
-## Running the Service
+Optional: `DB_PATH=/path/to/recommender.db`.
 
-### Running with Docker Compose
+### Docker Compose
 
-1. Build and start the service:
 ```bash
 docker compose up -d
 ```
 
-2. The service will be available at `http://localhost:8080`
+Open `http://localhost:8080`. Trigger cache then recommendations:
 
-3. To generate new recommendations, visit `http://localhost:8080/cron`
-
-4. To view logs:
 ```bash
-docker compose logs -f
+curl -sS "http://localhost:8080/cron/cache"
+curl -sS "http://localhost:8080/cron/recommend"
 ```
 
-5. To stop the service:
-```bash
-docker compose down
-```
+Logs: `docker compose logs -f`. Stop: `docker compose down`.
 
-The SQLite database will be persisted in the `./data` directory.
+The compose file mounts `./data` at `/data` and sets `DB_PATH=/data/recommender.db`.
+
+## Recommendation flow (summary)
+
+1. **`/cron/cache`** — Reads Plex libraries, stores all movies and TV shows in SQLite (including `view_count` from Plex). Poster thumbs are stored as absolute URLs when Plex returns relative paths.
+2. **`/cron/recommend`** — If the day is not yet “complete,” loads cached titles, builds the prompt (movies include watched + unwatched; TV prompts only unwatched), calls OpenAI, filters results, then **replaces** any existing rows for that UTC date so partial runs can succeed on retry.
+
+“Complete” for a day depends on what exists in the cache (e.g. both movies and TV in library ⇒ need both types in that day’s recommendations).

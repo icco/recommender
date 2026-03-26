@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -56,6 +57,21 @@ func (c *Client) GetAPI() *plexgo.PlexAPI {
 // GetURL returns the Plex server URL used by this client.
 func (c *Client) GetURL() string {
 	return c.plexURL
+}
+
+// resolvePosterURL returns an absolute URL for HTML img src. Plex often returns relative thumb paths.
+func (c *Client) resolvePosterURL(thumb string) string {
+	if thumb == "" {
+		return fallbackPosterURL
+	}
+	if strings.HasPrefix(thumb, "http://") || strings.HasPrefix(thumb, "https://") {
+		return thumb
+	}
+	base := strings.TrimRight(c.plexURL, "/")
+	if strings.HasPrefix(thumb, "/") {
+		return base + thumb
+	}
+	return base + "/" + thumb
 }
 
 // GetLibrary returns the Library API instance for accessing Plex library operations.
@@ -267,13 +283,11 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []components.
 				duration = *item.Duration / 60000 // Convert milliseconds to minutes
 			}
 
-			// Use Plex poster URL if available, otherwise use fallback
-			// Skip TMDb lookup during cache update for performance
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				// Use Plex thumb as poster URL for cache
-				posterURL = *item.Thumb
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
 			}
+			posterURL := c.resolvePosterURL(thumb)
 
 			movies = append(movies, models.Recommendation{
 				Title:     item.Title,
@@ -329,13 +343,11 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []components
 				seasons = *item.ChildCount
 			}
 
-			// Use Plex poster URL if available, otherwise use fallback
-			// Skip TMDb lookup during cache update for performance
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				// Use Plex thumb as poster URL for cache
-				posterURL = *item.Thumb
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
 			}
+			posterURL := c.resolvePosterURL(thumb)
 
 			shows = append(shows, models.Recommendation{
 				Title:     item.Title,
@@ -431,7 +443,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 		
 		batch := allMovies[i:end]
-		if err := c.procesMovieBatch(ctx, batch); err != nil {
+		if err := c.processMovieBatch(ctx, batch); err != nil {
 			return fmt.Errorf("failed to process movie batch %d-%d: %w", i, end, err)
 		}
 	}
@@ -453,39 +465,41 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	return nil
 }
 
-// procesMovieBatch processes a batch of movies in a single transaction
-func (c *Client) procesMovieBatch(ctx context.Context, movies []PlexItem) error {
+// processMovieBatch processes a batch of movies in a single transaction
+func (c *Client) processMovieBatch(ctx context.Context, movies []PlexItem) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, item := range movies {
-		year := 0
-		if item.Year != nil {
-			year = *item.Year
-		}
+			year := 0
+			if item.Year != nil {
+				year = *item.Year
+			}
 
-		rating := 0.0
-		if item.Rating != nil {
-			rating = *item.Rating
-		}
+			rating := 0.0
+			if item.Rating != nil {
+				rating = *item.Rating
+			}
 
-		genre := ""
-		if len(item.Genre) > 0 {
-			genre = item.Genre[0].Tag
-		}
+			genre := ""
+			if len(item.Genre) > 0 {
+				genre = item.Genre[0].Tag
+			}
 
-		runtime := 0
-		if item.Duration != nil {
-			runtime = *item.Duration / 60000 // Convert milliseconds to minutes
-		}
+			runtime := 0
+			if item.Duration != nil {
+				runtime = *item.Duration / 60000 // Convert milliseconds to minutes
+			}
 
-		// Use Plex poster URL if available, otherwise use fallback
-		// Skip TMDb lookup during cache update for performance 
-		posterURL := fallbackPosterURL
-		if item.Thumb != nil && *item.Thumb != "" {
-			// Use Plex thumb as poster URL for cache
-			posterURL = *item.Thumb
-		}
+			viewCount := 0
+			if item.ViewCount != nil {
+				viewCount = *item.ViewCount
+			}
 
-			// Create movie record
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
+			}
+			posterURL := c.resolvePosterURL(thumb)
+
 			movie := models.Movie{
 				Title:     item.Title,
 				Year:      year,
@@ -493,7 +507,8 @@ func (c *Client) procesMovieBatch(ctx context.Context, movies []PlexItem) error 
 				Genre:     genre,
 				PosterURL: posterURL,
 				Runtime:   runtime,
-				TMDbID:    nil, // Will be updated later if needed
+				TMDbID:    nil,
+				ViewCount: viewCount,
 			}
 
 			if err := tx.Create(&movie).Error; err != nil {
@@ -528,15 +543,17 @@ func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error
 				seasons = *item.ChildCount
 			}
 
-			// Use Plex poster URL if available, otherwise use fallback
-			// Skip TMDb lookup during cache update for performance
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				// Use Plex thumb as poster URL for cache
-				posterURL = *item.Thumb
+			viewCount := 0
+			if item.ViewCount != nil {
+				viewCount = *item.ViewCount
 			}
 
-			// Create TV show record
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
+			}
+			posterURL := c.resolvePosterURL(thumb)
+
 			tvShow := models.TVShow{
 				Title:     item.Title,
 				Year:      year,
@@ -544,7 +561,8 @@ func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error
 				Genre:     genre,
 				PosterURL: posterURL,
 				Seasons:   seasons,
-				TMDbID:    nil, // Will be updated later if needed
+				TMDbID:    nil,
+				ViewCount: viewCount,
 			}
 
 			if err := tx.Create(&tvShow).Error; err != nil {
