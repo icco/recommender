@@ -139,13 +139,15 @@ type PlexItem struct {
 	ChildCount *int
 }
 
-// GetPlexItems retrieves items from a specific Plex library.
-// It supports pagination and filtering for unwatched items only.
+// GetPlexItems retrieves items from a specific Plex library section.
+// It calls GET /library/sections/{id}/all (same as plexgo Content.ListContent) with
+// X-Plex-Container-Start/Size paging, then unmarshals via map[string]any because many
+// PMS versions emit 0/1 instead of JSON booleans, which breaks plexgo's strict types.
+// When unwatchedOnly is true, watched items are filtered out in memory.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
 	c.logger.Debug("Getting library details from Plex API",
 		slog.String("section_key", libraryKey))
 
-	// Same tolerant JSON path as GetAllLibraries (plexgo fails on 0/1 bool fields).
 	rawItems, err := c.fetchLibraryItemsViaJSON(ctx, libraryKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library details: %w", err)

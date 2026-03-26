@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/LukeHagar/plexgo/models/components"
@@ -105,27 +106,64 @@ func (c *Client) fetchLibrarySectionsViaJSON(ctx context.Context) (*operations.G
 	}, nil
 }
 
+// fetchLibraryItemsViaJSON lists all items in a library section using the same path as
+// plexgo's Content.ListContent: GET /library/sections/{id}/all (see Plex support docs).
+// We avoid unmarshaling into plexgo structs because many PMS builds return 0/1 instead of
+// JSON booleans, which breaks strict decoding.
 func (c *Client) fetchLibraryItemsViaJSON(ctx context.Context, libraryKey string) ([]PlexItem, error) {
-	path := "/library/sections/" + url.PathEscape(libraryKey)
-	body, err := c.plexGET(ctx, path)
-	if err != nil {
-		return nil, err
+	const pageSize = 200
+	start := 0
+	var allItems []PlexItem
+	for page := 0; page < 500; page++ {
+		q := url.Values{}
+		q.Set("X-Plex-Container-Start", strconv.Itoa(start))
+		q.Set("X-Plex-Container-Size", strconv.Itoa(pageSize))
+		path := "/library/sections/" + url.PathEscape(libraryKey) + "/all?" + q.Encode()
+
+		body, err := c.plexGET(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		root, err := decodeJSONObject(body)
+		if err != nil {
+			return nil, fmt.Errorf("decode library details JSON: %w", err)
+		}
+		mc, ok := root["MediaContainer"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid Plex library response: missing MediaContainer")
+		}
+		metaMaps := itemsFromMediaContainer(mc)
+		if len(metaMaps) == 0 {
+			break
+		}
+		for _, m := range metaMaps {
+			allItems = append(allItems, mapMetadataToPlexItem(m))
+		}
+
+		totalSize, hasTotal := mediaContainerTotalSize(mc)
+		nextStart := start + len(metaMaps)
+		if hasTotal && nextStart >= totalSize {
+			break
+		}
+		if len(metaMaps) < pageSize {
+			break
+		}
+		start = nextStart
 	}
-	root, err := decodeJSONObject(body)
-	if err != nil {
-		return nil, fmt.Errorf("decode library details JSON: %w", err)
+	return allItems, nil
+}
+
+// mediaContainerTotalSize reads totalSize from a Plex MediaContainer when it is a positive integer.
+// totalSize=0 is treated as absent so we still use per-page heuristics for empty vs unknown totals.
+func mediaContainerTotalSize(mc map[string]any) (n int, ok bool) {
+	if mc == nil {
+		return 0, false
 	}
-	mc, ok := root["MediaContainer"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("invalid Plex library response: missing MediaContainer")
+	v, found := anyToInt(mc["totalSize"])
+	if !found || v <= 0 {
+		return 0, false
 	}
-	metaMaps := itemsFromMediaContainer(mc)
-	items := make([]PlexItem, 0, len(metaMaps))
-	for _, m := range metaMaps {
-		pi := mapMetadataToPlexItem(m)
-		items = append(items, pi)
-	}
-	return items, nil
+	return v, true
 }
 
 func mapMetadataToPlexItem(m map[string]any) PlexItem {
