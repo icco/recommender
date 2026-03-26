@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -56,6 +57,21 @@ func (c *Client) GetAPI() *plexgo.PlexAPI {
 // GetURL returns the Plex server URL used by this client.
 func (c *Client) GetURL() string {
 	return c.plexURL
+}
+
+// resolvePosterURL returns an absolute URL for HTML img src. Plex often returns relative thumb paths.
+func (c *Client) resolvePosterURL(thumb string) string {
+	if thumb == "" {
+		return fallbackPosterURL
+	}
+	if strings.HasPrefix(thumb, "http://") || strings.HasPrefix(thumb, "https://") {
+		return thumb
+	}
+	base := strings.TrimRight(c.plexURL, "/")
+	if strings.HasPrefix(thumb, "/") {
+		return base + thumb
+	}
+	return base + "/" + thumb
 }
 
 // GetLibrary returns the Library API instance for accessing Plex library operations.
@@ -267,13 +283,11 @@ func (c *Client) GetUnwatchedMovies(ctx context.Context, libraries []components.
 				duration = *item.Duration / 60000 // Convert milliseconds to minutes
 			}
 
-			// Use Plex poster URL if available, otherwise use fallback
-			// Skip TMDb lookup during cache update for performance
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				// Use Plex thumb as poster URL for cache
-				posterURL = *item.Thumb
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
 			}
+			posterURL := c.resolvePosterURL(thumb)
 
 			movies = append(movies, models.Recommendation{
 				Title:     item.Title,
@@ -329,13 +343,11 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []components
 				seasons = *item.ChildCount
 			}
 
-			// Use Plex poster URL if available, otherwise use fallback
-			// Skip TMDb lookup during cache update for performance
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				// Use Plex thumb as poster URL for cache
-				posterURL = *item.Thumb
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
 			}
+			posterURL := c.resolvePosterURL(thumb)
 
 			shows = append(shows, models.Recommendation{
 				Title:     item.Title,
@@ -482,10 +494,11 @@ func (c *Client) processMovieBatch(ctx context.Context, movies []PlexItem) error
 				viewCount = *item.ViewCount
 			}
 
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				posterURL = *item.Thumb
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
 			}
+			posterURL := c.resolvePosterURL(thumb)
 
 			movie := models.Movie{
 				Title:     item.Title,
@@ -535,10 +548,11 @@ func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error
 				viewCount = *item.ViewCount
 			}
 
-			posterURL := fallbackPosterURL
-			if item.Thumb != nil && *item.Thumb != "" {
-				posterURL = *item.Thumb
+			thumb := ""
+			if item.Thumb != nil {
+				thumb = *item.Thumb
 			}
+			posterURL := c.resolvePosterURL(thumb)
 
 			tvShow := models.TVShow{
 				Title:     item.Title,
