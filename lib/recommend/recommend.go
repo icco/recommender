@@ -120,21 +120,37 @@ func (r *Recommender) GetRecommendationsForDate(ctx context.Context, date time.T
 	return recommendations, nil
 }
 
-// GetRecommendationDates retrieves a paginated list of dates with recommendations
+// GetRecommendationDates retrieves a paginated list of distinct calendar dates that have recommendations.
 func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize int) ([]time.Time, int64, error) {
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("failed to get total count: %w", err)
+	if err := r.db.WithContext(ctx).Raw("SELECT COUNT(*) FROM (SELECT 1 FROM recommendations GROUP BY date(date))").Scan(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("failed to get total distinct dates: %w", err)
 	}
 
-	var dates []time.Time
-	if err := r.db.WithContext(ctx).
-		Model(&models.Recommendation{}).
-		Order("date DESC").
-		Offset((page-1)*pageSize).
-		Limit(pageSize).
-		Pluck("date", &dates).Error; err != nil {
+	offset := (page - 1) * pageSize
+	var dateRows []struct {
+		D string `gorm:"column:d"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT date(date) AS d FROM recommendations
+		GROUP BY date(date)
+		ORDER BY d DESC
+		LIMIT ? OFFSET ?`, pageSize, offset).Scan(&dateRows).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to get dates: %w", err)
+	}
+
+	dateStrs := make([]string, len(dateRows))
+	for i, row := range dateRows {
+		dateStrs[i] = row.D
+	}
+
+	dates := make([]time.Time, 0, len(dateStrs))
+	for _, s := range dateStrs {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			return nil, 0, fmt.Errorf("parse date %q: %w", s, err)
+		}
+		dates = append(dates, t.UTC())
 	}
 
 	return dates, total, nil
@@ -238,8 +254,12 @@ func (r *Recommender) formatContent(items []models.Recommendation) string {
 		items = items[:limit]
 	}
 	for _, item := range items {
-		content.WriteString(fmt.Sprintf("- %s (%d) - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
-			item.Title, item.Year, item.Rating, item.Genre, item.Runtime, item.TMDbID))
+		watched := ""
+		if item.ViewCount > 0 {
+			watched = " (watched)"
+		}
+		content.WriteString(fmt.Sprintf("- %s (%d)%s - Rating: %.1f - Genre: %s - Runtime: %d - TMDb ID: %d\n",
+			item.Title, item.Year, watched, item.Rating, item.Genre, item.Runtime, item.TMDbID))
 	}
 	return content.String()
 }
@@ -269,18 +289,17 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return nil
 	}
 
-	// Get unwatched content from database
-	var unwatchedMovies []models.Movie
-	if err := r.db.WithContext(ctx).Find(&unwatchedMovies).Error; err != nil {
-		return fmt.Errorf("failed to get unwatched movies: %w", err)
+	var cachedMovies []models.Movie
+	if err := r.db.WithContext(ctx).Find(&cachedMovies).Error; err != nil {
+		return fmt.Errorf("failed to get cached movies: %w", err)
 	}
-	r.logger.Debug("Found unwatched movies", slog.Int("count", len(unwatchedMovies)))
+	r.logger.Debug("Found cached movies", slog.Int("count", len(cachedMovies)))
 
-	var unwatchedTVShows []models.TVShow
-	if err := r.db.WithContext(ctx).Find(&unwatchedTVShows).Error; err != nil {
-		return fmt.Errorf("failed to get unwatched TV shows: %w", err)
+	var cachedTVShows []models.TVShow
+	if err := r.db.WithContext(ctx).Find(&cachedTVShows).Error; err != nil {
+		return fmt.Errorf("failed to get cached TV shows: %w", err)
 	}
-	r.logger.Debug("Found unwatched TV shows", slog.Int("count", len(unwatchedTVShows)))
+	r.logger.Debug("Found cached TV shows", slog.Int("count", len(cachedTVShows)))
 
 	// Get previous recommendations for context
 	prevDate := date.AddDate(0, 0, -1)
@@ -292,9 +311,9 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Limit previous recommendations
 	prevRecs = r.limitPreviousRecommendations(prevRecs)
 
-	// Convert movies and TV shows to recommendations for OpenAI
+	// Movies: include watched and unwatched so the model can pick a rewatch; TV: unwatched only.
 	var allContent []models.Recommendation
-	for _, movie := range unwatchedMovies {
+	for _, movie := range cachedMovies {
 		// Get TMDB poster URL if available
 		posterURL := movie.PosterURL
 		tmdbID := 0
@@ -340,10 +359,14 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Runtime:   movie.Runtime,
 			MovieID:   &movie.ID,
 			TMDbID:    tmdbID,
+			ViewCount: movie.ViewCount,
 		})
 	}
 
-	for _, tvShow := range unwatchedTVShows {
+	for _, tvShow := range cachedTVShows {
+		if tvShow.ViewCount > 0 {
+			continue
+		}
 		// Get TMDB poster URL if available
 		posterURL := tvShow.PosterURL
 		tmdbID := 0
@@ -389,6 +412,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			Runtime:   tvShow.Seasons,
 			TVShowID:  &tvShow.ID,
 			TMDbID:    tmdbID,
+			ViewCount: tvShow.ViewCount,
 		})
 	}
 
@@ -403,8 +427,8 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Log available content for debugging
 	r.logger.Debug("Available content for recommendations",
 		slog.Int("total_items", len(allContent)),
-		slog.Int("movies", len(unwatchedMovies)),
-		slog.Int("tv_shows", len(unwatchedTVShows)),
+		slog.Int("cached_movies", len(cachedMovies)),
+		slog.Int("cached_tv_shows", len(cachedTVShows)),
 		slog.String("content", content.Content))
 
 	// Load prompt templates
@@ -573,19 +597,13 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return fmt.Errorf("no new recommendations to store")
 	}
 
-	// Save recommendations to database in a transaction with duplicate checking
+	// Save recommendations in a transaction. Clear any existing rows for this date first so
+	// incomplete sets from failed runs can be replaced (CheckRecommendationsExist is false until complete).
 	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// First, check if any recommendations already exist for this date
-		var existingCount int64
-		if err := tx.Model(&models.Recommendation{}).Where("date = ?", date).Count(&existingCount).Error; err != nil {
-			return fmt.Errorf("failed to check existing recommendations in transaction: %w", err)
+		if err := tx.Where("date = ?", date).Delete(&models.Recommendation{}).Error; err != nil {
+			return fmt.Errorf("failed to clear recommendations for date: %w", err)
 		}
-		
-		if existingCount > 0 {
-			return fmt.Errorf("recommendations already exist for date %s (found %d existing)", date.Format("2006-01-02"), existingCount)
-		}
-		
-		// Create recommendations with duplicate checking
+
 		for _, rec := range filteredRecommendations {
 			// Check for duplicate title on the same date
 			var duplicate models.Recommendation
