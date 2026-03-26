@@ -14,6 +14,7 @@ type Movie struct {
 	PosterURL string  `gorm:"type:varchar(1000)"`                               // URL to the poster image
 	Runtime   int     `gorm:"default:0"`                                        // Runtime in minutes
 	TMDbID    *int    `gorm:"uniqueIndex:idx_movies_tmdb_id"`                   // The Movie Database ID (nullable)
+	ViewCount int     `gorm:"default:0;index:idx_movies_view_count"`            // Plex view count (0 = unwatched)
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -31,6 +32,7 @@ type TVShow struct {
 	PosterURL string  `gorm:"type:varchar(1000)"`                                // URL to the poster image
 	Seasons   int     `gorm:"default:0"`                                          // Number of seasons
 	TMDbID    *int    `gorm:"uniqueIndex:idx_tvshows_tmdb_id"`                    // The Movie Database ID (nullable)
+	ViewCount int     `gorm:"default:0;index:idx_tvshows_view_count"`             // Plex view count (0 = unwatched)
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
@@ -52,6 +54,7 @@ type Recommendation struct {
 	MovieID   *uint     `gorm:"index:idx_recommendations_movie_id;constraint:OnDelete:CASCADE"` // Reference to Movie if Type is "movie"
 	TVShowID  *uint     `gorm:"index:idx_recommendations_tvshow_id;constraint:OnDelete:CASCADE"` // Reference to TVShow if Type is "tvshow"
 	TMDbID    int       `gorm:"not null;index:idx_recommendations_tmdb_id"`       // The Movie Database ID
+	ViewCount int       `gorm:"-"`                                                 // Plex views when building prompts only (not stored)
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
