@@ -257,6 +257,11 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 	}
 }
 
+// cronBackgroundLockKey serializes all heavy cron work (cache refresh and recommendation
+// generation) so they never run concurrently. Otherwise a cache rebuild can delete
+// movie/tv rows while recommendation generation is reading them.
+const cronBackgroundLockKey = "cron-serial"
+
 // HandleCron handles the recommendation generation cron job.
 // It takes a recommender instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and generates recommendations for the current day.
@@ -264,7 +269,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
 		today := time.Now().UTC().Truncate(24 * time.Hour)
-		lockKey := fmt.Sprintf("cron-recommendations-%s", today.Format("2006-01-02"))
+		lockKey := cronBackgroundLockKey
 
 		sanitize.LogRecommendationCronStart(startTime, req.RemoteAddr, lockKey)
 
@@ -281,13 +286,13 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		}
 
 		if !acquired {
-			slog.Info("Recommendation generation already in progress",
+			slog.Info("Cron job already in progress (cache or recommendations); try again later",
 				slog.String("lock_key", lockKey),
 				slog.Time("date", today),
 			)
 			w.Header().Set("Content-Type", "application/json")
-			if _, err := fmt.Fprintf(w, `{"message": "Recommendation generation already in progress for %s", "timestamp": "%s"}`,
-				today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
+			if _, err := fmt.Fprintf(w, `{"message": "Another cron job is already running (cache or recommendations); try again later", "timestamp": "%s"}`,
+				time.Now().Format(time.RFC3339)); err != nil {
 				slog.Error("Failed to write response", slog.Any("error", err))
 			}
 			return
@@ -325,6 +330,10 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 
 		// Create a new background context with a timeout for the recommendation generation
 		genCtx, genCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		slog.Info("Dispatching recommendation generation to background",
+			slog.Time("date", today),
+			slog.String("lock_key", lockKey),
+		)
 		go func() {
 			defer func() {
 				genCancel()
@@ -368,7 +377,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
-		lockKey := "cache-update"
+		lockKey := cronBackgroundLockKey
 
 		sanitize.LogCacheUpdateJobStart(startTime, req.RemoteAddr, lockKey)
 
@@ -385,11 +394,11 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 		}
 
 		if !acquired {
-			slog.Info("Cache update already in progress",
+			slog.Info("Cron job already in progress (cache or recommendations); try again later",
 				slog.String("lock_key", lockKey),
 			)
 			w.Header().Set("Content-Type", "application/json")
-			if _, err := fmt.Fprintf(w, `{"message": "Cache update already in progress", "timestamp": "%s"}`,
+			if _, err := fmt.Fprintf(w, `{"message": "Another cron job is already running (cache or recommendations); try again later", "timestamp": "%s"}`,
 				time.Now().Format(time.RFC3339)); err != nil {
 				slog.Error("Failed to write response", slog.Any("error", err))
 			}
@@ -398,6 +407,9 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 
 		// Create a new background context with a timeout for the cache update
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		slog.Info("Dispatching Plex cache update to background",
+			slog.String("lock_key", lockKey),
+		)
 		go func() {
 			defer func() {
 				cancel()

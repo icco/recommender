@@ -306,8 +306,10 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	// Get all content from each library
 	var allMovies []PlexItem
 	var allTVShows []PlexItem
+	var fetchErrCount int
 
-	for _, lib := range libraries.Object.MediaContainer.Directory {
+	libs := libraries.Object.MediaContainer.Directory
+	for _, lib := range libs {
 		key := ""
 		if lib.Key != nil {
 			key = *lib.Key
@@ -315,6 +317,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 		items, err := c.GetPlexItems(ctx, key, false) // false means get all content, not just unwatched
 		if err != nil {
+			fetchErrCount++
 			title := ""
 			if lib.Title != nil {
 				title = *lib.Title
@@ -337,6 +340,17 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 	c.logger.Info("Successfully fetched movies", slog.Int("count", len(allMovies)))
 	c.logger.Info("Successfully fetched TV shows", slog.Int("count", len(allTVShows)))
+
+	if len(libs) == 0 {
+		return fmt.Errorf("Plex returned no libraries; cache not modified")
+	}
+
+	if len(allMovies)+len(allTVShows) == 0 {
+		if fetchErrCount > 0 {
+			return fmt.Errorf("no movie or TV items fetched from Plex (%d library errors logged above); cache not modified", fetchErrCount)
+		}
+		return fmt.Errorf("no movie or TV items in Plex libraries; cache not modified")
+	}
 
 	// Ensure the tables exist first (outside transaction)
 	if err := c.db.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}); err != nil {
