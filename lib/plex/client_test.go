@@ -1,7 +1,6 @@
 package plex
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -40,7 +39,7 @@ func TestFetchLibrarySectionsViaJSON_numericBoolLikeFields(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{plexURL: srv.URL, plexToken: "tok"}
-	resp, err := c.fetchLibrarySectionsViaJSON(context.Background())
+	resp, err := c.fetchLibrarySectionsViaJSON(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +79,7 @@ func TestFetchLibraryItemsViaJSON_usesSectionAllEndpoint(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{plexURL: srv.URL, plexToken: "tok", logger: slogDefaultDiscard()}
-	items, err := c.fetchLibraryItemsViaJSON(context.Background(), "7")
+	items, err := c.fetchLibraryItemsViaJSON(t.Context(), "7")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,7 @@ func testRecommender(db *gorm.DB) *Recommender {
 func TestGetRecommendationDates_distinctDaysAndPagination(t *testing.T) {
 	db := testDB(t)
 	r := testRecommender(db)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	day1 := time.Date(2025, 3, 10, 12, 0, 0, 0, time.UTC)
 	day2 := time.Date(2025, 3, 11, 8, 0, 0, 0, time.UTC)
@@ -99,7 +99,7 @@ func distinctDateCount(ctx context.Context, db *gorm.DB) (int64, error) {
 func TestCheckRecommendationsExist_partialDay(t *testing.T) {
 	db := testDB(t)
 	r := testRecommender(db)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := db.Create(&models.Movie{Title: "LibMovie", Year: 2020, Rating: 8, Genre: "Action"}).Error; err != nil {
 		t.Fatal(err)
