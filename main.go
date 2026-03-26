@@ -5,12 +5,12 @@ package main
 
 import (
 	"context"
-	"embed"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,12 +24,10 @@ import (
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/sanitize"
 	"github.com/icco/recommender/lib/tmdb"
+	"github.com/icco/recommender/static"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
-
-//go:embed static/*
-var staticFiles embed.FS
 
 // JSONLogger is a custom middleware that logs HTTP requests in JSON format.
 // It captures request details including method, path, status code, and duration.
@@ -43,14 +41,9 @@ func JSONLogger(next http.Handler) http.Handler {
 		// Process request
 		next.ServeHTTP(ww, r)
 
-		// Log the request details
-		slog.Info("HTTP Request",
-			slog.String("method", sanitize.ForLog(r.Method)),
-			slog.String("path", sanitize.ForLog(r.URL.Path)),
-			slog.String("remote_addr", sanitize.ForLog(r.RemoteAddr)),
-			slog.String("user_agent", sanitize.ForLog(r.UserAgent())),
-			slog.Int("status", ww.Status()),
-			slog.Duration("duration", time.Since(start)),
+		sanitize.LogHTTPRequest(
+			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(),
+			ww.Status(), time.Since(start),
 		)
 	})
 }
@@ -133,7 +126,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles))))
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(static.Files))))
 
 	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
@@ -145,13 +138,22 @@ func main() {
 	r.Get("/health", health.Check(gormDB))
 
 	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	portStr := os.Getenv("PORT")
+	if portStr == "" {
+		portStr = "8080"
+	}
+	portNum, err := strconv.Atoi(portStr)
+	if err != nil {
+		slog.Error("PORT must be a valid integer", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if portNum < 1 || portNum > 65535 {
+		slog.Error("PORT must be between 1 and 65535", slog.Int("port", portNum))
+		os.Exit(1)
 	}
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", port),
+		Addr:         fmt.Sprintf(":%d", portNum),
 		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -163,7 +165,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("Starting server", slog.String("port", port))
+		slog.Info("Starting server", slog.Int("port", portNum))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("Server error", slog.Any("error", err))
 			stop()

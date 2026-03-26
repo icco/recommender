@@ -38,7 +38,7 @@ func writeError(w http.ResponseWriter, r *http.Request, message string, status i
 		}
 		return
 	}
-	
+
 	// Default to HTML error response
 	renderError(w, message, status)
 }
@@ -47,22 +47,22 @@ func writeError(w http.ResponseWriter, r *http.Request, message string, status i
 func wantsJSON(r *http.Request) bool {
 	accept := r.Header.Get("Accept")
 	contentType := r.Header.Get("Content-Type")
-	
+
 	// Check Accept header
 	if strings.Contains(accept, "application/json") {
 		return true
 	}
-	
+
 	// Check Content-Type header
 	if strings.Contains(contentType, "application/json") {
 		return true
 	}
-	
+
 	// Check for AJAX requests
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -119,7 +119,7 @@ func isResponseStarted(w http.ResponseWriter) bool {
 	w.Header().Set("X-Check-Response-Started", "test")
 	afterLen := len(w.Header())
 	w.Header().Del("X-Check-Response-Started")
-	
+
 	// If header was added and removed successfully, response hasn't started
 	return beforeLen == afterLen
 }
@@ -265,12 +265,8 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		startTime := time.Now()
 		today := time.Now().UTC().Truncate(24 * time.Hour)
 		lockKey := fmt.Sprintf("cron-recommendations-%s", today.Format("2006-01-02"))
-		
-		slog.Info("Starting recommendation cron job",
-			slog.Time("start_time", startTime),
-			slog.String("remote_addr", sanitize.ForLog(req.RemoteAddr)),
-			slog.String("lock_key", lockKey),
-		)
+
+		sanitize.LogRecommendationCronStart(startTime, req.RemoteAddr, lockKey)
 
 		// Try to acquire lock with 10 second timeout
 		acquired, err := fl.TryLock(req.Context(), lockKey, 10*time.Second)
@@ -373,12 +369,8 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		startTime := time.Now()
 		lockKey := "cache-update"
-		
-		slog.Info("Starting cache update job",
-			slog.Time("start_time", startTime),
-			slog.String("remote_addr", sanitize.ForLog(req.RemoteAddr)),
-			slog.String("lock_key", lockKey),
-		)
+
+		sanitize.LogCacheUpdateJobStart(startTime, req.RemoteAddr, lockKey)
 
 		// Try to acquire lock with 10 second timeout
 		acquired, err := fl.TryLock(req.Context(), lockKey, 10*time.Second)
