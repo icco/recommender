@@ -79,13 +79,13 @@ func (c *Client) GetLibrary() *plexgo.Library {
 	return c.api.Library
 }
 
-// GetAllLibraries retrieves all libraries from the Plex server.
-// It returns detailed information about each library, including its type, title, and configuration.
+// GetAllLibraries retrieves all libraries from the Plex server via plexgo Library.GetSections
+// (GET /library/sections/all). PMS must return JSON booleans for library flags; numeric 0/1
+// will fail to decode (Plex OpenAPI / plexgo limitation).
 func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetSectionsResponse, error) {
 	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
 
-	// Avoid plexgo JSON decode: some PMS versions return numeric 0/1 for fields typed as bool.
-	resp, err := c.fetchLibrarySectionsViaJSON(ctx)
+	resp, err := c.api.Library.GetSections(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
@@ -139,14 +139,13 @@ type PlexItem struct {
 	ChildCount *int
 }
 
-// GetPlexItems retrieves items from a specific Plex library.
-// It supports pagination and filtering for unwatched items only.
+// GetPlexItems lists a section via plexgo Content.ListContent (GET …/library/sections/{id}/all)
+// with container paging. When unwatchedOnly is true, watched items are dropped in memory.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
 	c.logger.Debug("Getting library details from Plex API",
 		slog.String("section_key", libraryKey))
 
-	// Same tolerant JSON path as GetAllLibraries (plexgo fails on 0/1 bool fields).
-	rawItems, err := c.fetchLibraryItemsViaJSON(ctx, libraryKey)
+	rawItems, err := c.listSectionContentAll(ctx, libraryKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library details: %w", err)
 	}
@@ -306,8 +305,10 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	// Get all content from each library
 	var allMovies []PlexItem
 	var allTVShows []PlexItem
+	var fetchErrCount int
 
-	for _, lib := range libraries.Object.MediaContainer.Directory {
+	libs := libraries.Object.MediaContainer.Directory
+	for _, lib := range libs {
 		key := ""
 		if lib.Key != nil {
 			key = *lib.Key
@@ -315,6 +316,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 		items, err := c.GetPlexItems(ctx, key, false) // false means get all content, not just unwatched
 		if err != nil {
+			fetchErrCount++
 			title := ""
 			if lib.Title != nil {
 				title = *lib.Title
@@ -337,6 +339,17 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 	c.logger.Info("Successfully fetched movies", slog.Int("count", len(allMovies)))
 	c.logger.Info("Successfully fetched TV shows", slog.Int("count", len(allTVShows)))
+
+	if len(libs) == 0 {
+		return fmt.Errorf("Plex returned no libraries; cache not modified")
+	}
+
+	if len(allMovies)+len(allTVShows) == 0 {
+		if fetchErrCount > 0 {
+			return fmt.Errorf("no movie or TV items fetched from Plex (%d library errors logged above); cache not modified", fetchErrCount)
+		}
+		return fmt.Errorf("no movie or TV items in Plex libraries; cache not modified")
+	}
 
 	// Ensure the tables exist first (outside transaction)
 	if err := c.db.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}); err != nil {

@@ -301,6 +301,10 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 	r.logger.Debug("Found cached TV shows", slog.Int("count", len(cachedTVShows)))
 
+	if len(cachedMovies) == 0 && len(cachedTVShows) == 0 {
+		return fmt.Errorf("Plex movie/TV cache is empty; run /cron/cache after Plex is reachable (skipping OpenAI)")
+	}
+
 	// Get previous recommendations for context
 	prevDate := date.AddDate(0, 0, -1)
 	prevRecs, err := r.GetRecommendationsForDate(ctx, prevDate)
