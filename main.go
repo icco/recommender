@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+//go:embed static/*
+var staticFiles embed.FS
 
 // JSONLogger is a custom middleware that logs HTTP requests in JSON format.
 // It captures request details including method, path, status code, and duration.
@@ -128,8 +132,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	// Static file serving
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles))))
 
 	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
