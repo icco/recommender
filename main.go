@@ -83,8 +83,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "recommender.db"
+	}
+
 	// Set up database with custom JSON logger
-	gormDB, err := gorm.Open(sqlite.Open("recommender.db"), &gorm.Config{
+	gormDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		Logger: db.NewGormLogger(slog.Default()),
 	})
 	if err != nil {
