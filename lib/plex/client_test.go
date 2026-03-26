@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+func testPlexClient(t *testing.T, srvURL string) *Client {
+	t.Helper()
+	return NewClient(srvURL, "tok", slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
+}
+
 func TestClient_resolvePosterURL(t *testing.T) {
 	c := &Client{plexURL: "https://plex.example.com:32400"}
 
@@ -26,20 +31,24 @@ func TestClient_resolvePosterURL(t *testing.T) {
 	}
 }
 
-func TestFetchLibrarySectionsViaJSON_numericBoolLikeFields(t *testing.T) {
+func TestGetAllLibraries_viaPlexgo(t *testing.T) {
 	t.Parallel()
-	// PMS often sends 0/1 instead of JSON booleans; strict plexgo structs cannot decode this.
-	const payload = `{"MediaContainer":{"allowSync":1,"size":1,"Directory":[{"key":"1","title":"Movies","type":"movie","hidden":0}]}}`
+	// plexgo unmarshals *bool fields; PMS must send JSON true/false (not 0/1).
+	const payload = `{"MediaContainer":{"allowSync":true,"size":1,"Directory":[{"key":"1","title":"Movies","type":"movie","hidden":false,"language":"en","uuid":"u1"}]}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Plex-Token") != "tok" {
 			t.Error("expected X-Plex-Token header")
 		}
+		if !strings.HasSuffix(r.URL.Path, "/library/sections/all") {
+			t.Errorf("expected /library/sections/all, got %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(payload))
 	}))
 	defer srv.Close()
 
-	c := &Client{plexURL: srv.URL, plexToken: "tok"}
-	resp, err := c.fetchLibrarySectionsViaJSON(t.Context())
+	c := testPlexClient(t, srv.URL)
+	resp, err := c.GetAllLibraries(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +67,7 @@ func TestFetchLibrarySectionsViaJSON_numericBoolLikeFields(t *testing.T) {
 	}
 }
 
-func TestFetchLibraryItemsViaJSON_usesSectionAllEndpoint(t *testing.T) {
+func TestGetPlexItems_viaPlexgoListContent(t *testing.T) {
 	t.Parallel()
 	const payload = `{"MediaContainer":{"size":1,"totalSize":1,"Metadata":[{"ratingKey":"42","key":"/library/metadata/42","title":"Test Film","type":"movie","addedAt":1,"year":2020}]}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,12 +83,13 @@ func TestFetchLibraryItemsViaJSON_usesSectionAllEndpoint(t *testing.T) {
 		if r.URL.Query().Get("X-Plex-Container-Start") != "0" {
 			t.Errorf("X-Plex-Container-Start=%q", r.URL.Query().Get("X-Plex-Container-Start"))
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(payload))
 	}))
 	defer srv.Close()
 
-	c := &Client{plexURL: srv.URL, plexToken: "tok", logger: slogDefaultDiscard()}
-	items, err := c.fetchLibraryItemsViaJSON(t.Context(), "7")
+	c := testPlexClient(t, srv.URL)
+	items, err := c.GetPlexItems(t.Context(), "7", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +99,4 @@ func TestFetchLibraryItemsViaJSON_usesSectionAllEndpoint(t *testing.T) {
 	if items[0].Title != "Test Film" || items[0].Type != "movie" {
 		t.Fatalf("%+v", items[0])
 	}
-}
-
-func slogDefaultDiscard() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

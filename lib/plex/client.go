@@ -79,13 +79,13 @@ func (c *Client) GetLibrary() *plexgo.Library {
 	return c.api.Library
 }
 
-// GetAllLibraries retrieves all libraries from the Plex server.
-// It returns detailed information about each library, including its type, title, and configuration.
+// GetAllLibraries retrieves all libraries from the Plex server via plexgo Library.GetSections
+// (GET /library/sections/all). PMS must return JSON booleans for library flags; numeric 0/1
+// will fail to decode (Plex OpenAPI / plexgo limitation).
 func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetSectionsResponse, error) {
 	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
 
-	// Avoid plexgo JSON decode: some PMS versions return numeric 0/1 for fields typed as bool.
-	resp, err := c.fetchLibrarySectionsViaJSON(ctx)
+	resp, err := c.api.Library.GetSections(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
@@ -139,16 +139,13 @@ type PlexItem struct {
 	ChildCount *int
 }
 
-// GetPlexItems retrieves items from a specific Plex library section.
-// It calls GET /library/sections/{id}/all (same as plexgo Content.ListContent) with
-// X-Plex-Container-Start/Size paging, then unmarshals via map[string]any because many
-// PMS versions emit 0/1 instead of JSON booleans, which breaks plexgo's strict types.
-// When unwatchedOnly is true, watched items are filtered out in memory.
+// GetPlexItems lists a section via plexgo Content.ListContent (GET …/library/sections/{id}/all)
+// with container paging. When unwatchedOnly is true, watched items are dropped in memory.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
 	c.logger.Debug("Getting library details from Plex API",
 		slog.String("section_key", libraryKey))
 
-	rawItems, err := c.fetchLibraryItemsViaJSON(ctx, libraryKey)
+	rawItems, err := c.listSectionContentAll(ctx, libraryKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library details: %w", err)
 	}
