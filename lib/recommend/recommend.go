@@ -453,7 +453,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Retry OpenAI API call with exponential backoff
 	resp, err := r.retryOpenAIRequest(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT4oMini,
+		Model: openai.GPT5Mini,
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
@@ -464,7 +464,8 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				Content: userMsg.String(),
 			},
 		},
-		Temperature: 0.7,
+		// gpt-5* models only allow temperature 0 or 1 (go-openai reasoning validator).
+		Temperature: 1,
 		ResponseFormat: &openai.ChatCompletionResponseFormat{
 			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
 		},
