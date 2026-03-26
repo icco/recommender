@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/LukeHagar/plexgo/models/components"
@@ -85,6 +86,9 @@ func flexInt64Required(m map[string]any, key string) int64 {
 func anyToInt(v any) (int, bool) {
 	i64, ok := anyToInt64(v)
 	if !ok {
+		return 0, false
+	}
+	if i64 < int64(math.MinInt) || i64 > int64(math.MaxInt) {
 		return 0, false
 	}
 	return int(i64), true
