@@ -31,9 +31,8 @@ func TestClient_resolvePosterURL(t *testing.T) {
 	}
 }
 
-func TestGetAllLibraries_viaPlexgo(t *testing.T) {
+func TestGetAllLibraries_minimalJSON(t *testing.T) {
 	t.Parallel()
-	// plexgo unmarshals *bool fields; PMS must send JSON true/false (not 0/1).
 	const payload = `{"MediaContainer":{"allowSync":true,"size":1,"Directory":[{"key":"1","title":"Movies","type":"movie","hidden":false,"language":"en","uuid":"u1"}]}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Plex-Token") != "tok" {
@@ -48,14 +47,10 @@ func TestGetAllLibraries_viaPlexgo(t *testing.T) {
 	defer srv.Close()
 
 	c := testPlexClient(t, srv.URL)
-	resp, err := c.GetAllLibraries(t.Context())
+	dir, err := c.GetAllLibraries(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Object == nil || resp.Object.MediaContainer == nil {
-		t.Fatal("missing MediaContainer")
-	}
-	dir := resp.Object.MediaContainer.Directory
 	if len(dir) != 1 {
 		t.Fatalf("Directory len=%d want 1", len(dir))
 	}
@@ -64,6 +59,26 @@ func TestGetAllLibraries_viaPlexgo(t *testing.T) {
 	}
 	if dir[0].Type != "movie" {
 		t.Fatalf("Type=%q", dir[0].Type)
+	}
+}
+
+func TestGetAllLibraries_ignoresNumericBoolsOnSection(t *testing.T) {
+	t.Parallel()
+	// Newer PMS can send 0/1 for flags; plexgo's *bool models reject that — we skip those keys.
+	const payload = `{"MediaContainer":{"allowSync":1,"size":1,"Directory":[{"key":"2","title":"TV","type":"show","content":1,"directory":0,"filters":1,"hidden":0,"language":"en","uuid":"u2"}]}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+
+	c := testPlexClient(t, srv.URL)
+	dir, err := c.GetAllLibraries(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dir) != 1 || dir[0].Type != "show" {
+		t.Fatalf("got %+v", dir)
 	}
 }
 

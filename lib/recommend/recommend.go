@@ -188,17 +188,17 @@ func (r *Recommender) CheckRecommendationsComplete(ctx context.Context, date tim
 	if cachedMoviesCount > 0 && cachedTVShowsCount > 0 {
 		return movieCount > 0 && tvShowCount > 0, nil
 	}
-	
+
 	// If only movies are cached, only require movie recommendations
 	if cachedMoviesCount > 0 && cachedTVShowsCount == 0 {
 		return movieCount > 0, nil
 	}
-	
+
 	// If only TV shows are cached, only require TV show recommendations
 	if cachedMoviesCount == 0 && cachedTVShowsCount > 0 {
 		return tvShowCount > 0, nil
 	}
-	
+
 	// If no content is cached, we can't generate recommendations
 	return false, nil
 }
@@ -302,7 +302,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	r.logger.Debug("Found cached TV shows", slog.Int("count", len(cachedTVShows)))
 
 	if len(cachedMovies) == 0 && len(cachedTVShows) == 0 {
-		return fmt.Errorf("Plex movie/TV cache is empty; run /cron/cache after Plex is reachable (skipping OpenAI)")
+		return fmt.Errorf("plex movie/TV cache is empty; run /cron/cache after Plex is reachable (skipping OpenAI)")
 	}
 
 	// Get previous recommendations for context
@@ -543,7 +543,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Determine target counts based on available content
 	targetMovieCount := 4  // Standard target
 	targetTVShowCount := 3 // Standard target
-	
+
 	// If no TV shows are available, increase movie recommendations to compensate
 	if availableTVShows == 0 && availableMovies > 0 {
 		targetMovieCount = 7 // Increase to 7 movies when no TV shows available
@@ -614,14 +614,14 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			var duplicate models.Recommendation
 			err := tx.Where("title = ? AND date = ?", rec.Title, rec.Date).First(&duplicate).Error
 			if err == nil {
-				r.logger.Warn("Skipping duplicate recommendation", 
+				r.logger.Warn("Skipping duplicate recommendation",
 					slog.String("title", rec.Title),
 					slog.Time("date", rec.Date))
 				continue
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("failed to check for duplicate recommendation: %w", err)
 			}
-			
+
 			if err := tx.Create(&rec).Error; err != nil {
 				return fmt.Errorf("failed to save recommendation: %w", err)
 			}
@@ -766,7 +766,7 @@ func (r *Recommender) cleanupCache() {
 	}
 
 	if len(expiredKeys) > 0 {
-		r.logger.Debug("Cleaned up expired cache entries", 
+		r.logger.Debug("Cleaned up expired cache entries",
 			slog.Int("expired_count", len(expiredKeys)),
 			slog.Int("remaining_count", len(r.cache)))
 	}

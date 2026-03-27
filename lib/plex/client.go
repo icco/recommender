@@ -2,7 +2,11 @@ package plex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -10,7 +14,6 @@ import (
 
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/components"
-	"github.com/LukeHagar/plexgo/models/operations"
 	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
@@ -79,44 +82,103 @@ func (c *Client) GetLibrary() *plexgo.Library {
 	return c.api.Library
 }
 
-// GetAllLibraries retrieves all libraries from the Plex server via plexgo Library.GetSections
-// (GET /library/sections/all). PMS must return JSON booleans for library flags; numeric 0/1
-// will fail to decode (Plex OpenAPI / plexgo limitation).
-func (c *Client) GetAllLibraries(ctx context.Context) (*operations.GetSectionsResponse, error) {
+// LibrarySectionInfo is the subset of Plex library section fields needed for cache updates.
+// We decode via a minimal JSON shape so newer PMS builds that send 0/1 instead of JSON
+// booleans for flags do not break unmarshaling (plexgo's full LibrarySection uses *bool).
+type LibrarySectionInfo struct {
+	Key      *string
+	Title    *string
+	Type     string
+	Agent    *string
+	Scanner  *string
+	Language string
+	UUID     string
+}
+
+// GetAllLibraries fetches library sections (GET /library/sections/all) with a minimal decoder.
+func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, error) {
 	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
 
-	resp, err := c.api.Library.GetSections(ctx)
+	base := strings.TrimRight(c.plexURL, "/")
+	reqURL, err := url.JoinPath(base, "library", "sections", "all")
+	if err != nil {
+		return nil, fmt.Errorf("failed to build library sections URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Plex-Token", c.plexToken)
+	req.Header.Set("User-Agent", "recommender")
+
+	httpResp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
+	defer func() {
+		if cerr := httpResp.Body.Close(); cerr != nil {
+			c.logger.Debug("close Plex response body", slog.Any("error", cerr))
+		}
+	}()
 
-	if resp.Object == nil || resp.Object.MediaContainer == nil {
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Plex response: %w", err)
+	}
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plex library sections: HTTP %d: %s", httpResp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		MediaContainer *struct {
+			Title1    *string `json:"title1"`
+			Directory []struct {
+				Key      *string `json:"key"`
+				Title    *string `json:"title"`
+				Type     string  `json:"type"`
+				Agent    *string `json:"agent,omitempty"`
+				Scanner  *string `json:"scanner,omitempty"`
+				Language string  `json:"language"`
+				UUID     string  `json:"uuid"`
+			} `json:"Directory"`
+		} `json:"MediaContainer"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("failed to get libraries: error unmarshaling json response body: %w", err)
+	}
+	if payload.MediaContainer == nil {
 		return nil, fmt.Errorf("invalid response from Plex API")
 	}
 
-	// Log available libraries
+	libs := make([]LibrarySectionInfo, 0, len(payload.MediaContainer.Directory))
 	var libraryInfo []map[string]any
-	for _, lib := range resp.Object.MediaContainer.Directory {
+	for _, d := range payload.MediaContainer.Directory {
+		info := LibrarySectionInfo{
+			Key: d.Key, Title: d.Title, Type: d.Type,
+			Agent: d.Agent, Scanner: d.Scanner, Language: d.Language, UUID: d.UUID,
+		}
+		libs = append(libs, info)
 		libraryInfo = append(libraryInfo, map[string]any{
-			"key":      lib.Key,
-			"type":     lib.Type,
-			"title":    lib.Title,
-			"agent":    lib.Agent,
-			"scanner":  lib.Scanner,
-			"language": lib.Language,
-			"uuid":     lib.UUID,
+			"key":      info.Key,
+			"type":     info.Type,
+			"title":    info.Title,
+			"agent":    info.Agent,
+			"scanner":  info.Scanner,
+			"language": info.Language,
+			"uuid":     info.UUID,
 		})
 	}
 
 	c.logger.Debug("Got libraries from Plex",
-		slog.Int("count", len(resp.Object.MediaContainer.Directory)),
+		slog.Int("count", len(libs)),
 		slog.Any("libraries", libraryInfo),
 		slog.Any("media_container", map[string]any{
-			"title1":     resp.Object.MediaContainer.Title1,
-			"allow_sync": resp.Object.MediaContainer.AllowSync,
+			"title1": payload.MediaContainer.Title1,
 		}))
 
-	return resp, nil
+	return libs, nil
 }
 
 // PlexItem represents a media item from Plex
@@ -300,14 +362,14 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		c.logger.Error("Failed to get libraries", slog.Any("error", err))
 		return fmt.Errorf("failed to get libraries: %w", err)
 	}
-	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries.Object.MediaContainer.Directory)))
+	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries)))
 
 	// Get all content from each library
 	var allMovies []PlexItem
 	var allTVShows []PlexItem
 	var fetchErrCount int
 
-	libs := libraries.Object.MediaContainer.Directory
+	libs := libraries
 	for _, lib := range libs {
 		key := ""
 		if lib.Key != nil {
@@ -341,7 +403,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Successfully fetched TV shows", slog.Int("count", len(allTVShows)))
 
 	if len(libs) == 0 {
-		return fmt.Errorf("Plex returned no libraries; cache not modified")
+		return fmt.Errorf("plex returned no libraries; cache not modified")
 	}
 
 	if len(allMovies)+len(allTVShows) == 0 {
@@ -376,7 +438,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		if end > len(allMovies) {
 			end = len(allMovies)
 		}
-		
+
 		batch := allMovies[i:end]
 		if err := c.processMovieBatch(ctx, batch); err != nil {
 			return fmt.Errorf("failed to process movie batch %d-%d: %w", i, end, err)
@@ -389,7 +451,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		if end > len(allTVShows) {
 			end = len(allTVShows)
 		}
-		
+
 		batch := allTVShows[i:end]
 		if err := c.processTVShowBatch(ctx, batch); err != nil {
 			return fmt.Errorf("failed to process TV show batch %d-%d: %w", i, end, err)
