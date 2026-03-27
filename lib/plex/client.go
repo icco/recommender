@@ -418,8 +418,12 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
-	// Clear existing cache entries in a separate transaction
+	// Clear existing cache entries in a separate transaction.
+	// Recommendations may reference movies/tv_shows; SQLite FKs block deletes unless we clear links first.
 	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("UPDATE recommendations SET movie_id = NULL, tv_show_id = NULL").Error; err != nil {
+			return fmt.Errorf("failed to clear recommendation library links: %w", err)
+		}
 		if err := tx.Where("1=1").Delete(&models.Movie{}).Error; err != nil {
 			return fmt.Errorf("failed to clear existing movies: %w", err)
 		}

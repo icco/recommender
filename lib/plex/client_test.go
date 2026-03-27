@@ -114,4 +114,30 @@ func TestGetPlexItems_viaPlexgoListContent(t *testing.T) {
 	if items[0].Title != "Test Film" || items[0].Type != "movie" {
 		t.Fatalf("%+v", items[0])
 	}
+	if items[0].RatingKey != "42" {
+		t.Fatalf("RatingKey=%q", items[0].RatingKey)
+	}
+}
+
+func TestGetPlexItems_toleratesNumericBoolsAndNumericRatingKey(t *testing.T) {
+	t.Parallel()
+	// Newer PMS can send 0/1 for Metadata fields modeled as *bool in plexgo.
+	const payload = `{"MediaContainer":{"totalSize":1,"Metadata":[{"ratingKey":99,"key":"/library/metadata/99","title":"Numeric Key","type":"movie","addedAt":1,"search":1,"secondary":0,"year":2021,"Genre":[{"tag":"Comedy"}]}]}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+
+	c := testPlexClient(t, srv.URL)
+	items, err := c.GetPlexItems(t.Context(), "1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].RatingKey != "99" || items[0].Title != "Numeric Key" {
+		t.Fatalf("%+v", items[0])
+	}
+	if len(items[0].Genre) != 1 || items[0].Genre[0].Tag != "Comedy" {
+		t.Fatalf("genre %+v", items[0].Genre)
+	}
 }
