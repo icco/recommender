@@ -56,6 +56,11 @@ func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 		os.Exit(1)
 	}
 
+	// Plex cache upserts use unique plex_rating_key; backfill legacy rows before unique conflicts.
+	if err := backfillPlexRatingKeys(ctx, db, logger); err != nil {
+		return fmt.Errorf("backfill plex_rating_key: %w", err)
+	}
+
 	// Drop old tables
 	for _, table := range tablesToDrop {
 		if err := dropTableIfExists(ctx, db, table, logger); err != nil {
@@ -73,6 +78,23 @@ func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
 		return fmt.Errorf("failed to create additional indexes: %w", err)
 	}
 
+	return nil
+}
+
+func backfillPlexRatingKeys(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+	stmts := []string{
+		`UPDATE movies SET plex_rating_key = 'legacy-' || CAST(id AS TEXT) WHERE plex_rating_key IS NULL OR TRIM(plex_rating_key) = ''`,
+		`UPDATE tv_shows SET plex_rating_key = 'legacy-' || CAST(id AS TEXT) WHERE plex_rating_key IS NULL OR TRIM(plex_rating_key) = ''`,
+	}
+	for _, sql := range stmts {
+		res := db.WithContext(ctx).Exec(sql)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected > 0 {
+			logger.InfoContext(ctx, "Backfilled plex_rating_key on legacy cache rows", slog.Int64("rows", res.RowsAffected))
+		}
+	}
 	return nil
 }
 
