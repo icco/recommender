@@ -34,10 +34,12 @@ var (
 	indexesToDrop = []string{
 		"idx_animes_title",
 		"idx_movies_title",
+		"idx_movies_title_year", // was unique; conflicts with multiple Plex items same title+year
 		"idx_plex_animes_title",
 		"idx_plex_tv_shows_title",
 		"idx_recommendations_date",
 		"idx_tv_shows_title",
+		"idx_tvshows_title_year", // same as movies
 	}
 )
 
@@ -148,8 +150,10 @@ func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB, logger *slog.Lo
 func createAdditionalIndexes(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
 	// Additional composite indexes for common queries
 	additionalIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_movies_title_year ON movies(title, year)",
 		"CREATE INDEX IF NOT EXISTS idx_movies_rating_year ON movies(rating, year)",
 		"CREATE INDEX IF NOT EXISTS idx_movies_genre_year ON movies(genre, year)",
+		"CREATE INDEX IF NOT EXISTS idx_tvshows_title_year ON tv_shows(title, year)",
 		"CREATE INDEX IF NOT EXISTS idx_tvshows_rating_year ON tv_shows(rating, year)",
 		"CREATE INDEX IF NOT EXISTS idx_tvshows_genre_year ON tv_shows(genre, year)",
 		"CREATE INDEX IF NOT EXISTS idx_recommendations_date_type ON recommendations(date, type)",

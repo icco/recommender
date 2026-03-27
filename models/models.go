@@ -8,8 +8,8 @@ import (
 type Movie struct {
 	ID            uint   `gorm:"primarykey"`
 	PlexRatingKey string `gorm:"type:varchar(64);uniqueIndex:idx_movies_plex_rating_key"` // Plex metadata ratingKey (stable per library item)
-	Title         string `gorm:"type:varchar(500);not null;index:idx_movies_title;uniqueIndex:idx_movies_title_year"` // Title of the movie
-	Year      int     `gorm:"not null;index:idx_movies_year;uniqueIndex:idx_movies_title_year"`                    // Release year
+	Title string `gorm:"type:varchar(500);not null;index:idx_movies_title"` // Title of the movie
+	Year  int    `gorm:"not null;index:idx_movies_year"`                    // Release year (not unique: Plex can have same title+year for different items)
 	Rating    float64 `gorm:"index:idx_movies_rating"`                           // Rating (e.g., from IMDB)
 	Genre     string  `gorm:"type:varchar(255);index:idx_movies_genre"`          // Genre(s)
 	PosterURL string  `gorm:"type:varchar(1000)"`                               // URL to the poster image
@@ -27,8 +27,8 @@ type Movie struct {
 type TVShow struct {
 	ID            uint   `gorm:"primarykey"`
 	PlexRatingKey string `gorm:"type:varchar(64);uniqueIndex:idx_tvshows_plex_rating_key"` // Plex metadata ratingKey (stable per library item)
-	Title         string `gorm:"type:varchar(500);not null;index:idx_tvshows_title;uniqueIndex:idx_tvshows_title_year"` // Title of the show
-	Year      int     `gorm:"not null;index:idx_tvshows_year;uniqueIndex:idx_tvshows_title_year"`                    // Release year
+	Title string `gorm:"type:varchar(500);not null;index:idx_tvshows_title"` // Title of the show
+	Year  int    `gorm:"not null;index:idx_tvshows_year"`                    // Release year
 	Rating    float64 `gorm:"index:idx_tvshows_rating"`                           // Rating (e.g., from IMDB)
 	Genre     string  `gorm:"type:varchar(255);index:idx_tvshows_genre"`          // Genre(s)
 	PosterURL string  `gorm:"type:varchar(1000)"`                                // URL to the poster image
