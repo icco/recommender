@@ -109,12 +109,24 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger)
 	return r, nil
 }
 
+// recommendationUTCDayRange returns [start, end) for the calendar day of t in UTC.
+// Cron and HandleHome use UTC midnight for "today"; rows store that same instant in `date`.
+func recommendationUTCDayRange(t time.Time) (start, end time.Time) {
+	t = t.In(time.UTC)
+	start = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	end = start.Add(24 * time.Hour)
+	return start, end
+}
+
 // GetRecommendationsForDate retrieves all recommendations for a specific date
 func (r *Recommender) GetRecommendationsForDate(ctx context.Context, date time.Time) ([]models.Recommendation, error) {
 	var recommendations []models.Recommendation
-	// Use date() function to match only the date part, ignoring time and timezone
-	dateStr := date.Format("2006-01-02")
-	if err := r.db.WithContext(ctx).Where("date(date) = ?", dateStr).Find(&recommendations).Error; err != nil {
+	start, end := recommendationUTCDayRange(date)
+	// Half-open range matches how GORM persists time.Time and avoids SQLite date() quirks
+	// on a column named `date`.
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
+		Where(`"date" >= ? AND "date" < ?`, start, end).
+		Find(&recommendations).Error; err != nil {
 		return nil, fmt.Errorf("failed to get recommendations: %w", err)
 	}
 	return recommendations, nil
@@ -123,7 +135,11 @@ func (r *Recommender) GetRecommendationsForDate(ctx context.Context, date time.T
 // GetRecommendationDates retrieves a paginated list of distinct calendar dates that have recommendations.
 func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize int) ([]time.Time, int64, error) {
 	var total int64
-	if err := r.db.WithContext(ctx).Raw("SELECT COUNT(*) FROM (SELECT 1 FROM recommendations GROUP BY date(date))").Scan(&total).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT 1 FROM recommendations
+			GROUP BY strftime('%Y-%m-%d', "date")
+		)`).Scan(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to get total distinct dates: %w", err)
 	}
 
@@ -132,8 +148,8 @@ func (r *Recommender) GetRecommendationDates(ctx context.Context, page, pageSize
 		D string `gorm:"column:d"`
 	}
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT date(date) AS d FROM recommendations
-		GROUP BY date(date)
+		SELECT strftime('%Y-%m-%d', "date") AS d FROM recommendations
+		GROUP BY strftime('%Y-%m-%d', "date")
 		ORDER BY d DESC
 		LIMIT ? OFFSET ?`, pageSize, offset).Scan(&dateRows).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to get dates: %w", err)
