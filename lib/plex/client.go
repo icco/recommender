@@ -117,7 +117,11 @@ func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
-	defer httpResp.Body.Close()
+	defer func() {
+		if cerr := httpResp.Body.Close(); cerr != nil {
+			c.logger.Debug("close Plex response body", slog.Any("error", cerr))
+		}
+	}()
 
 	body, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -399,7 +403,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Successfully fetched TV shows", slog.Int("count", len(allTVShows)))
 
 	if len(libs) == 0 {
-		return fmt.Errorf("Plex returned no libraries; cache not modified")
+		return fmt.Errorf("plex returned no libraries; cache not modified")
 	}
 
 	if len(allMovies)+len(allTVShows) == 0 {
