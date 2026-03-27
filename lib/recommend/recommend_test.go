@@ -129,10 +129,14 @@ func TestCheckRecommendationsExist_partialDay(t *testing.T) {
 	r := testRecommender(db)
 	ctx := t.Context()
 
-	if err := db.Create(&models.Movie{Title: "LibMovie", Year: 2020, Rating: 8, Genre: "Action"}).Error; err != nil {
+	if err := db.Create(&models.Movie{
+		PlexRatingKey: "test-plex-movie-1", Title: "LibMovie", Year: 2020, Rating: 8, Genre: "Action",
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.TVShow{Title: "LibShow", Year: 2019, Rating: 8, Genre: "Drama", Seasons: 3}).Error; err != nil {
+	if err := db.Create(&models.TVShow{
+		PlexRatingKey: "test-plex-show-1", Title: "LibShow", Year: 2019, Rating: 8, Genre: "Drama", Seasons: 3,
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
 

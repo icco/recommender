@@ -17,6 +17,7 @@ import (
 	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Client represents a Plex API client that handles communication with a Plex server.
@@ -346,8 +347,89 @@ func (c *Client) GetUnwatchedTVShows(ctx context.Context, libraries []components
 	return shows, nil
 }
 
+func chunkUints(ids []uint, size int) [][]uint {
+	if len(ids) == 0 {
+		return nil
+	}
+	var out [][]uint
+	for i := 0; i < len(ids); i += size {
+		j := i + size
+		if j > len(ids) {
+			j = len(ids)
+		}
+		out = append(out, ids[i:j])
+	}
+	return out
+}
+
+// removeMoviesNotInSnapshot deletes cache movies whose Plex ratingKey is not in present (and clears recommendation FKs).
+func (c *Client) removeMoviesNotInSnapshot(ctx context.Context, present map[string]struct{}) error {
+	const chunk = 400
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []models.Movie
+		if err := tx.Select("id", "plex_rating_key").Find(&rows).Error; err != nil {
+			return err
+		}
+		var stale []uint
+		for _, m := range rows {
+			if m.PlexRatingKey == "" {
+				stale = append(stale, m.ID)
+				continue
+			}
+			if _, ok := present[m.PlexRatingKey]; !ok {
+				stale = append(stale, m.ID)
+			}
+		}
+		for _, part := range chunkUints(stale, chunk) {
+			if len(part) == 0 {
+				continue
+			}
+			if err := tx.Exec("UPDATE recommendations SET movie_id = NULL WHERE movie_id IN ?", part).Error; err != nil {
+				return fmt.Errorf("clear recommendation movie_id refs: %w", err)
+			}
+			if err := tx.Where("id IN ?", part).Delete(&models.Movie{}).Error; err != nil {
+				return fmt.Errorf("delete stale movies: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// removeTVShowsNotInSnapshot deletes cache TV rows whose Plex ratingKey is not in present (and clears recommendation FKs).
+func (c *Client) removeTVShowsNotInSnapshot(ctx context.Context, present map[string]struct{}) error {
+	const chunk = 400
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []models.TVShow
+		if err := tx.Select("id", "plex_rating_key").Find(&rows).Error; err != nil {
+			return err
+		}
+		var stale []uint
+		for _, m := range rows {
+			if m.PlexRatingKey == "" {
+				stale = append(stale, m.ID)
+				continue
+			}
+			if _, ok := present[m.PlexRatingKey]; !ok {
+				stale = append(stale, m.ID)
+			}
+		}
+		for _, part := range chunkUints(stale, chunk) {
+			if len(part) == 0 {
+				continue
+			}
+			if err := tx.Exec("UPDATE recommendations SET tv_show_id = NULL WHERE tv_show_id IN ?", part).Error; err != nil {
+				return fmt.Errorf("clear recommendation tv_show_id refs: %w", err)
+			}
+			if err := tx.Where("id IN ?", part).Delete(&models.TVShow{}).Error; err != nil {
+				return fmt.Errorf("delete stale TV shows: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
 // UpdateCache updates the Plex cache by fetching all libraries and their items.
-// It clears existing cache entries and populates them with the latest data from Plex.
+// Rows are upserted by Plex ratingKey; items no longer returned by Plex are removed.
 func (c *Client) UpdateCache(ctx context.Context) error {
 	c.logger.Info("Starting cache update")
 
@@ -390,6 +472,12 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 
 		for _, item := range items {
+			if item.RatingKey == "" {
+				c.logger.Warn("Skipping Plex item without ratingKey",
+					slog.String("title", item.Title),
+					slog.String("type", item.Type))
+				continue
+			}
 			switch item.Type {
 			case string(components.MediaTypeStringMovie):
 				allMovies = append(allMovies, item)
@@ -418,53 +506,60 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		return fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
-	// Clear existing cache entries in a separate transaction
-	if err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("1=1").Delete(&models.Movie{}).Error; err != nil {
-			return fmt.Errorf("failed to clear existing movies: %w", err)
-		}
-		if err := tx.Where("1=1").Delete(&models.TVShow{}).Error; err != nil {
-			return fmt.Errorf("failed to clear existing TV shows: %w", err)
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to clear existing cache: %w", err)
+	movieKeys := make(map[string]struct{}, len(allMovies))
+	for _, m := range allMovies {
+		movieKeys[m.RatingKey] = struct{}{}
+	}
+	tvKeys := make(map[string]struct{}, len(allTVShows))
+	for _, s := range allTVShows {
+		tvKeys[s.RatingKey] = struct{}{}
 	}
 
-	// Process movies in batches
 	const batchSize = 50
 	for i := 0; i < len(allMovies); i += batchSize {
 		end := i + batchSize
 		if end > len(allMovies) {
 			end = len(allMovies)
 		}
-
-		batch := allMovies[i:end]
-		if err := c.processMovieBatch(ctx, batch); err != nil {
-			return fmt.Errorf("failed to process movie batch %d-%d: %w", i, end, err)
+		if err := c.upsertMovieBatch(ctx, allMovies[i:end]); err != nil {
+			return fmt.Errorf("failed to upsert movie batch %d-%d: %w", i, end, err)
 		}
 	}
 
-	// Process TV shows in batches
 	for i := 0; i < len(allTVShows); i += batchSize {
 		end := i + batchSize
 		if end > len(allTVShows) {
 			end = len(allTVShows)
 		}
-
-		batch := allTVShows[i:end]
-		if err := c.processTVShowBatch(ctx, batch); err != nil {
-			return fmt.Errorf("failed to process TV show batch %d-%d: %w", i, end, err)
+		if err := c.upsertTVShowBatch(ctx, allTVShows[i:end]); err != nil {
+			return fmt.Errorf("failed to upsert TV show batch %d-%d: %w", i, end, err)
 		}
+	}
+
+	if err := c.removeMoviesNotInSnapshot(ctx, movieKeys); err != nil {
+		return fmt.Errorf("failed to prune stale movies: %w", err)
+	}
+	if err := c.removeTVShowsNotInSnapshot(ctx, tvKeys); err != nil {
+		return fmt.Errorf("failed to prune stale TV shows: %w", err)
 	}
 
 	c.logger.Info("Successfully updated cache")
 	return nil
 }
 
-// processMovieBatch processes a batch of movies in a single transaction
-func (c *Client) processMovieBatch(ctx context.Context, movies []PlexItem) error {
+// GORM names TMDbID as tm_db_id in SQLite (see schema).
+var movieUpsertColumns = []string{
+	"title", "year", "rating", "genre", "poster_url", "runtime", "tm_db_id", "view_count", "updated_at",
+}
+
+var tvUpsertColumns = []string{
+	"title", "year", "rating", "genre", "poster_url", "seasons", "tm_db_id", "view_count", "updated_at",
+}
+
+// upsertMovieBatch upserts movies by plex_rating_key in a single transaction.
+func (c *Client) upsertMovieBatch(ctx context.Context, movies []PlexItem) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
 		for _, item := range movies {
 			year := 0
 			if item.Year != nil {
@@ -498,27 +593,33 @@ func (c *Client) processMovieBatch(ctx context.Context, movies []PlexItem) error
 			posterURL := c.resolvePosterURL(thumb)
 
 			movie := models.Movie{
-				Title:     item.Title,
-				Year:      year,
-				Rating:    rating,
-				Genre:     genre,
-				PosterURL: posterURL,
-				Runtime:   runtime,
-				TMDbID:    nil,
-				ViewCount: viewCount,
+				PlexRatingKey: item.RatingKey,
+				Title:         item.Title,
+				Year:          year,
+				Rating:        rating,
+				Genre:         genre,
+				PosterURL:     posterURL,
+				Runtime:       runtime,
+				TMDbID:        nil,
+				ViewCount:     viewCount,
+				UpdatedAt:     now,
 			}
 
-			if err := tx.Create(&movie).Error; err != nil {
-				return fmt.Errorf("failed to create movie: %w", err)
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "plex_rating_key"}},
+				DoUpdates: clause.AssignmentColumns(movieUpsertColumns),
+			}).Create(&movie).Error; err != nil {
+				return fmt.Errorf("failed to upsert movie %q: %w", item.Title, err)
 			}
 		}
 		return nil
 	})
 }
 
-// processTVShowBatch processes a batch of TV shows in a single transaction
-func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error {
+// upsertTVShowBatch upserts TV shows by plex_rating_key in a single transaction.
+func (c *Client) upsertTVShowBatch(ctx context.Context, shows []PlexItem) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
 		for _, item := range shows {
 			year := 0
 			if item.Year != nil {
@@ -552,18 +653,23 @@ func (c *Client) processTVShowBatch(ctx context.Context, shows []PlexItem) error
 			posterURL := c.resolvePosterURL(thumb)
 
 			tvShow := models.TVShow{
-				Title:     item.Title,
-				Year:      year,
-				Rating:    rating,
-				Genre:     genre,
-				PosterURL: posterURL,
-				Seasons:   seasons,
-				TMDbID:    nil,
-				ViewCount: viewCount,
+				PlexRatingKey: item.RatingKey,
+				Title:         item.Title,
+				Year:          year,
+				Rating:        rating,
+				Genre:         genre,
+				PosterURL:     posterURL,
+				Seasons:       seasons,
+				TMDbID:        nil,
+				ViewCount:     viewCount,
+				UpdatedAt:     now,
 			}
 
-			if err := tx.Create(&tvShow).Error; err != nil {
-				return fmt.Errorf("failed to create TV show: %w", err)
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "plex_rating_key"}},
+				DoUpdates: clause.AssignmentColumns(tvUpsertColumns),
+			}).Create(&tvShow).Error; err != nil {
+				return fmt.Errorf("failed to upsert TV show %q: %w", item.Title, err)
 			}
 		}
 		return nil
