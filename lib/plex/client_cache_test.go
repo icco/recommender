@@ -87,8 +87,8 @@ func TestRemoveMoviesNotInSnapshot_clearsRecFK(t *testing.T) {
 	}
 	day := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	if err := db.Create(&models.Recommendation{
-		Date:    day,
-		Title:   "Rec", Type: "movie", Year: 2020, Rating: 8, Genre: "x", TMDbID: 1,
+		Date:  day,
+		Title: "Rec", Type: "movie", Year: 2020, Rating: 8, Genre: "x", TMDbID: 1,
 		MovieID: &dropID,
 	}).Error; err != nil {
 		t.Fatal(err)

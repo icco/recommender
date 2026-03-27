@@ -17,11 +17,11 @@ import (
 // It provides methods for searching movies and TV shows and retrieving their metadata.
 // Includes rate limiting, retry logic, timeouts, and circuit breaker pattern.
 type Client struct {
-	apiKey       string
-	baseURL      string
-	httpClient   *http.Client
-	logger       *slog.Logger
-	rateLimiter  *rateLimiter
+	apiKey         string
+	baseURL        string
+	httpClient     *http.Client
+	logger         *slog.Logger
+	rateLimiter    *rateLimiter
 	circuitBreaker *circuitBreaker
 }
 
@@ -282,17 +282,17 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 		if err == nil {
 			return result, nil
 		}
-		
+
 		// Log the retry
 		c.logger.Warn("Retrying TMDb search movie",
 			slog.Int("attempt", attempt+1),
 			slog.String("error", err.Error()))
-		
+
 		if attempt < 2 {
 			time.Sleep(time.Duration(attempt+1) * time.Second)
 		}
 	}
-	
+
 	// Final attempt
 	result, err := retryFunc()
 	if err != nil {
@@ -390,17 +390,17 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		if err == nil {
 			return result, nil
 		}
-		
+
 		// Log the retry
 		c.logger.Warn("Retrying TMDb search TV show",
 			slog.Int("attempt", attempt+1),
 			slog.String("error", err.Error()))
-		
+
 		if attempt < 2 {
 			time.Sleep(time.Duration(attempt+1) * time.Second)
 		}
 	}
-	
+
 	// Final attempt
 	result, err := retryFunc()
 	if err != nil {
@@ -417,4 +417,3 @@ func (c *Client) GetPosterURL(posterPath string) string {
 	}
 	return fmt.Sprintf("https://image.tmdb.org/t/p/w500%s", posterPath)
 }
-

@@ -49,20 +49,20 @@ func (k *plexRatingKey) UnmarshalJSON(b []byte) error {
 // Newer PMS can send 0/1 for fields that plexgo models as *bool (e.g. search, secondary),
 // which breaks encoding/json; we only decode fields the cache needs.
 type sectionListMetadata struct {
-	RatingKey  plexRatingKey `json:"ratingKey"`
-	Key        string        `json:"key"`
-	Title      string        `json:"title"`
-	Type       string        `json:"type"`
-	Year       *int          `json:"year,omitempty"`
-	Rating     *float32      `json:"rating,omitempty"`
-	Summary    *string       `json:"summary,omitempty"`
-	Thumb      *string       `json:"thumb,omitempty"`
-	Art        *string       `json:"art,omitempty"`
-	Duration   *int          `json:"duration,omitempty"`
-	AddedAt    int64         `json:"addedAt"`
-	UpdatedAt  *int64        `json:"updatedAt,omitempty"`
-	ViewCount  *int          `json:"viewCount,omitempty"`
-	Genre      []struct {
+	RatingKey plexRatingKey `json:"ratingKey"`
+	Key       string        `json:"key"`
+	Title     string        `json:"title"`
+	Type      string        `json:"type"`
+	Year      *int          `json:"year,omitempty"`
+	Rating    *float32      `json:"rating,omitempty"`
+	Summary   *string       `json:"summary,omitempty"`
+	Thumb     *string       `json:"thumb,omitempty"`
+	Art       *string       `json:"art,omitempty"`
+	Duration  *int          `json:"duration,omitempty"`
+	AddedAt   int64         `json:"addedAt"`
+	UpdatedAt *int64        `json:"updatedAt,omitempty"`
+	ViewCount *int          `json:"viewCount,omitempty"`
+	Genre     []struct {
 		Tag string `json:"tag"`
 	} `json:"Genre,omitempty"`
 	LeafCount  *int `json:"leafCount,omitempty"`
@@ -147,7 +147,7 @@ func (c *Client) listSectionContentAll(ctx context.Context, sectionID string) ([
 
 		var payload struct {
 			MediaContainer *struct {
-				TotalSize *int64               `json:"totalSize,omitempty"`
+				TotalSize *int64                `json:"totalSize,omitempty"`
 				Metadata  []sectionListMetadata `json:"Metadata,omitempty"`
 			} `json:"MediaContainer"`
 		}

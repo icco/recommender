@@ -25,14 +25,14 @@ func NewFileLock(logger *slog.Logger) *FileLock {
 // TryLock attempts to acquire a lock with the given key and timeout
 func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Duration) (bool, error) {
 	lockFile := fl.getLockFilePath(key)
-	
+
 	// Ensure the lock directory exists
 	if err := os.MkdirAll(filepath.Dir(lockFile), 0750); err != nil {
 		return false, fmt.Errorf("failed to create lock directory: %w", err)
 	}
-	
+
 	deadline := time.Now().Add(timeout)
-	
+
 	for time.Now().Before(deadline) {
 		// Try to create the lock file exclusively
 		// #nosec G304 - lockFile is generated through controlled logic in getLockFilePath
@@ -47,7 +47,7 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 					}
 					continue
 				}
-				
+
 				// Lock exists and is not stale, wait and retry
 				select {
 				case <-ctx.Done():
@@ -58,7 +58,7 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 			}
 			return false, fmt.Errorf("failed to create lock file: %w", err)
 		}
-		
+
 		// Write current timestamp and process info to the lock file
 		if _, err := fmt.Fprintf(file, "%d\n%d\n", time.Now().Unix(), os.Getpid()); err != nil {
 			fl.logger.Error("Failed to write to lock file", slog.String("file", lockFile), slog.Any("error", err))
@@ -71,22 +71,22 @@ func (fl *FileLock) TryLock(ctx context.Context, key string, timeout time.Durati
 			fl.logger.Error("Failed to close lock file", slog.String("file", lockFile), slog.Any("error", err))
 			return false, fmt.Errorf("failed to close lock file: %w", err)
 		}
-		
+
 		fl.logger.Debug("Acquired lock", slog.String("key", key), slog.String("file", lockFile))
 		return true, nil
 	}
-	
+
 	return false, nil // Timeout exceeded
 }
 
 // Unlock releases the lock for the given key
 func (fl *FileLock) Unlock(ctx context.Context, key string) error {
 	lockFile := fl.getLockFilePath(key)
-	
+
 	if err := os.Remove(lockFile); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove lock file: %w", err)
 	}
-	
+
 	fl.logger.Debug("Released lock", slog.String("key", key), slog.String("file", lockFile))
 	return nil
 }
@@ -110,6 +110,6 @@ func (fl *FileLock) isLockStale(lockFile string, staleDuration time.Duration) bo
 	if err != nil {
 		return true // If we can't stat it, consider it stale
 	}
-	
+
 	return time.Since(info.ModTime()) > staleDuration
 }

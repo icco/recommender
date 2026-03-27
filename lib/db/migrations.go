@@ -126,13 +126,13 @@ func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string, logge
 // enableSQLiteOptimizations enables SQLite-specific optimizations
 func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
 	optimizations := []string{
-		"PRAGMA journal_mode=WAL",         // Enable WAL mode for better concurrency
-		"PRAGMA synchronous=NORMAL",       // Faster writes while maintaining safety
-		"PRAGMA cache_size=1000",          // Increase cache size
-		"PRAGMA foreign_keys=ON",          // Enable foreign key constraints
-		"PRAGMA temp_store=MEMORY",        // Store temporary tables in memory
-		"PRAGMA mmap_size=134217728",      // Enable memory-mapped I/O (128MB)
-		"PRAGMA optimize",                 // Enable query optimization
+		"PRAGMA journal_mode=WAL",    // Enable WAL mode for better concurrency
+		"PRAGMA synchronous=NORMAL",  // Faster writes while maintaining safety
+		"PRAGMA cache_size=1000",     // Increase cache size
+		"PRAGMA foreign_keys=ON",     // Enable foreign key constraints
+		"PRAGMA temp_store=MEMORY",   // Store temporary tables in memory
+		"PRAGMA mmap_size=134217728", // Enable memory-mapped I/O (128MB)
+		"PRAGMA optimize",            // Enable query optimization
 	}
 
 	for _, pragma := range optimizations {

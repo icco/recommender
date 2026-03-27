@@ -33,15 +33,15 @@ func ValidateAndParseRecommendationResponse(responseBody string) (*Recommendatio
 	if err := json.Unmarshal([]byte(responseBody), &response); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
-	
+
 	// Validate the response structure
 	if err := validateRecommendationResponse(&response); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
-	
+
 	// Sanitize the data
 	sanitizeRecommendationResponse(&response)
-	
+
 	return &response, nil
 }
 
@@ -51,7 +51,7 @@ func validateRecommendationResponse(response *RecommendationResponse) error {
 	if len(response.Movies) == 0 && len(response.TVShows) == 0 {
 		return fmt.Errorf("no recommendations found in response")
 	}
-	
+
 	// Validate movies
 	validMovies := 0
 	for i, movie := range response.Movies {
@@ -60,7 +60,7 @@ func validateRecommendationResponse(response *RecommendationResponse) error {
 		}
 		validMovies++
 	}
-	
+
 	// Validate TV shows
 	validTVShows := 0
 	for i, tvshow := range response.TVShows {
@@ -69,7 +69,7 @@ func validateRecommendationResponse(response *RecommendationResponse) error {
 		}
 		validTVShows++
 	}
-	
+
 	// Check reasonable limits to prevent abuse
 	if validMovies > 20 {
 		return fmt.Errorf("too many movies in response: %d (max 20)", validMovies)
@@ -77,7 +77,7 @@ func validateRecommendationResponse(response *RecommendationResponse) error {
 	if validTVShows > 20 {
 		return fmt.Errorf("too many TV shows in response: %d (max 20)", validTVShows)
 	}
-	
+
 	return nil
 }
 
@@ -86,24 +86,24 @@ func validateMovieRecommendation(movie MovieRecommendation) error {
 	if strings.TrimSpace(movie.Title) == "" {
 		return fmt.Errorf("movie title is required")
 	}
-	
+
 	if movie.TMDbID <= 0 {
 		return fmt.Errorf("movie tmdb_id must be positive")
 	}
-	
+
 	if strings.TrimSpace(movie.Explanation) == "" {
 		return fmt.Errorf("movie explanation is required")
 	}
-	
+
 	// Check reasonable limits
 	if len(movie.Title) > 500 {
 		return fmt.Errorf("movie title too long: %d chars (max 500)", len(movie.Title))
 	}
-	
+
 	if len(movie.Explanation) > 2000 {
 		return fmt.Errorf("movie explanation too long: %d chars (max 2000)", len(movie.Explanation))
 	}
-	
+
 	return nil
 }
 
@@ -112,24 +112,24 @@ func validateTVShowRecommendation(tvshow TVShowRecommendation) error {
 	if strings.TrimSpace(tvshow.Title) == "" {
 		return fmt.Errorf("tvshow title is required")
 	}
-	
+
 	if tvshow.TMDbID <= 0 {
 		return fmt.Errorf("tvshow tmdb_id must be positive")
 	}
-	
+
 	if strings.TrimSpace(tvshow.Explanation) == "" {
 		return fmt.Errorf("tvshow explanation is required")
 	}
-	
+
 	// Check reasonable limits
 	if len(tvshow.Title) > 500 {
 		return fmt.Errorf("tvshow title too long: %d chars (max 500)", len(tvshow.Title))
 	}
-	
+
 	if len(tvshow.Explanation) > 2000 {
 		return fmt.Errorf("tvshow explanation too long: %d chars (max 2000)", len(tvshow.Explanation))
 	}
-	
+
 	return nil
 }
 
@@ -144,7 +144,7 @@ func sanitizeRecommendationResponse(response *RecommendationResponse) {
 		}
 	}
 	response.Movies = validMovies
-	
+
 	// Sanitize TV shows
 	validTVShows := make([]TVShowRecommendation, 0, len(response.TVShows))
 	for _, tvshow := range response.TVShows {
@@ -178,12 +178,12 @@ func sanitizeTVShowRecommendation(tvshow TVShowRecommendation) TVShowRecommendat
 func sanitizeString(s string, maxLength int) string {
 	// Trim whitespace
 	s = strings.TrimSpace(s)
-	
+
 	// Enforce length limit
 	if len(s) > maxLength {
 		s = s[:maxLength]
 	}
-	
+
 	// Remove any control characters
 	s = strings.Map(func(r rune) rune {
 		if r < 32 && r != 9 && r != 10 && r != 13 { // Allow tab, newline, carriage return
@@ -191,6 +191,6 @@ func sanitizeString(s string, maxLength int) string {
 		}
 		return r
 	}, s)
-	
+
 	return s
 }
