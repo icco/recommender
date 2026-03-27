@@ -74,7 +74,7 @@ func TestGetRecommendationDates_distinctDaysAndPagination(t *testing.T) {
 		t.Fatalf("len(dates) = %d, want 2", len(dates))
 	}
 	// Newest first
-	if !dates[0].Truncate(24*time.Hour).Equal(day2.Truncate(24 * time.Hour)) {
+	if !dates[0].Truncate(24 * time.Hour).Equal(day2.Truncate(24 * time.Hour)) {
 		t.Fatalf("first date = %v, want %v", dates[0], day2)
 	}
 
@@ -90,9 +90,37 @@ func TestGetRecommendationDates_distinctDaysAndPagination(t *testing.T) {
 	}
 }
 
+func TestGetRecommendationsForDate_sameUTCCalendarDay(t *testing.T) {
+	db := testDB(t)
+	r := testRecommender(db)
+	ctx := t.Context()
+
+	stored := time.Date(2026, 3, 27, 0, 0, 0, 0, time.UTC)
+	if err := db.Create(&models.Recommendation{
+		Date: stored, Title: "Abbott Elementary", Type: "tvshow", Year: 2021,
+		Rating: 0, Genre: "Comedy", TMDbID: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Same calendar day in UTC but not midnight — should still match stored rows.
+	queryDay := time.Date(2026, 3, 27, 18, 0, 0, 0, time.UTC)
+	recs, err := r.GetRecommendationsForDate(ctx, queryDay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || recs[0].Title != "Abbott Elementary" {
+		t.Fatalf("got %+v", recs)
+	}
+}
+
 func distinctDateCount(ctx context.Context, db *gorm.DB) (int64, error) {
 	var n int64
-	err := db.WithContext(ctx).Raw("SELECT COUNT(*) FROM (SELECT 1 FROM recommendations GROUP BY date(date))").Scan(&n).Error
+	err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT 1 FROM recommendations
+			GROUP BY strftime('%Y-%m-%d', "date")
+		)`).Scan(&n).Error
 	return n, err
 }
 
