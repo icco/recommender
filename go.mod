@@ -3,7 +3,7 @@ module github.com/icco/recommender
 go 1.25.0
 
 require (
-	github.com/LukeHagar/plexgo v0.28.4
+	github.com/LukeHagar/plexgo v0.28.5
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/sashabaranov/go-openai v1.41.2
 	gorm.io/driver/sqlite v1.6.0
