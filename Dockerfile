@@ -18,7 +18,7 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -o recommender
 
 # Use a minimal alpine image for the final stage
-FROM alpine:3.21
+FROM alpine:3.22
 
 WORKDIR /app
 
