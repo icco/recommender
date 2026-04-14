@@ -18,12 +18,14 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -o recommender
 
 # Use a minimal alpine image for the final stage
-FROM alpine:latest
+FROM alpine:3.21
 
 WORKDIR /app
 
-# Install SQLite and create non-root user
-RUN apk add --no-cache gcc musl-dev git sqlite
+# Only install runtime dependencies.
+# gcc, musl-dev, and git are compile-time tools — they are NOT needed
+# to run an already-compiled binary and should not ship in production.
+RUN apk add --no-cache ca-certificates sqlite-libs
 RUN adduser -D -u 1000 appuser && \
   mkdir -p /data && \
   chown -R appuser:appuser /data && \
@@ -32,7 +34,7 @@ RUN adduser -D -u 1000 appuser && \
   chown appuser:appuser /data/recommender.db && \
   chmod 777 /data/recommender.db
 
-# Copy the binary and templates from builder
+# Copy the binary from builder
 COPY --from=builder /app/recommender .
 
 # Set environment variables
