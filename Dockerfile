@@ -21,7 +21,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -o recommender
 FROM alpine:3.23
 
 LABEL org.opencontainers.image.source=https://github.com/icco/recommender
-LABEL org.opencontainers.image.description="ghcr.io/icco/recommender container image"
+LABEL org.opencontainers.image.description="Daily movie and TV recommendations from a Plex library, enriched with TMDb metadata and chosen by OpenAI; a Go service with SQLite storage."
 
 WORKDIR /app
 
