@@ -3,6 +3,7 @@ package tmdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,9 +15,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// Client represents a TMDb API client that handles communication with The Movie Database API.
-// It provides methods for searching movies and TV shows and retrieving their metadata.
-// Includes rate limiting, retry logic, timeouts, and circuit breaker pattern.
+// Client is a TMDb API client with rate limiting, retries, timeouts, and a
+// circuit breaker. The api key is attached to outbound requests inside do and
+// is never copied into errors or logs.
 type Client struct {
 	apiKey         string
 	baseURL        string
@@ -89,9 +90,8 @@ type TVSearchResult struct {
 	} `json:"results"`
 }
 
-// NewClient creates a new TMDb client with the provided API key.
-// It initializes the HTTP client with timeouts and sets up rate limiting and circuit breaker.
-// Loggers are pulled from per-call ctx via gutil/logging.
+// NewClient returns a configured TMDb client. Loggers are taken from the
+// per-call ctx via gutil/logging.
 func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:  apiKey,
@@ -193,46 +193,60 @@ func (cb *circuitBreaker) recordFailure() {
 	}
 }
 
-// SearchMovie searches for movies on TMDb using the provided title and year.
-// It returns a list of matching movies with their metadata.
-// Includes rate limiting, retry logic, and circuit breaker pattern.
+// do builds an http.Request from safeURL (which has no api key) and attaches
+// the api key as a query parameter just before sending. The api key never
+// leaks into errors or logs because callers only ever see safeURL plus the
+// generic transport error.
+func (c *Client) do(ctx context.Context, safeURL string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", safeURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	q := req.URL.Query()
+	q.Set("api_key", c.apiKey)
+	req.URL.RawQuery = q.Encode()
+
+	req.Header.Set("User-Agent", "recommender/1.0")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		// Discard err.Error() because Go's net/http embeds the request URL
+		// (which carries the api key) in the error message.
+		return nil, errors.New("transport error")
+	}
+	return resp, nil
+}
+
+// SearchMovie searches TMDb for movies by title and year. Includes rate
+// limiting, retry, and circuit breaker behavior.
 func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*SearchResult, error) {
 	l := logging.FromContext(ctx)
-	url := fmt.Sprintf("%s/search/movie?api_key=%s&query=%s&year=%d",
-		c.baseURL, c.apiKey, strings.ReplaceAll(title, " ", "+"), year)
+	// safeURL never includes the api key so it is safe to embed in errors and logs.
+	safeURL := fmt.Sprintf("%s/search/movie?query=%s&year=%d",
+		c.baseURL, strings.ReplaceAll(title, " ", "+"), year)
 
 	retryFunc := func() (*SearchResult, error) {
-		// Check circuit breaker
 		if !c.circuitBreaker.canExecute() {
 			return nil, &APIError{
 				StatusCode: http.StatusServiceUnavailable,
 				Message:    "Circuit breaker is open",
-				URL:        url,
+				URL:        safeURL,
 				Method:     "GET",
 			}
 		}
 
-		// Wait for rate limit
 		if err := c.rateLimiter.wait(ctx); err != nil {
 			return nil, fmt.Errorf("rate limit wait cancelled: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		// Add headers for better API interaction
-		req.Header.Set("User-Agent", "recommender/1.0")
-		req.Header.Set("Accept", "application/json")
-
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.do(ctx, safeURL)
 		if err != nil {
 			c.circuitBreaker.recordFailure()
 			return nil, &APIError{
 				StatusCode: 0,
-				Message:    err.Error(),
-				URL:        url,
+				Message:    "transport error",
+				URL:        safeURL,
 				Method:     "GET",
 			}
 		}
@@ -247,7 +261,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 			apiErr := &APIError{
 				StatusCode: resp.StatusCode,
 				Message:    string(body),
-				URL:        url,
+				URL:        safeURL,
 				Method:     "GET",
 			}
 
@@ -290,7 +304,6 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 		}
 	}
 
-	// Final attempt
 	result, err := retryFunc()
 	if err != nil {
 		return nil, err
@@ -298,46 +311,35 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 	return result, nil
 }
 
-// SearchTVShow searches for TV shows on TMDb using the provided title and year.
-// It returns a list of matching TV shows with their metadata.
-// Includes rate limiting, retry logic, and circuit breaker pattern.
+// SearchTVShow searches TMDb for TV shows by title and year. Includes rate
+// limiting, retry, and circuit breaker behavior.
 func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVSearchResult, error) {
 	l := logging.FromContext(ctx)
-	url := fmt.Sprintf("%s/search/tv?api_key=%s&query=%s&first_air_date_year=%d",
-		c.baseURL, c.apiKey, strings.ReplaceAll(title, " ", "+"), year)
+	// safeURL never includes the api key so it is safe to embed in errors and logs.
+	safeURL := fmt.Sprintf("%s/search/tv?query=%s&first_air_date_year=%d",
+		c.baseURL, strings.ReplaceAll(title, " ", "+"), year)
 
 	retryFunc := func() (*TVSearchResult, error) {
-		// Check circuit breaker
 		if !c.circuitBreaker.canExecute() {
 			return nil, &APIError{
 				StatusCode: http.StatusServiceUnavailable,
 				Message:    "Circuit breaker is open",
-				URL:        url,
+				URL:        safeURL,
 				Method:     "GET",
 			}
 		}
 
-		// Wait for rate limit
 		if err := c.rateLimiter.wait(ctx); err != nil {
 			return nil, fmt.Errorf("rate limit wait cancelled: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		// Add headers for better API interaction
-		req.Header.Set("User-Agent", "recommender/1.0")
-		req.Header.Set("Accept", "application/json")
-
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.do(ctx, safeURL)
 		if err != nil {
 			c.circuitBreaker.recordFailure()
 			return nil, &APIError{
 				StatusCode: 0,
-				Message:    err.Error(),
-				URL:        url,
+				Message:    "transport error",
+				URL:        safeURL,
 				Method:     "GET",
 			}
 		}
@@ -352,7 +354,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 			apiErr := &APIError{
 				StatusCode: resp.StatusCode,
 				Message:    string(body),
-				URL:        url,
+				URL:        safeURL,
 				Method:     "GET",
 			}
 
@@ -395,7 +397,6 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		}
 	}
 
-	// Final attempt
 	result, err := retryFunc()
 	if err != nil {
 		return nil, err

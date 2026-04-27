@@ -40,9 +40,8 @@ type StatsData struct {
 	LastCacheUpdate    time.Time
 }
 
-// Recommender handles the generation and retrieval of content recommendations.
-// It uses OpenAI to generate recommendations based on unwatched content from Plex
-// and metadata from TMDb.
+// Recommender produces and serves daily Plex/TMDb recommendations using
+// OpenAI. Loggers are taken from per-call ctx via gutil/logging.
 type Recommender struct {
 	db     *gorm.DB
 	plex   *plex.Client

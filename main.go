@@ -1,6 +1,5 @@
-// Package main implements a content recommendation service that integrates with Plex and TMDb.
-// It provides a web interface for viewing recommendations and handles background tasks
-// for generating new recommendations and updating content metadata.
+// Package main implements a Plex/TMDb-powered recommendation service with a
+// web UI and cron-driven background jobs.
 package main
 
 import (
@@ -25,6 +24,13 @@ import (
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/static"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -34,14 +40,43 @@ const service = "recommender"
 
 var log = logging.Must(logging.NewLogger(service))
 
-// main is the entry point of the application.
-// It sets up the environment, initializes clients and services, and starts the HTTP server.
+// routeTag stamps the chi route pattern onto otelhttp metric labels so HTTP
+// metrics carry low-cardinality http.route values.
+func routeTag(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		labeler, ok := otelhttp.LabelerFromContext(r.Context())
+		if !ok {
+			return
+		}
+		if pattern := chi.RouteContext(r.Context()).RoutePattern(); pattern != "" {
+			labeler.Add(semconv.HTTPRoute(pattern))
+		}
+	})
+}
+
+// main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
 	ctx, stop := signal.NotifyContext(
 		logging.NewContext(context.Background(), log),
 		os.Interrupt, syscall.SIGTERM,
 	)
 	defer stop()
+
+	registry := prometheus.NewRegistry()
+	exporter, err := otelprom.New(otelprom.WithRegisterer(registry))
+	if err != nil {
+		log.Fatalw("otel prometheus exporter", zap.Error(err))
+	}
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	otel.SetMeterProvider(mp)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := mp.Shutdown(shutdownCtx); err != nil {
+			log.Warnw("meter provider shutdown", zap.Error(err))
+		}
+	}()
 
 	plexURL := os.Getenv("PLEX_URL")
 	if plexURL == "" {
@@ -92,6 +127,7 @@ func main() {
 	r := chi.NewRouter()
 
 	r.Use(logging.Middleware(log.Desugar()))
+	r.Use(routeTag)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(static.Files))))
@@ -103,6 +139,7 @@ func main() {
 	r.Get("/cron/cache", handlers.HandleCache(plexClient, fileLock))
 	r.Get("/stats", handlers.HandleStats(recommender))
 	r.Get("/health", health.Check(gormDB))
+	r.Method(http.MethodGet, "/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
 	portStr := os.Getenv("PORT")
 	if portStr == "" {
@@ -116,12 +153,19 @@ func main() {
 		log.Fatalw("PORT must be between 1 and 65535", "port", portNum)
 	}
 
+	handler := otelhttp.NewHandler(r, service,
+		otelhttp.WithFilter(func(req *http.Request) bool {
+			return req.URL.Path != "/metrics"
+		}),
+	)
+
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", portNum),
-		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              fmt.Sprintf(":%d", portNum),
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
