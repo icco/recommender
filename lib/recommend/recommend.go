@@ -9,16 +9,17 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
-	"log/slog"
-
+	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend/prompts"
 	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	openai "github.com/sashabaranov/go-openai"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -46,9 +47,10 @@ type Recommender struct {
 	db     *gorm.DB
 	plex   *plex.Client
 	tmdb   *tmdb.Client
-	logger *slog.Logger
 	openai *openai.Client
-	cache  map[string]*CacheEntry
+
+	cacheMu sync.Mutex
+	cache   map[string]*CacheEntry
 }
 
 // CacheEntry represents a cached recommendation with metadata
@@ -75,10 +77,10 @@ type UnwatchedContent struct {
 
 // New creates a new Recommender instance with the provided dependencies.
 // It initializes the OpenAI client with proper timeout and retry configuration.
-func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger) (*Recommender, error) {
-	// Create HTTP client with timeout for OpenAI
+// Loggers are sourced from per-call ctx via gutil/logging.
+func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error) {
 	httpClient := &http.Client{
-		Timeout: 120 * time.Second, // Longer timeout for OpenAI API
+		Timeout: 120 * time.Second,
 		Transport: &http.Transport{
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
@@ -88,7 +90,6 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger)
 		},
 	}
 
-	// Create OpenAI client with configuration
 	config := openai.DefaultConfig(os.Getenv("OPENAI_API_KEY"))
 	config.HTTPClient = httpClient
 
@@ -98,13 +99,13 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client, logger *slog.Logger)
 		db:     db,
 		plex:   plex,
 		tmdb:   tmdb,
-		logger: logger,
 		openai: openaiClient,
 		cache:  make(map[string]*CacheEntry),
 	}
 
-	// Start cache cleanup goroutine
-	go r.startCacheCleanup()
+	// Cleanup runs in the background; we want it to inherit a logger we control,
+	// so callers should provide ctx via StartCacheCleanup if structured background logging is needed.
+	go r.startCacheCleanup(context.Background())
 
 	return r, nil
 }
@@ -293,15 +294,15 @@ func (r *Recommender) limitPreviousRecommendations(recs []models.Recommendation)
 // It uses OpenAI to analyze unwatched content and previous recommendations,
 // then stores the generated recommendations in the database.
 func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Time) error {
-	r.logger.Debug("Starting recommendation generation")
+	l := logging.FromContext(ctx)
+	l.Debugw("Starting recommendation generation")
 
-	// Check if recommendations already exist
 	exists, err := r.CheckRecommendationsExist(ctx, date)
 	if err != nil {
 		return fmt.Errorf("failed to check existing recommendations: %w", err)
 	}
 	if exists {
-		r.logger.Info("Recommendations already exist for date", slog.Time("date", date))
+		l.Infow("Recommendations already exist for date", "date", date)
 		return nil
 	}
 
@@ -309,13 +310,13 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	if err := r.db.WithContext(ctx).Find(&cachedMovies).Error; err != nil {
 		return fmt.Errorf("failed to get cached movies: %w", err)
 	}
-	r.logger.Debug("Found cached movies", slog.Int("count", len(cachedMovies)))
+	l.Debugw("Found cached movies", "count", len(cachedMovies))
 
 	var cachedTVShows []models.TVShow
 	if err := r.db.WithContext(ctx).Find(&cachedTVShows).Error; err != nil {
 		return fmt.Errorf("failed to get cached TV shows: %w", err)
 	}
-	r.logger.Debug("Found cached TV shows", slog.Int("count", len(cachedTVShows)))
+	l.Debugw("Found cached TV shows", "count", len(cachedTVShows))
 
 	if len(cachedMovies) == 0 && len(cachedTVShows) == 0 {
 		return fmt.Errorf("plex movie/TV cache is empty; run /cron/cache after Plex is reachable (skipping OpenAI)")
@@ -342,19 +343,17 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
-				// Update the movie's TMDbID if it's not set
 				if movie.TMDbID == nil {
 					newTMDbID := result.Results[0].ID
 					movie.TMDbID = &newTMDbID
 					if err := r.db.WithContext(ctx).Save(&movie).Error; err != nil {
-						r.logger.Error("Failed to update movie TMDbID", "error", err, "title", movie.Title)
+						l.Errorw("Failed to update movie TMDbID", "title", movie.Title, zap.Error(err))
 					}
 				}
 			} else if err != nil {
-				r.logger.Error("Failed to search TMDb for movie", "error", err, "title", movie.Title)
+				l.Errorw("Failed to search TMDb for movie", "title", movie.Title, zap.Error(err))
 			}
 		} else {
-			// Try to fetch TMDb data if we don't have it
 			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
@@ -362,10 +361,10 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				newTMDbID := result.Results[0].ID
 				movie.TMDbID = &newTMDbID
 				if err := r.db.WithContext(ctx).Save(&movie).Error; err != nil {
-					r.logger.Error("Failed to update movie TMDbID", "error", err, "title", movie.Title)
+					l.Errorw("Failed to update movie TMDbID", "title", movie.Title, zap.Error(err))
 				}
 			} else if err != nil {
-				r.logger.Error("Failed to search TMDb for movie", "error", err, "title", movie.Title)
+				l.Errorw("Failed to search TMDb for movie", "title", movie.Title, zap.Error(err))
 			}
 		}
 
@@ -395,19 +394,17 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
-				// Update the TV show's TMDbID if it's not set
 				if tvShow.TMDbID == nil {
 					newTMDbID := result.Results[0].ID
 					tvShow.TMDbID = &newTMDbID
 					if err := r.db.WithContext(ctx).Save(&tvShow).Error; err != nil {
-						r.logger.Error("Failed to update TV show TMDbID", "error", err, "title", tvShow.Title)
+						l.Errorw("Failed to update TV show TMDbID", "title", tvShow.Title, zap.Error(err))
 					}
 				}
 			} else if err != nil {
-				r.logger.Error("Failed to search TMDb for TV show", "error", err, "title", tvShow.Title)
+				l.Errorw("Failed to search TMDb for TV show", "title", tvShow.Title, zap.Error(err))
 			}
 		} else {
-			// Try to fetch TMDb data if we don't have it
 			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
 			if err == nil && len(result.Results) > 0 {
 				posterURL = r.tmdb.GetPosterURL(result.Results[0].PosterPath)
@@ -415,10 +412,10 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 				newTMDbID := result.Results[0].ID
 				tvShow.TMDbID = &newTMDbID
 				if err := r.db.WithContext(ctx).Save(&tvShow).Error; err != nil {
-					r.logger.Error("Failed to update TV show TMDbID", "error", err, "title", tvShow.Title)
+					l.Errorw("Failed to update TV show TMDbID", "title", tvShow.Title, zap.Error(err))
 				}
 			} else if err != nil {
-				r.logger.Error("Failed to search TMDb for TV show", "error", err, "title", tvShow.Title)
+				l.Errorw("Failed to search TMDb for TV show", "title", tvShow.Title, zap.Error(err))
 			}
 		}
 
@@ -444,12 +441,11 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		PreviousRecommendations: r.formatContent(prevRecs),
 	}
 
-	// Log available content for debugging
-	r.logger.Debug("Available content for recommendations",
-		slog.Int("total_items", len(allContent)),
-		slog.Int("cached_movies", len(cachedMovies)),
-		slog.Int("cached_tv_shows", len(cachedTVShows)),
-		slog.String("content", content.Content))
+	l.Debugw("Available content for recommendations",
+		"total_items", len(allContent),
+		"cached_movies", len(cachedMovies),
+		"cached_tv_shows", len(cachedTVShows),
+		"content", content.Content)
 
 	// Load prompt templates
 	systemPrompt, err := r.loadPromptTemplate("system_openai.txt")
@@ -560,12 +556,11 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	targetMovieCount := 4  // Standard target
 	targetTVShowCount := 3 // Standard target
 
-	// If no TV shows are available, increase movie recommendations to compensate
 	if availableTVShows == 0 && availableMovies > 0 {
-		targetMovieCount = 7 // Increase to 7 movies when no TV shows available
+		targetMovieCount = 7
 		targetTVShowCount = 0
-		r.logger.Info("No TV shows available, generating movie-only recommendations",
-			slog.Int("target_movies", targetMovieCount))
+		l.Infow("No TV shows available, generating movie-only recommendations",
+			"target_movies", targetMovieCount)
 	}
 
 	// Process movies according to requirements
@@ -603,18 +598,16 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		}
 	}
 
-	// Log the counts for debugging
-	r.logger.Debug("Recommendation counts",
-		slog.Int("movies", typeCounts["movie"]),
-		slog.Int("tvshows", typeCounts["tvshow"]),
-		slog.Bool("funny_movie", movieTypes["funny"]),
-		slog.Bool("action_drama_movie", movieTypes["action_drama"]),
-		slog.Bool("rewatched_movie", movieTypes["rewatched"]),
-		slog.Bool("additional_movie", movieTypes["additional"]))
+	l.Debugw("Recommendation counts",
+		"movies", typeCounts["movie"],
+		"tvshows", typeCounts["tvshow"],
+		"funny_movie", movieTypes["funny"],
+		"action_drama_movie", movieTypes["action_drama"],
+		"rewatched_movie", movieTypes["rewatched"],
+		"additional_movie", movieTypes["additional"])
 
-	// If we have no new recommendations to store, return an error
 	if len(filteredRecommendations) == 0 {
-		r.logger.Warn("No new recommendations to store")
+		l.Warnw("No new recommendations to store")
 		return fmt.Errorf("no new recommendations to store")
 	}
 
@@ -626,13 +619,12 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		}
 
 		for _, rec := range filteredRecommendations {
-			// Check for duplicate title on the same date
 			var duplicate models.Recommendation
 			err := tx.Where("title = ? AND date = ?", rec.Title, rec.Date).First(&duplicate).Error
 			if err == nil {
-				r.logger.Warn("Skipping duplicate recommendation",
-					slog.String("title", rec.Title),
-					slog.Time("date", rec.Date))
+				l.Warnw("Skipping duplicate recommendation",
+					"title", rec.Title,
+					"date", rec.Date)
 				continue
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("failed to check for duplicate recommendation: %w", err)
@@ -647,10 +639,10 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 		return fmt.Errorf("failed to save recommendations in transaction: %w", err)
 	}
 
-	r.logger.Debug("Successfully stored recommendations",
-		slog.Int("total_count", len(filteredRecommendations)),
-		slog.Int("movies", typeCounts["movie"]),
-		slog.Int("tvshows", typeCounts["tvshow"]))
+	l.Debugw("Successfully stored recommendations",
+		"total_count", len(filteredRecommendations),
+		"movies", typeCounts["movie"],
+		"tvshows", typeCounts["tvshow"])
 
 	return nil
 }
@@ -756,21 +748,30 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	return &stats, nil
 }
 
-// startCacheCleanup starts a goroutine that periodically cleans up expired cache entries
-func (r *Recommender) startCacheCleanup() {
-	ticker := time.NewTicker(30 * time.Minute) // Clean every 30 minutes
+// startCacheCleanup starts a goroutine that periodically cleans up expired cache entries.
+func (r *Recommender) startCacheCleanup(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		r.cleanupCache()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.cleanupCache(ctx)
+		}
 	}
 }
 
-// cleanupCache removes expired entries from the cache
-func (r *Recommender) cleanupCache() {
+// cleanupCache removes expired entries from the cache.
+func (r *Recommender) cleanupCache(ctx context.Context) {
+	l := logging.FromContext(ctx)
 	now := time.Now()
-	var expiredKeys []string
 
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+
+	var expiredKeys []string
 	for key, entry := range r.cache {
 		if now.Sub(entry.Timestamp) > entry.TTL {
 			expiredKeys = append(expiredKeys, key)
@@ -782,14 +783,16 @@ func (r *Recommender) cleanupCache() {
 	}
 
 	if len(expiredKeys) > 0 {
-		r.logger.Debug("Cleaned up expired cache entries",
-			slog.Int("expired_count", len(expiredKeys)),
-			slog.Int("remaining_count", len(r.cache)))
+		l.Debugw("Cleaned up expired cache entries",
+			"expired_count", len(expiredKeys),
+			"remaining_count", len(r.cache))
 	}
 }
 
-// SetCache adds or updates a cache entry
+// SetCache adds or updates a cache entry.
 func (r *Recommender) SetCache(key string, recommendation *models.Recommendation, ttl time.Duration) {
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
 	r.cache[key] = &CacheEntry{
 		Recommendation: recommendation,
 		Timestamp:      time.Now(),
@@ -797,14 +800,16 @@ func (r *Recommender) SetCache(key string, recommendation *models.Recommendation
 	}
 }
 
-// GetCache retrieves a cache entry if it exists and is not expired
+// GetCache retrieves a cache entry if it exists and is not expired.
 func (r *Recommender) GetCache(key string) (*models.Recommendation, bool) {
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+
 	entry, exists := r.cache[key]
 	if !exists {
 		return nil, false
 	}
 
-	// Check if entry is expired
 	if time.Since(entry.Timestamp) > entry.TTL {
 		delete(r.cache, key)
 		return nil, false
@@ -813,14 +818,18 @@ func (r *Recommender) GetCache(key string) (*models.Recommendation, bool) {
 	return entry.Recommendation, true
 }
 
-// ClearCache removes all cache entries
-func (r *Recommender) ClearCache() {
+// ClearCache removes all cache entries.
+func (r *Recommender) ClearCache(ctx context.Context) {
+	r.cacheMu.Lock()
 	r.cache = make(map[string]*CacheEntry)
-	r.logger.Debug("Cache cleared")
+	r.cacheMu.Unlock()
+
+	logging.FromContext(ctx).Debugw("Cache cleared")
 }
 
-// retryOpenAIRequest implements retry logic for OpenAI API calls with exponential backoff
+// retryOpenAIRequest implements retry logic for OpenAI API calls with exponential backoff.
 func (r *Recommender) retryOpenAIRequest(ctx context.Context, req openai.ChatCompletionRequest) (openai.ChatCompletionResponse, error) {
+	l := logging.FromContext(ctx)
 	var resp openai.ChatCompletionResponse
 	maxRetries := 3
 	baseDelay := 2 * time.Second
@@ -832,31 +841,27 @@ func (r *Recommender) retryOpenAIRequest(ctx context.Context, req openai.ChatCom
 			return result, nil
 		}
 
-		// If this is the last attempt, return the error
 		if attempt == maxRetries {
-			r.logger.Error("OpenAI API max retries exceeded",
-				slog.Int("attempts", attempt+1),
-				slog.String("error", err.Error()))
+			l.Errorw("OpenAI API max retries exceeded",
+				"attempts", attempt+1,
+				zap.Error(err))
 			return resp, err
 		}
 
-		// Calculate delay with exponential backoff
 		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attempt)))
 		if delay > maxDelay {
 			delay = maxDelay
 		}
 
-		r.logger.Warn("Retrying OpenAI API request",
-			slog.Int("attempt", attempt+1),
-			slog.Duration("delay", delay),
-			slog.String("error", err.Error()))
+		l.Warnw("Retrying OpenAI API request",
+			"attempt", attempt+1,
+			"delay", delay,
+			zap.Error(err))
 
-		// Wait before retrying
 		select {
 		case <-ctx.Done():
 			return resp, ctx.Err()
 		case <-time.After(delay):
-			// Continue to next attempt
 		}
 	}
 

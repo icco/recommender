@@ -1,8 +1,6 @@
 package plex
 
 import (
-	"io"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -29,7 +27,6 @@ func TestUpsertMovieBatch_updatesSameRow(t *testing.T) {
 	db := testPlexDB(t)
 	c := &Client{
 		plexURL: "http://localhost:32400",
-		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		db:      db,
 	}
 	ctx := t.Context()
@@ -70,7 +67,6 @@ func TestRemoveMoviesNotInSnapshot_clearsRecFK(t *testing.T) {
 	db := testPlexDB(t)
 	c := &Client{
 		plexURL: "http://localhost:32400",
-		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		db:      db,
 	}
 	ctx := t.Context()

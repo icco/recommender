@@ -5,18 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/handlers/templates"
 	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
 	"github.com/icco/recommender/lib/sanitize"
 	"github.com/icco/recommender/lib/validation"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -27,20 +28,18 @@ type errorData struct {
 // writeError writes an error response in the appropriate format (JSON or HTML)
 // based on the request's Accept header or Content-Type preference.
 func writeError(w http.ResponseWriter, r *http.Request, message string, status int) {
-	// Check if the request prefers JSON
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		if err := json.NewEncoder(w).Encode(map[string]string{
 			"error": message,
 		}); err != nil {
-			slog.Error("Failed to encode JSON error response", slog.Any("error", err))
+			logging.FromContext(r.Context()).Errorw("Failed to encode JSON error response", zap.Error(err))
 		}
 		return
 	}
 
-	// Default to HTML error response
-	renderError(w, message, status)
+	renderError(r.Context(), w, message, status)
 }
 
 // wantsJSON checks if the request accepts JSON responses
@@ -67,43 +66,39 @@ func wantsJSON(r *http.Request) bool {
 }
 
 // renderError renders an error page using the error template.
-// It takes a response writer, error message, and HTTP status code.
-func renderError(w http.ResponseWriter, message string, status int) {
+func renderError(ctx context.Context, w http.ResponseWriter, message string, status int) {
+	l := logging.FromContext(ctx)
 	tmpl, err := templates.ParseTemplates("base.html", "error.html")
 	if err != nil {
-		slog.Error("Failed to parse error template", slog.Any("error", err))
+		l.Errorw("Failed to parse error template", zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(status)
 	if err := tmpl.ExecuteTemplate(w, "base.html", errorData{Message: message}); err != nil {
-		slog.Error("Failed to execute error template", slog.Any("error", err))
+		l.Errorw("Failed to execute error template", zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
 }
 
 // renderTemplate renders a template with the given data and handles errors.
-// It takes a response writer, template files, and data to render.
 // Returns true if rendering was successful, false otherwise.
-func renderTemplate(w http.ResponseWriter, ctx context.Context, files []string, data interface{}) bool {
+func renderTemplate(ctx context.Context, w http.ResponseWriter, files []string, data interface{}) bool {
+	l := logging.FromContext(ctx)
 	tmpl, err := templates.ParseTemplates(files...)
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to parse template", slog.Any("error", err))
-		renderError(w, "Something went wrong while loading the page.", http.StatusInternalServerError)
+		l.Errorw("Failed to parse template", zap.Error(err))
+		renderError(ctx, w, "Something went wrong while loading the page.", http.StatusInternalServerError)
 		return false
 	}
 
-	// Set content type for HTML responses
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Execute the base template, which will include the content template
 	if err := tmpl.ExecuteTemplate(w, "base.html", data); err != nil {
-		slog.ErrorContext(ctx, "Failed to execute template", slog.Any("error", err))
-		// Only attempt to write error if headers haven't been sent yet
-		// Check if response has already been started by looking for a written status
+		l.Errorw("Failed to execute template", zap.Error(err))
 		if !isResponseStarted(w) {
-			renderError(w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
+			renderError(ctx, w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
 		}
 		return false
 	}
@@ -138,13 +133,13 @@ func HandleHome(r *recommend.Recommender) http.HandlerFunc {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				writeError(w, req, "No recommendations available for today. Please check back later or visit the Past Recommendations page.", http.StatusNotFound)
 			} else {
-				slog.ErrorContext(ctx, "Failed to get today's recommendations", slog.Any("error", err))
+				logging.FromContext(ctx).Errorw("Failed to get today's recommendations", zap.Error(err))
 				writeError(w, req, "We couldn't find today's recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
 		}
 
-		if !renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations) {
+		if !renderTemplate(ctx, w, []string{"base.html", "home.html"}, recommendations) {
 			return
 		}
 	}
@@ -157,45 +152,44 @@ func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 		defer cancel()
+		l := logging.FromContext(ctx)
 
 		date := chi.URLParam(req, "date")
 		if date == "" {
-			slog.ErrorContext(ctx, "Missing date parameter")
+			l.Errorw("Missing date parameter")
 			writeError(w, req, "date parameter is required", http.StatusBadRequest)
 			return
 		}
 
-		// Validate date format
 		if err := validation.ValidateDate(date); err != nil {
-			slog.ErrorContext(ctx, "Invalid date format", slog.String("date", date), slog.Any("error", err))
+			l.Errorw("Invalid date format", "date", date, zap.Error(err))
 			writeError(w, req, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		parsedDate, err := time.Parse("2006-01-02", date)
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to parse date", slog.String("date", date), slog.Any("error", err))
+			l.Errorw("Failed to parse date", "date", date, zap.Error(err))
 			writeError(w, req, fmt.Sprintf("invalid date format: %v", err), http.StatusBadRequest)
 			return
 		}
-		// Convert to UTC to match database timezone
 		parsedDate = parsedDate.UTC()
 
 		recommendations, err := r.GetRecommendationsForDate(ctx, parsedDate)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				slog.InfoContext(ctx, "No recommendations found for date", slog.String("date", date))
+				l.Infow("No recommendations found for date", "date", date)
 				writeError(w, req, "We couldn't find recommendations for this date.", http.StatusNotFound)
 			} else {
-				slog.ErrorContext(ctx, "Database error while fetching recommendations",
-					slog.String("date", date),
-					slog.Any("error", err))
+				l.Errorw("Database error while fetching recommendations",
+					"date", date,
+					zap.Error(err))
 				writeError(w, req, "We encountered an error while fetching recommendations. Please try again later.", http.StatusInternalServerError)
 			}
 			return
 		}
 
-		if !renderTemplate(w, ctx, []string{"base.html", "home.html"}, recommendations) {
+		if !renderTemplate(ctx, w, []string{"base.html", "home.html"}, recommendations) {
 			return
 		}
 	}
@@ -232,7 +226,7 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 
 		dates, total, err := r.GetRecommendationDates(ctx, page, pageSize)
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get dates", slog.Any("error", err))
+			logging.FromContext(ctx).Errorw("Failed to get dates", zap.Error(err))
 			writeError(w, req, "We couldn't load the list of dates.", http.StatusInternalServerError)
 			return
 		}
@@ -251,7 +245,7 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 			TotalPages: int((total + int64(pageSize) - 1) / int64(pageSize)),
 		}
 
-		if !renderTemplate(w, ctx, []string{"base.html", "dates.html"}, data) {
+		if !renderTemplate(ctx, w, []string{"base.html", "dates.html"}, data) {
 			return
 		}
 	}
@@ -267,18 +261,19 @@ const cronBackgroundLockKey = "cron-serial"
 // The job runs asynchronously and generates recommendations for the current day.
 func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		l := logging.FromContext(ctx)
 		startTime := time.Now()
 		today := time.Now().UTC().Truncate(24 * time.Hour)
 		lockKey := cronBackgroundLockKey
 
-		sanitize.LogRecommendationCronStart(startTime, req.RemoteAddr, lockKey)
+		sanitize.LogRecommendationCronStart(ctx, startTime, req.RemoteAddr, lockKey)
 
-		// Try to acquire lock with 10 second timeout
-		acquired, err := fl.TryLock(req.Context(), lockKey, 10*time.Second)
+		acquired, err := fl.TryLock(ctx, lockKey, 10*time.Second)
 		if err != nil {
-			slog.ErrorContext(req.Context(), "Failed to acquire lock for cron job",
-				slog.Any("error", err),
-				slog.String("lock_key", lockKey),
+			l.Errorw("Failed to acquire lock for cron job",
+				"lock_key", lockKey,
+				zap.Error(err),
 			)
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Failed to acquire lock", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
@@ -286,27 +281,26 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		}
 
 		if !acquired {
-			slog.Info("Cron job already in progress (cache or recommendations); try again later",
-				slog.String("lock_key", lockKey),
-				slog.Time("date", today),
+			l.Infow("Cron job already in progress (cache or recommendations); try again later",
+				"lock_key", lockKey,
+				"date", today,
 			)
 			w.Header().Set("Content-Type", "application/json")
 			if _, err := fmt.Fprintf(w, `{"message": "Another cron job is already running (cache or recommendations); try again later", "timestamp": "%s"}`,
 				time.Now().Format(time.RFC3339)); err != nil {
-				slog.Error("Failed to write response", slog.Any("error", err))
+				l.Errorw("Failed to write response", zap.Error(err))
 			}
 			return
 		}
 
-		// Double-check for existing recommendations within the lock to prevent race conditions
-		exists, err := r.CheckRecommendationsExist(req.Context(), today)
+		exists, err := r.CheckRecommendationsExist(ctx, today)
 		if err != nil {
-			if unlockErr := fl.Unlock(req.Context(), lockKey); unlockErr != nil {
-				slog.ErrorContext(req.Context(), "Failed to unlock after error", slog.Any("error", unlockErr))
+			if unlockErr := fl.Unlock(ctx, lockKey); unlockErr != nil {
+				l.Errorw("Failed to unlock after error", zap.Error(unlockErr))
 			}
-			slog.ErrorContext(req.Context(), "Failed to check existing recommendations",
-				slog.Any("error", err),
-				slog.Time("date", today),
+			l.Errorw("Failed to check existing recommendations",
+				"date", today,
+				zap.Error(err),
 			)
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Failed to check existing recommendations", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
@@ -314,51 +308,51 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		}
 
 		if exists {
-			if unlockErr := fl.Unlock(req.Context(), lockKey); unlockErr != nil {
-				slog.ErrorContext(req.Context(), "Failed to unlock after exists check", slog.Any("error", unlockErr))
+			if unlockErr := fl.Unlock(ctx, lockKey); unlockErr != nil {
+				l.Errorw("Failed to unlock after exists check", zap.Error(unlockErr))
 			}
-			slog.Info("Recommendations already exist for today (double-check within lock)",
-				slog.Time("date", today),
+			l.Infow("Recommendations already exist for today (double-check within lock)",
+				"date", today,
 			)
 			w.Header().Set("Content-Type", "application/json")
 			if _, err := fmt.Fprintf(w, `{"message": "Recommendations already exist for %s", "timestamp": "%s"}`,
 				today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
-				slog.Error("Failed to write response", slog.Any("error", err))
+				l.Errorw("Failed to write response", zap.Error(err))
 			}
 			return
 		}
 
-		// Create a new background context with a timeout for the recommendation generation
-		genCtx, genCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		slog.Info("Dispatching recommendation generation to background",
-			slog.Time("date", today),
-			slog.String("lock_key", lockKey),
+		// Background work needs its own context independent of the request, but with the
+		// same logger so cron logs remain correlated.
+		genCtx, genCancel := context.WithTimeout(logging.NewContext(context.Background(), l), 5*time.Minute)
+		l.Infow("Dispatching recommendation generation to background",
+			"date", today,
+			"lock_key", lockKey,
 		)
 		go func() {
 			defer func() {
 				genCancel()
-				// Always release the lock
 				if err := fl.Unlock(context.Background(), lockKey); err != nil {
-					slog.Error("Failed to release lock after recommendation generation",
-						slog.Any("error", err),
-						slog.String("lock_key", lockKey),
+					l.Errorw("Failed to release lock after recommendation generation",
+						"lock_key", lockKey,
+						zap.Error(err),
 					)
 				}
 			}()
-			slog.Info("Starting recommendation generation in background",
-				slog.Time("date", today),
-				slog.Duration("timeout", 5*time.Minute),
-				slog.String("lock_key", lockKey),
+			l.Infow("Starting recommendation generation in background",
+				"date", today,
+				"timeout", 5*time.Minute,
+				"lock_key", lockKey,
 			)
 			if err := r.GenerateRecommendations(genCtx, today); err != nil {
-				slog.ErrorContext(genCtx, "Failed to generate recommendations",
-					slog.Any("error", err),
-					slog.Time("date", today),
+				l.Errorw("Failed to generate recommendations",
+					"date", today,
+					zap.Error(err),
 				)
 			} else {
-				slog.Info("Recommendation generation completed successfully",
-					slog.Time("date", today),
-					slog.Duration("duration", time.Since(startTime)),
+				l.Infow("Recommendation generation completed successfully",
+					"date", today,
+					"duration", time.Since(startTime),
 				)
 			}
 		}()
@@ -366,7 +360,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := fmt.Fprintf(w, `{"message": "Recommendation generation started for %s", "timestamp": "%s"}`,
 			today.Format("2006-01-02"), time.Now().Format(time.RFC3339)); err != nil {
-			slog.Error("Failed to write response", slog.Any("error", err))
+			l.Errorw("Failed to write response", zap.Error(err))
 		}
 	}
 }
@@ -376,17 +370,18 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 // The job runs asynchronously and updates the cache of available media.
 func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		l := logging.FromContext(ctx)
 		startTime := time.Now()
 		lockKey := cronBackgroundLockKey
 
-		sanitize.LogCacheUpdateJobStart(startTime, req.RemoteAddr, lockKey)
+		sanitize.LogCacheUpdateJobStart(ctx, startTime, req.RemoteAddr, lockKey)
 
-		// Try to acquire lock with 10 second timeout
-		acquired, err := fl.TryLock(req.Context(), lockKey, 10*time.Second)
+		acquired, err := fl.TryLock(ctx, lockKey, 10*time.Second)
 		if err != nil {
-			slog.ErrorContext(req.Context(), "Failed to acquire lock for cache update",
-				slog.Any("error", err),
-				slog.String("lock_key", lockKey),
+			l.Errorw("Failed to acquire lock for cache update",
+				"lock_key", lockKey,
+				zap.Error(err),
 			)
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Failed to acquire lock", "timestamp": "`+time.Now().Format(time.RFC3339)+`"}`, http.StatusInternalServerError)
@@ -394,44 +389,40 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 		}
 
 		if !acquired {
-			slog.Info("Cron job already in progress (cache or recommendations); try again later",
-				slog.String("lock_key", lockKey),
+			l.Infow("Cron job already in progress (cache or recommendations); try again later",
+				"lock_key", lockKey,
 			)
 			w.Header().Set("Content-Type", "application/json")
 			if _, err := fmt.Fprintf(w, `{"message": "Another cron job is already running (cache or recommendations); try again later", "timestamp": "%s"}`,
 				time.Now().Format(time.RFC3339)); err != nil {
-				slog.Error("Failed to write response", slog.Any("error", err))
+				l.Errorw("Failed to write response", zap.Error(err))
 			}
 			return
 		}
 
-		// Create a new background context with a timeout for the cache update
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		slog.Info("Dispatching Plex cache update to background",
-			slog.String("lock_key", lockKey),
+		bgCtx, cancel := context.WithTimeout(logging.NewContext(context.Background(), l), 5*time.Minute)
+		l.Infow("Dispatching Plex cache update to background",
+			"lock_key", lockKey,
 		)
 		go func() {
 			defer func() {
 				cancel()
-				// Always release the lock
 				if err := fl.Unlock(context.Background(), lockKey); err != nil {
-					slog.Error("Failed to release lock after cache update",
-						slog.Any("error", err),
-						slog.String("lock_key", lockKey),
+					l.Errorw("Failed to release lock after cache update",
+						"lock_key", lockKey,
+						zap.Error(err),
 					)
 				}
 			}()
-			slog.Info("Starting cache update in background",
-				slog.Duration("timeout", 5*time.Minute),
-				slog.String("lock_key", lockKey),
+			l.Infow("Starting cache update in background",
+				"timeout", 5*time.Minute,
+				"lock_key", lockKey,
 			)
-			if err := p.UpdateCache(ctx); err != nil {
-				slog.ErrorContext(ctx, "Failed to update cache",
-					slog.Any("error", err),
-				)
+			if err := p.UpdateCache(bgCtx); err != nil {
+				l.Errorw("Failed to update cache", zap.Error(err))
 			} else {
-				slog.Info("Cache update completed successfully",
-					slog.Duration("duration", time.Since(startTime)),
+				l.Infow("Cache update completed successfully",
+					"duration", time.Since(startTime),
 				)
 			}
 		}()
@@ -439,7 +430,7 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := fmt.Fprintf(w, `{"message": "Cache update started", "timestamp": "%s"}`,
 			time.Now().Format(time.RFC3339)); err != nil {
-			slog.Error("Failed to write response", slog.Any("error", err))
+			l.Errorw("Failed to write response", zap.Error(err))
 		}
 	}
 }
@@ -453,12 +444,12 @@ func HandleStats(r *recommend.Recommender) http.HandlerFunc {
 
 		stats, err := r.GetStats(ctx)
 		if err != nil {
-			slog.ErrorContext(ctx, "Failed to get stats", slog.Any("error", err))
+			logging.FromContext(ctx).Errorw("Failed to get stats", zap.Error(err))
 			writeError(w, req, "We couldn't load the statistics. Please try again later.", http.StatusInternalServerError)
 			return
 		}
 
-		if !renderTemplate(w, ctx, []string{"base.html", "stats.html"}, stats) {
+		if !renderTemplate(ctx, w, []string{"base.html", "stats.html"}, stats) {
 			return
 		}
 	}

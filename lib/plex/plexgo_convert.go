@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/LukeHagar/plexgo/models/components"
+	"github.com/icco/gutil/logging"
+	"go.uber.org/zap"
 )
 
 // plexRatingKey accepts JSON string or number (Plex sometimes varies).
@@ -107,6 +108,7 @@ func sectionMetadataToPlexItem(md sectionListMetadata) PlexItem {
 // listSectionContentAll pages GET /library/sections/{id}/all with a tolerant JSON decode.
 // It does not use plexgo's full Metadata type (PMS can send numeric booleans on movie rows).
 func (c *Client) listSectionContentAll(ctx context.Context, sectionID string) ([]PlexItem, error) {
+	l := logging.FromContext(ctx)
 	const pageSize = 200
 	start := 0
 	var all []PlexItem
@@ -136,7 +138,7 @@ func (c *Client) listSectionContentAll(ctx context.Context, sectionID string) ([
 		}
 		body, readErr := io.ReadAll(httpResp.Body)
 		if cerr := httpResp.Body.Close(); cerr != nil {
-			c.logger.Debug("close Plex list response body", slog.Any("error", cerr))
+			l.Debugw("close Plex list response body", zap.Error(cerr))
 		}
 		if readErr != nil {
 			return nil, readErr

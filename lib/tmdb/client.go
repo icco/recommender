@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"log/slog"
+	"github.com/icco/gutil/logging"
+	"go.uber.org/zap"
 )
 
 // Client represents a TMDb API client that handles communication with The Movie Database API.
@@ -20,7 +21,6 @@ type Client struct {
 	apiKey         string
 	baseURL        string
 	httpClient     *http.Client
-	logger         *slog.Logger
 	rateLimiter    *rateLimiter
 	circuitBreaker *circuitBreaker
 }
@@ -89,9 +89,10 @@ type TVSearchResult struct {
 	} `json:"results"`
 }
 
-// NewClient creates a new TMDb client with the provided API key and logger.
+// NewClient creates a new TMDb client with the provided API key.
 // It initializes the HTTP client with timeouts and sets up rate limiting and circuit breaker.
-func NewClient(apiKey string, logger *slog.Logger) *Client {
+// Loggers are pulled from per-call ctx via gutil/logging.
+func NewClient(apiKey string) *Client {
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: "https://api.themoviedb.org/3",
@@ -105,7 +106,6 @@ func NewClient(apiKey string, logger *slog.Logger) *Client {
 				MaxIdleConnsPerHost:   10,
 			},
 		},
-		logger: logger,
 		rateLimiter: &rateLimiter{
 			maxRequests: 40,
 			window:      10 * time.Second,
@@ -197,6 +197,7 @@ func (cb *circuitBreaker) recordFailure() {
 // It returns a list of matching movies with their metadata.
 // Includes rate limiting, retry logic, and circuit breaker pattern.
 func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*SearchResult, error) {
+	l := logging.FromContext(ctx)
 	url := fmt.Sprintf("%s/search/movie?api_key=%s&query=%s&year=%d",
 		c.baseURL, c.apiKey, strings.ReplaceAll(title, " ", "+"), year)
 
@@ -237,11 +238,10 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				c.logger.Error("failed to close response body", "error", err)
+				l.Errorw("failed to close response body", zap.Error(err))
 			}
 		}()
 
-		// Handle different status codes
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			apiErr := &APIError{
@@ -251,14 +251,12 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 				Method:     "GET",
 			}
 
-			// Parse Retry-After header if present
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 				if duration, err := time.ParseDuration(retryAfter + "s"); err == nil {
 					apiErr.RetryAfter = duration
 				}
 			}
 
-			// Record failure for circuit breaker
 			if resp.StatusCode >= 500 {
 				c.circuitBreaker.recordFailure()
 			}
@@ -276,17 +274,16 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 		return &result, nil
 	}
 
-	// Simple retry implementation for now
 	for attempt := 0; attempt < 3; attempt++ {
 		result, err := retryFunc()
 		if err == nil {
 			return result, nil
 		}
 
-		// Log the retry
-		c.logger.Warn("Retrying TMDb search movie",
-			slog.Int("attempt", attempt+1),
-			slog.String("error", err.Error()))
+		l.Warnw("Retrying TMDb search movie",
+			"attempt", attempt+1,
+			zap.Error(err),
+		)
 
 		if attempt < 2 {
 			time.Sleep(time.Duration(attempt+1) * time.Second)
@@ -305,6 +302,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 // It returns a list of matching TV shows with their metadata.
 // Includes rate limiting, retry logic, and circuit breaker pattern.
 func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVSearchResult, error) {
+	l := logging.FromContext(ctx)
 	url := fmt.Sprintf("%s/search/tv?api_key=%s&query=%s&first_air_date_year=%d",
 		c.baseURL, c.apiKey, strings.ReplaceAll(title, " ", "+"), year)
 
@@ -345,11 +343,10 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				c.logger.Error("failed to close response body", "error", err)
+				l.Errorw("failed to close response body", zap.Error(err))
 			}
 		}()
 
-		// Handle different status codes
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			apiErr := &APIError{
@@ -359,14 +356,12 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 				Method:     "GET",
 			}
 
-			// Parse Retry-After header if present
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 				if duration, err := time.ParseDuration(retryAfter + "s"); err == nil {
 					apiErr.RetryAfter = duration
 				}
 			}
 
-			// Record failure for circuit breaker
 			if resp.StatusCode >= 500 {
 				c.circuitBreaker.recordFailure()
 			}
@@ -384,17 +379,16 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		return &result, nil
 	}
 
-	// Simple retry implementation for now
 	for attempt := 0; attempt < 3; attempt++ {
 		result, err := retryFunc()
 		if err == nil {
 			return result, nil
 		}
 
-		// Log the retry
-		c.logger.Warn("Retrying TMDb search TV show",
-			slog.Int("attempt", attempt+1),
-			slog.String("error", err.Error()))
+		l.Warnw("Retrying TMDb search TV show",
+			"attempt", attempt+1,
+			zap.Error(err),
+		)
 
 		if attempt < 2 {
 			time.Sleep(time.Duration(attempt+1) * time.Second)

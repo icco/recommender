@@ -2,8 +2,6 @@ package recommend
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -26,9 +24,8 @@ func testDB(t *testing.T) *gorm.DB {
 
 func testRecommender(db *gorm.DB) *Recommender {
 	return &Recommender{
-		db:     db,
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		cache:  make(map[string]*CacheEntry),
+		db:    db,
+		cache: make(map[string]*CacheEntry),
 	}
 }
 

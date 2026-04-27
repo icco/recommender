@@ -1,8 +1,6 @@
 package plex
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,7 +9,7 @@ import (
 
 func testPlexClient(t *testing.T, srvURL string) *Client {
 	t.Helper()
-	return NewClient(srvURL, "tok", slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
+	return NewClient(srvURL, "tok", nil, nil)
 }
 
 func TestClient_resolvePosterURL(t *testing.T) {
