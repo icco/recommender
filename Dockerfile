@@ -20,6 +20,9 @@ RUN CGO_ENABLED=1 GOOS=linux go build -o recommender
 # Use a minimal alpine image for the final stage
 FROM alpine:3.23
 
+LABEL org.opencontainers.image.source=https://github.com/icco/recommender
+LABEL org.opencontainers.image.description="ghcr.io/icco/recommender container image"
+
 WORKDIR /app
 
 # Only install runtime dependencies.
