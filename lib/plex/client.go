@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"log/slog"
-
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/components"
+	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -25,7 +25,6 @@ import (
 type Client struct {
 	api       *plexgo.PlexAPI
 	plexURL   string
-	logger    *slog.Logger
 	db        *gorm.DB
 	plexToken string
 	tmdb      *tmdb.Client
@@ -37,7 +36,8 @@ const (
 
 // NewClient creates a new Plex client with the provided configuration.
 // It initializes the Plex API client with the given URL and authentication token.
-func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB, tmdbClient *tmdb.Client) *Client {
+// Loggers are pulled from per-call ctx via gutil/logging.
+func NewClient(plexURL, plexToken string, db *gorm.DB, tmdbClient *tmdb.Client) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
@@ -46,7 +46,6 @@ func NewClient(plexURL, plexToken string, logger *slog.Logger, db *gorm.DB, tmdb
 	return &Client{
 		api:       plex,
 		plexURL:   plexURL,
-		logger:    logger,
 		db:        db,
 		plexToken: plexToken,
 		tmdb:      tmdbClient,
@@ -98,7 +97,8 @@ type LibrarySectionInfo struct {
 
 // GetAllLibraries fetches library sections (GET /library/sections/all) with a minimal decoder.
 func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, error) {
-	c.logger.Debug("Fetching libraries from Plex", slog.String("url", c.plexURL))
+	l := logging.FromContext(ctx)
+	l.Debugw("Fetching libraries from Plex", "url", c.plexURL)
 
 	base := strings.TrimRight(c.plexURL, "/")
 	reqURL, err := url.JoinPath(base, "library", "sections", "all")
@@ -120,7 +120,7 @@ func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, err
 	}
 	defer func() {
 		if cerr := httpResp.Body.Close(); cerr != nil {
-			c.logger.Debug("close Plex response body", slog.Any("error", cerr))
+			l.Debugw("close Plex response body", zap.Error(cerr))
 		}
 	}()
 
@@ -172,12 +172,13 @@ func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, err
 		})
 	}
 
-	c.logger.Debug("Got libraries from Plex",
-		slog.Int("count", len(libs)),
-		slog.Any("libraries", libraryInfo),
-		slog.Any("media_container", map[string]any{
+	l.Debugw("Got libraries from Plex",
+		"count", len(libs),
+		"libraries", libraryInfo,
+		"media_container", map[string]any{
 			"title1": payload.MediaContainer.Title1,
-		}))
+		},
+	)
 
 	return libs, nil
 }
@@ -205,16 +206,19 @@ type PlexItem struct {
 // GetPlexItems lists a section via plexgo Content.ListContent (GET …/library/sections/{id}/all)
 // with container paging. When unwatchedOnly is true, watched items are dropped in memory.
 func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
-	c.logger.Debug("Getting library details from Plex API",
-		slog.String("section_key", libraryKey))
+	l := logging.FromContext(ctx)
+	l.Debugw("Getting library details from Plex API",
+		"section_key", libraryKey,
+	)
 
 	rawItems, err := c.listSectionContentAll(ctx, libraryKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library details: %w", err)
 	}
 
-	c.logger.Debug("Got library details from Plex API",
-		slog.Int("directory_count", len(rawItems)))
+	l.Debugw("Got library details from Plex API",
+		"directory_count", len(rawItems),
+	)
 
 	var allItems []PlexItem
 	for _, item := range rawItems {
@@ -431,22 +435,20 @@ func (c *Client) removeTVShowsNotInSnapshot(ctx context.Context, present map[str
 // UpdateCache updates the Plex cache by fetching all libraries and their items.
 // Rows are upserted by Plex ratingKey; items no longer returned by Plex are removed.
 func (c *Client) UpdateCache(ctx context.Context) error {
-	c.logger.Info("Starting cache update")
+	l := logging.FromContext(ctx)
+	l.Infow("Starting cache update")
 
-	// Create a new context with a timeout of 15 minutes (for large libraries)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
-	// Get all libraries
-	c.logger.Info("Fetching all libraries")
+	l.Infow("Fetching all libraries")
 	libraries, err := c.GetAllLibraries(ctx)
 	if err != nil {
-		c.logger.Error("Failed to get libraries", slog.Any("error", err))
+		l.Errorw("Failed to get libraries", zap.Error(err))
 		return fmt.Errorf("failed to get libraries: %w", err)
 	}
-	c.logger.Info("Successfully fetched libraries", slog.Int("count", len(libraries)))
+	l.Infow("Successfully fetched libraries", "count", len(libraries))
 
-	// Get all content from each library
 	var allMovies []PlexItem
 	var allTVShows []PlexItem
 	var fetchErrCount int
@@ -458,24 +460,26 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 			key = *lib.Key
 		}
 
-		items, err := c.GetPlexItems(ctx, key, false) // false means get all content, not just unwatched
+		items, err := c.GetPlexItems(ctx, key, false)
 		if err != nil {
 			fetchErrCount++
 			title := ""
 			if lib.Title != nil {
 				title = *lib.Title
 			}
-			c.logger.Error("Failed to get items from library",
-				slog.String("library", title),
-				slog.Any("error", err))
+			l.Errorw("Failed to get items from library",
+				"library", title,
+				zap.Error(err),
+			)
 			continue
 		}
 
 		for _, item := range items {
 			if item.RatingKey == "" {
-				c.logger.Warn("Skipping Plex item without ratingKey",
-					slog.String("title", item.Title),
-					slog.String("type", item.Type))
+				l.Warnw("Skipping Plex item without ratingKey",
+					"title", item.Title,
+					"type", item.Type,
+				)
 				continue
 			}
 			switch item.Type {
@@ -487,8 +491,8 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		}
 	}
 
-	c.logger.Info("Successfully fetched movies", slog.Int("count", len(allMovies)))
-	c.logger.Info("Successfully fetched TV shows", slog.Int("count", len(allTVShows)))
+	l.Infow("Successfully fetched movies", "count", len(allMovies))
+	l.Infow("Successfully fetched TV shows", "count", len(allTVShows))
 
 	if len(libs) == 0 {
 		return fmt.Errorf("plex returned no libraries; cache not modified")
@@ -543,7 +547,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		return fmt.Errorf("failed to prune stale TV shows: %w", err)
 	}
 
-	c.logger.Info("Successfully updated cache")
+	l.Infow("Successfully updated cache")
 	return nil
 }
 

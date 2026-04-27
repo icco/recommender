@@ -3,14 +3,14 @@ package db
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 
+	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/models"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-// TablesToDrop is a list of tables that should be dropped if they exist
+// TablesToDrop is a list of tables that should be dropped if they exist.
 var (
 	tablesToDrop = []string{
 		"anime_items",
@@ -43,47 +43,40 @@ var (
 	}
 )
 
-// RunMigrations runs all database migrations
-func RunMigrations(db *gorm.DB, logger *slog.Logger) error {
-	ctx := context.Background()
-
-	// Enable SQLite optimizations
-	if err := enableSQLiteOptimizations(ctx, db, logger); err != nil {
+// RunMigrations runs all database migrations.
+func RunMigrations(ctx context.Context, db *gorm.DB) error {
+	if err := enableSQLiteOptimizations(ctx, db); err != nil {
 		return fmt.Errorf("failed to enable SQLite optimizations: %w", err)
 	}
 
-	// Auto-migrate the schema first to ensure tables exist
 	if err := db.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
-		slog.Error("Failed to migrate database", slog.Any("error", err))
-		os.Exit(1)
+		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 
 	// Plex cache upserts use unique plex_rating_key; backfill legacy rows before unique conflicts.
-	if err := backfillPlexRatingKeys(ctx, db, logger); err != nil {
+	if err := backfillPlexRatingKeys(ctx, db); err != nil {
 		return fmt.Errorf("backfill plex_rating_key: %w", err)
 	}
 
-	// Drop old tables
 	for _, table := range tablesToDrop {
-		if err := dropTableIfExists(ctx, db, table, logger); err != nil {
+		if err := dropTableIfExists(ctx, db, table); err != nil {
 			return fmt.Errorf("failed to drop table %s: %w", table, err)
 		}
 	}
 
-	// Drop indexes if it exists
-	if err := dropIndexes(ctx, db, logger); err != nil {
+	if err := dropIndexes(ctx, db); err != nil {
 		return fmt.Errorf("failed to drop indexes: %w", err)
 	}
 
-	// Create additional indexes and constraints
-	if err := createAdditionalIndexes(ctx, db, logger); err != nil {
+	if err := createAdditionalIndexes(ctx, db); err != nil {
 		return fmt.Errorf("failed to create additional indexes: %w", err)
 	}
 
 	return nil
 }
 
-func backfillPlexRatingKeys(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+func backfillPlexRatingKeys(ctx context.Context, db *gorm.DB) error {
+	l := logging.FromContext(ctx)
 	stmts := []string{
 		`UPDATE movies SET plex_rating_key = 'legacy-' || CAST(id AS TEXT) WHERE plex_rating_key IS NULL OR TRIM(plex_rating_key) = ''`,
 		`UPDATE tv_shows SET plex_rating_key = 'legacy-' || CAST(id AS TEXT) WHERE plex_rating_key IS NULL OR TRIM(plex_rating_key) = ''`,
@@ -94,37 +87,37 @@ func backfillPlexRatingKeys(ctx context.Context, db *gorm.DB, logger *slog.Logge
 			return res.Error
 		}
 		if res.RowsAffected > 0 {
-			logger.InfoContext(ctx, "Backfilled plex_rating_key on legacy cache rows", slog.Int64("rows", res.RowsAffected))
+			l.Infow("Backfilled plex_rating_key on legacy cache rows", "rows", res.RowsAffected)
 		}
 	}
 	return nil
 }
 
-// dropIndexes drops the indexes if they exist
-func dropIndexes(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+// dropIndexes drops the indexes if they exist.
+func dropIndexes(ctx context.Context, db *gorm.DB) error {
+	l := logging.FromContext(ctx)
 	for _, index := range indexesToDrop {
 		if err := db.WithContext(ctx).Exec("DROP INDEX IF EXISTS " + index).Error; err != nil {
 			return fmt.Errorf("failed to drop index %s: %w", index, err)
-		} else {
-			logger.InfoContext(ctx, "Dropped index", slog.String("index", index))
 		}
+		l.Infow("Dropped index", "index", index)
 	}
 	return nil
 }
 
-// dropTableIfExists drops a table if it exists
-func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string, logger *slog.Logger) error {
+// dropTableIfExists drops a table if it exists.
+func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string) error {
+	l := logging.FromContext(ctx)
 	if err := db.WithContext(ctx).Exec("DROP TABLE IF EXISTS " + tableName).Error; err != nil {
 		return fmt.Errorf("failed to drop table: %w", err)
-	} else {
-		logger.Info("Successfully dropped table", slog.String("table", tableName))
 	}
-
+	l.Infow("Successfully dropped table", "table", tableName)
 	return nil
 }
 
-// enableSQLiteOptimizations enables SQLite-specific optimizations
-func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
+// enableSQLiteOptimizations enables SQLite-specific optimizations.
+func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB) error {
+	l := logging.FromContext(ctx)
 	optimizations := []string{
 		"PRAGMA journal_mode=WAL",    // Enable WAL mode for better concurrency
 		"PRAGMA synchronous=NORMAL",  // Faster writes while maintaining safety
@@ -137,18 +130,18 @@ func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB, logger *slog.Lo
 
 	for _, pragma := range optimizations {
 		if err := db.WithContext(ctx).Exec(pragma).Error; err != nil {
-			logger.Warn("Failed to execute pragma", slog.String("pragma", pragma), slog.Any("error", err))
+			l.Warnw("Failed to execute pragma", "pragma", pragma, zap.Error(err))
 		} else {
-			logger.Info("Successfully executed pragma", slog.String("pragma", pragma))
+			l.Infow("Successfully executed pragma", "pragma", pragma)
 		}
 	}
 
 	return nil
 }
 
-// createAdditionalIndexes creates additional indexes for performance
-func createAdditionalIndexes(ctx context.Context, db *gorm.DB, logger *slog.Logger) error {
-	// Additional composite indexes for common queries
+// createAdditionalIndexes creates additional indexes for performance.
+func createAdditionalIndexes(ctx context.Context, db *gorm.DB) error {
+	l := logging.FromContext(ctx)
 	additionalIndexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_movies_title_year ON movies(title, year)",
 		"CREATE INDEX IF NOT EXISTS idx_movies_rating_year ON movies(rating, year)",
@@ -163,9 +156,9 @@ func createAdditionalIndexes(ctx context.Context, db *gorm.DB, logger *slog.Logg
 
 	for _, indexSQL := range additionalIndexes {
 		if err := db.WithContext(ctx).Exec(indexSQL).Error; err != nil {
-			logger.Warn("Failed to create index", slog.String("sql", indexSQL), slog.Any("error", err))
+			l.Warnw("Failed to create index", "sql", indexSQL, zap.Error(err))
 		} else {
-			logger.Info("Successfully created index", slog.String("sql", indexSQL))
+			l.Infow("Successfully created index", "sql", indexSQL)
 		}
 	}
 

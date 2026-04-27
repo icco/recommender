@@ -1,12 +1,11 @@
-// Package main implements a content recommendation service that integrates with Plex and TMDb.
-// It provides a web interface for viewing recommendations and handles background tasks
-// for generating new recommendations and updating content metadata.
+// Package main implements a Plex/TMDb-powered recommendation service with a
+// web UI and cron-driven background jobs.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,69 +15,86 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/handlers"
 	"github.com/icco/recommender/lib/db"
 	"github.com/icco/recommender/lib/health"
 	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
-	"github.com/icco/recommender/lib/sanitize"
 	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/static"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-// JSONLogger is a custom middleware that logs HTTP requests in JSON format.
-// It captures request details including method, path, status code, and duration.
-func JSONLogger(next http.Handler) http.Handler {
+const service = "recommender"
+
+var log = logging.Must(logging.NewLogger(service))
+
+// routeTag stamps the chi route pattern onto otelhttp metric labels so HTTP
+// metrics carry low-cardinality http.route values.
+func routeTag(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		// Create a response writer that captures the status code
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-
-		// Process request
-		next.ServeHTTP(ww, r)
-
-		sanitize.LogHTTPRequest(
-			r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent(),
-			ww.Status(), time.Since(start),
-		)
+		next.ServeHTTP(w, r)
+		labeler, ok := otelhttp.LabelerFromContext(r.Context())
+		if !ok {
+			return
+		}
+		if pattern := chi.RouteContext(r.Context()).RoutePattern(); pattern != "" {
+			labeler.Add(semconv.HTTPRoute(pattern))
+		}
 	})
 }
 
-// main is the entry point of the application.
-// It sets up the environment, initializes clients and services, and starts the HTTP server.
+// main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
-	// Set up logging
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	})))
+	ctx, stop := signal.NotifyContext(
+		logging.NewContext(context.Background(), log),
+		os.Interrupt, syscall.SIGTERM,
+	)
+	defer stop()
 
-	// Get environment variables
+	registry := prometheus.NewRegistry()
+	exporter, err := otelprom.New(otelprom.WithRegisterer(registry))
+	if err != nil {
+		log.Fatalw("otel prometheus exporter", zap.Error(err))
+	}
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
+	otel.SetMeterProvider(mp)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := mp.Shutdown(shutdownCtx); err != nil {
+			log.Warnw("meter provider shutdown", zap.Error(err))
+		}
+	}()
+
 	plexURL := os.Getenv("PLEX_URL")
 	if plexURL == "" {
-		slog.Error("PLEX_URL environment variable is required")
-		os.Exit(1)
+		log.Fatalw("PLEX_URL environment variable is required")
 	}
 
 	plexToken := os.Getenv("PLEX_TOKEN")
 	if plexToken == "" {
-		slog.Error("PLEX_TOKEN environment variable is required")
-		os.Exit(1)
+		log.Fatalw("PLEX_TOKEN environment variable is required")
 	}
 
 	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
 	if tmdbAPIKey == "" {
-		slog.Error("TMDB_API_KEY environment variable is required")
-		os.Exit(1)
+		log.Fatalw("TMDB_API_KEY environment variable is required")
 	}
 
-	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
-	if openaiAPIKey == "" {
-		slog.Error("OPENAI_API_KEY environment variable is required")
-		os.Exit(1)
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		log.Fatalw("OPENAI_API_KEY environment variable is required")
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -86,49 +102,36 @@ func main() {
 		dbPath = "recommender.db"
 	}
 
-	// Set up database with custom JSON logger
 	gormDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: db.NewGormLogger(slog.Default()),
+		Logger: db.NewGormLogger(log.Desugar()),
 	})
 	if err != nil {
-		slog.Error("Failed to connect to database", slog.Any("error", err))
-		os.Exit(1)
+		log.Fatalw("Failed to connect to database", zap.Error(err))
 	}
 
-	if err := db.RunMigrations(gormDB, slog.Default()); err != nil {
-		slog.Error("Failed to run migrations", slog.Any("error", err))
-		os.Exit(1)
+	if err := db.RunMigrations(ctx, gormDB); err != nil {
+		log.Fatalw("Failed to run migrations", zap.Error(err))
 	}
 
-	// Set up file-based locking
-	fileLock := lock.NewFileLock(slog.Default())
+	fileLock := lock.NewFileLock(ctx)
 
-	// Set up TMDb client
-	tmdbClient := tmdb.NewClient(tmdbAPIKey, slog.Default())
+	tmdbClient := tmdb.NewClient(tmdbAPIKey)
 
-	// Set up Plex client
-	plexClient := plex.NewClient(plexURL, plexToken, slog.Default(), gormDB, tmdbClient)
+	plexClient := plex.NewClient(plexURL, plexToken, gormDB, tmdbClient)
 
-	// Set up recommender
-	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, slog.Default())
+	recommender, err := recommend.New(gormDB, plexClient, tmdbClient)
 	if err != nil {
-		slog.Error("Failed to create recommender", slog.Any("error", err))
-		os.Exit(1)
+		log.Fatalw("Failed to create recommender", zap.Error(err))
 	}
 
-	// Set up router
 	r := chi.NewRouter()
 
-	// Middleware
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(JSONLogger)
-	r.Use(middleware.Recoverer)
+	r.Use(logging.Middleware(log.Desugar()))
+	r.Use(routeTag)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(static.Files))))
 
-	// Routes
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
 	r.Get("/dates", handlers.HandleDates(recommender))
@@ -136,59 +139,57 @@ func main() {
 	r.Get("/cron/cache", handlers.HandleCache(plexClient, fileLock))
 	r.Get("/stats", handlers.HandleStats(recommender))
 	r.Get("/health", health.Check(gormDB))
+	r.Method(http.MethodGet, "/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
-	// Start server
 	portStr := os.Getenv("PORT")
 	if portStr == "" {
 		portStr = "8080"
 	}
 	portNum, err := strconv.Atoi(portStr)
 	if err != nil {
-		slog.Error("PORT must be a valid integer", slog.Any("error", err))
-		os.Exit(1)
+		log.Fatalw("PORT must be a valid integer", zap.Error(err))
 	}
 	if portNum < 1 || portNum > 65535 {
-		slog.Error("PORT must be between 1 and 65535", slog.Int("port", portNum))
-		os.Exit(1)
+		log.Fatalw("PORT must be between 1 and 65535", "port", portNum)
 	}
+
+	handler := otelhttp.NewHandler(r, service,
+		otelhttp.WithFilter(func(req *http.Request) bool {
+			return req.URL.Path != "/metrics"
+		}),
+	)
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", portNum),
-		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              fmt.Sprintf(":%d", portNum),
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
-	// Set up graceful shutdown
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
-		slog.Info("Starting server", slog.Int("port", portNum))
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("Server error", slog.Any("error", err))
+		log.Infow("Starting server", "port", portNum)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Errorw("Server error", zap.Error(err))
 			stop()
 		}
 	}()
 
-	// Wait for interrupt signal
 	<-ctx.Done()
 	stop()
 
-	// Gracefully shutdown the server with a timeout
-	slog.Info("Shutting down server gracefully...")
+	log.Infow("Shutting down server gracefully...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("Server shutdown error", slog.Any("error", err))
+		log.Errorw("Server shutdown error", zap.Error(err))
 	}
 
-	// Close file lock
 	if err := fileLock.Close(); err != nil {
-		slog.Error("Failed to close file lock", slog.Any("error", err))
+		log.Errorw("Failed to close file lock", zap.Error(err))
 	}
 
-	slog.Info("Server stopped")
+	log.Infow("Server stopped")
 }

@@ -2,7 +2,7 @@
 
 Daily movie and TV recommendations from your **Plex** library, enriched with **TMDb** metadata and chosen by **OpenAI**. This is an experiment in building an app with generative AI.
 
-Stack: **Go**, **Chi** (routing), **GORM** (ORM), **SQLite**, **log/slog** (JSON logs).
+Stack: **Go**, **Chi** (routing), **GORM** (ORM), **SQLite**, **zap + gutil/logging** (JSON logs), **OpenTelemetry** (HTTP metrics on `/metrics`).
 
 ## What you get
 
@@ -37,6 +37,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | GET | `/cron/cache` | Refresh Plex → SQLite cache (async; file lock) |
 | GET | `/stats` | DB statistics |
 | GET | `/health` | JSON health including DB ping |
+| GET | `/metrics` | Prometheus exposition (otelhttp HTTP server metrics) |
 | GET | `/static/*` | Embedded static files (e.g. favicon) |
 
 ## Environment variables

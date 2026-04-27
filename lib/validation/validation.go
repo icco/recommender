@@ -1,12 +1,15 @@
 package validation
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/icco/gutil/logging"
+	"go.uber.org/zap"
 )
 
 // dateRegex is a regular expression that matches dates in YYYY-MM-DD format.
@@ -45,13 +48,12 @@ func ValidatePagination(page, size int) error {
 }
 
 // WriteError writes a validation error response to the HTTP response writer.
-// It takes a response writer, error message, and HTTP status code.
-func WriteError(w http.ResponseWriter, err error, status int) {
+func WriteError(ctx context.Context, w http.ResponseWriter, err error, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(map[string]string{
+	if encErr := json.NewEncoder(w).Encode(map[string]string{
 		"error": err.Error(),
-	}); err != nil {
-		slog.Error("Failed to encode error response", slog.Any("error", err))
+	}); encErr != nil {
+		logging.FromContext(ctx).Errorw("Failed to encode error response", zap.Error(encErr))
 	}
 }

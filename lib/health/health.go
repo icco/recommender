@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"log/slog"
-
+	"github.com/icco/gutil/logging"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -35,13 +35,12 @@ func Check(db *gorm.DB) http.HandlerFunc {
 			Timestamp: time.Now(),
 		}
 
-		// Check database connection
 		sqlDB, err := db.DB()
 		if err != nil {
 			health.Status = "degraded"
 			health.DB.Status = "error"
 			health.DB.Message = "Failed to get database connection"
-			writeHealth(w, health, http.StatusServiceUnavailable)
+			writeHealth(ctx, w, health, http.StatusServiceUnavailable)
 			return
 		}
 
@@ -49,21 +48,20 @@ func Check(db *gorm.DB) http.HandlerFunc {
 			health.Status = "degraded"
 			health.DB.Status = "error"
 			health.DB.Message = "Database ping failed"
-			writeHealth(w, health, http.StatusServiceUnavailable)
+			writeHealth(ctx, w, health, http.StatusServiceUnavailable)
 			return
 		}
 
 		health.DB.Status = "ok"
-		writeHealth(w, health, http.StatusOK)
+		writeHealth(ctx, w, health, http.StatusOK)
 	}
 }
 
 // writeHealth writes the health check response to the HTTP response writer.
-// It takes a response writer, health information, and HTTP status code.
-func writeHealth(w http.ResponseWriter, health Health, status int) {
+func writeHealth(ctx context.Context, w http.ResponseWriter, health Health, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(health); err != nil {
-		slog.Error("Failed to encode health response", slog.Any("error", err))
+		logging.FromContext(ctx).Errorw("Failed to encode health response", zap.Error(err))
 	}
 }
