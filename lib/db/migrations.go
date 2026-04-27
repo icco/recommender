@@ -49,7 +49,7 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to enable SQLite optimizations: %w", err)
 	}
 
-	if err := db.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
+	if err := db.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 
