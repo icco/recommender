@@ -109,9 +109,7 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error
 	return r, nil
 }
 
-// logTMDbErr demotes the breaker-open case to warn. When TMDb is unhealthy
-// every title in the batch hits the same ErrCircuitOpen, so logging each at
-// error level floods the logs with the same not-really-actionable message.
+// logTMDbErr demotes breaker-open to warn so an unhealthy TMDb doesn't flood error logs.
 func logTMDbErr(l *zap.SugaredLogger, msg, title string, err error) {
 	if errors.Is(err, tmdb.ErrCircuitOpen) {
 		l.Warnw(msg, "title", title, "reason", "tmdb_circuit_open")

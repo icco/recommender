@@ -45,9 +45,7 @@ type circuitBreaker struct {
 	timeout      time.Duration
 }
 
-// ErrCircuitOpen lets callers detect the breaker-open case so they can stop
-// hammering TMDb (and stop logging the same message N times) when the
-// upstream is already known to be down.
+// ErrCircuitOpen lets callers short-circuit retry/log loops when TMDb is known-down.
 var ErrCircuitOpen = errors.New("circuit open")
 
 type circuitState int
