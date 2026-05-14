@@ -45,6 +45,11 @@ type circuitBreaker struct {
 	timeout      time.Duration
 }
 
+// ErrCircuitOpen lets callers detect the breaker-open case so they can stop
+// hammering TMDb (and stop logging the same message N times) when the
+// upstream is already known to be down.
+var ErrCircuitOpen = errors.New("circuit open")
+
 type circuitState int
 
 const (
@@ -228,12 +233,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 
 	retryFunc := func() (*SearchResult, error) {
 		if !c.circuitBreaker.canExecute() {
-			return nil, &APIError{
-				StatusCode: http.StatusServiceUnavailable,
-				Message:    "Circuit breaker is open",
-				URL:        safeURL,
-				Method:     "GET",
-			}
+			return nil, ErrCircuitOpen
 		}
 
 		if err := c.rateLimiter.wait(ctx); err != nil {
@@ -294,6 +294,12 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 			return result, nil
 		}
 
+		// When the breaker is open every retry will fail the same way, so
+		// fail fast instead of logging warn+sleep+retry 3 times per call.
+		if errors.Is(err, ErrCircuitOpen) {
+			return nil, err
+		}
+
 		l.Warnw("Retrying TMDb search movie",
 			"attempt", attempt+1,
 			zap.Error(err),
@@ -321,12 +327,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 
 	retryFunc := func() (*TVSearchResult, error) {
 		if !c.circuitBreaker.canExecute() {
-			return nil, &APIError{
-				StatusCode: http.StatusServiceUnavailable,
-				Message:    "Circuit breaker is open",
-				URL:        safeURL,
-				Method:     "GET",
-			}
+			return nil, ErrCircuitOpen
 		}
 
 		if err := c.rateLimiter.wait(ctx); err != nil {
@@ -385,6 +386,10 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		result, err := retryFunc()
 		if err == nil {
 			return result, nil
+		}
+
+		if errors.Is(err, ErrCircuitOpen) {
+			return nil, err
 		}
 
 		l.Warnw("Retrying TMDb search TV show",

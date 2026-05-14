@@ -109,6 +109,17 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error
 	return r, nil
 }
 
+// logTMDbErr demotes the breaker-open case to warn. When TMDb is unhealthy
+// every title in the batch hits the same ErrCircuitOpen, so logging each at
+// error level floods the logs with the same not-really-actionable message.
+func logTMDbErr(l *zap.SugaredLogger, msg, title string, err error) {
+	if errors.Is(err, tmdb.ErrCircuitOpen) {
+		l.Warnw(msg, "title", title, "reason", "tmdb_circuit_open")
+		return
+	}
+	l.Errorw(msg, "title", title, zap.Error(err))
+}
+
 // recommendationUTCDayRange returns [start, end) for the calendar day of t in UTC.
 // Cron and HandleHome use UTC midnight for "today"; rows store that same instant in `date`.
 func recommendationUTCDayRange(t time.Time) (start, end time.Time) {
@@ -350,7 +361,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					}
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for movie", "title", movie.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for movie", movie.Title, err)
 			}
 		} else {
 			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
@@ -363,7 +374,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					l.Errorw("Failed to update movie TMDbID", "title", movie.Title, zap.Error(err))
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for movie", "title", movie.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for movie", movie.Title, err)
 			}
 		}
 
@@ -401,7 +412,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					}
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for TV show", "title", tvShow.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for TV show", tvShow.Title, err)
 			}
 		} else {
 			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
@@ -414,7 +425,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					l.Errorw("Failed to update TV show TMDbID", "title", tvShow.Title, zap.Error(err))
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for TV show", "title", tvShow.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for TV show", tvShow.Title, err)
 			}
 		}
 
