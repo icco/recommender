@@ -10,6 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// testGenreComedy is the shared fixture genre value used across recommendation
+// tests; centralized so we don't sprinkle the same literal everywhere.
+const testGenreComedy = "Comedy"
+
 func testDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -39,14 +43,14 @@ func TestGetRecommendationDates_distinctDaysAndPagination(t *testing.T) {
 
 	for _, title := range []string{"M1", "M2"} {
 		if err := db.Create(&models.Recommendation{
-			Date: day1, Title: title, Type: "movie", Year: 2020,
-			Rating: 8, Genre: "Comedy", TMDbID: 1,
+			Date: day1, Title: title, Type: models.TypeMovie, Year: 2020,
+			Rating: 8, Genre: testGenreComedy, TMDbID: 1,
 		}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := db.Create(&models.Recommendation{
-		Date: day2, Title: "M3", Type: "movie", Year: 2021,
+		Date: day2, Title: "M3", Type: models.TypeMovie, Year: 2021,
 		Rating: 7, Genre: "Drama", TMDbID: 2,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -94,8 +98,8 @@ func TestGetRecommendationsForDate_sameUTCCalendarDay(t *testing.T) {
 
 	stored := time.Date(2026, 3, 27, 0, 0, 0, 0, time.UTC)
 	if err := db.Create(&models.Recommendation{
-		Date: stored, Title: "Abbott Elementary", Type: "tvshow", Year: 2021,
-		Rating: 0, Genre: "Comedy", TMDbID: 1,
+		Date: stored, Title: "Abbott Elementary", Type: models.TypeTVShow, Year: 2021,
+		Rating: 0, Genre: testGenreComedy, TMDbID: 1,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -139,8 +143,8 @@ func TestCheckRecommendationsExist_partialDay(t *testing.T) {
 
 	day := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
 	if err := db.Create(&models.Recommendation{
-		Date: day, Title: "OnlyMovie", Type: "movie", Year: 2020,
-		Rating: 8, Genre: "Comedy", TMDbID: 10,
+		Date: day, Title: "OnlyMovie", Type: models.TypeMovie, Year: 2020,
+		Rating: 8, Genre: testGenreComedy, TMDbID: 10,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

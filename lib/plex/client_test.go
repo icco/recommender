@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/icco/recommender/models"
 )
 
 func testPlexClient(t *testing.T, srvURL string) *Client {
@@ -55,7 +57,7 @@ func TestGetAllLibraries_minimalJSON(t *testing.T) {
 	if dir[0].Key == nil || *dir[0].Key != "1" {
 		t.Fatalf("Key=%v", dir[0].Key)
 	}
-	if dir[0].Type != "movie" {
+	if dir[0].Type != models.TypeMovie {
 		t.Fatalf("Type=%q", dir[0].Type)
 	}
 }
@@ -109,7 +111,7 @@ func TestGetPlexItems_viaPlexgoListContent(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("len(items)=%d want 1", len(items))
 	}
-	if items[0].Title != "Test Film" || items[0].Type != "movie" {
+	if items[0].Title != "Test Film" || items[0].Type != models.TypeMovie {
 		t.Fatalf("%+v", items[0])
 	}
 	if items[0].RatingKey != "42" {

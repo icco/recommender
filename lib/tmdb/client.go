@@ -203,7 +203,7 @@ func (cb *circuitBreaker) recordFailure() {
 // leaks into errors or logs because callers only ever see safeURL plus the
 // generic transport error.
 func (c *Client) do(ctx context.Context, safeURL string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", safeURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, safeURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -247,7 +247,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 				StatusCode: 0,
 				Message:    "transport error",
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 		}
 		defer func() {
@@ -262,7 +262,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 				StatusCode: resp.StatusCode,
 				Message:    string(body),
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
@@ -341,7 +341,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 				StatusCode: 0,
 				Message:    "transport error",
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 		}
 		defer func() {
@@ -356,7 +356,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 				StatusCode: resp.StatusCode,
 				Message:    string(body),
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
