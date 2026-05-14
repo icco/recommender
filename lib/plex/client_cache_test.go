@@ -31,7 +31,7 @@ func TestUpsertMovieBatch_updatesSameRow(t *testing.T) {
 	}
 	ctx := t.Context()
 
-	v1 := []PlexItem{{RatingKey: "501", Key: "/m/501", Title: "Alpha", Type: "movie", AddedAt: 1}}
+	v1 := []PlexItem{{RatingKey: "501", Key: "/m/501", Title: "Alpha", Type: models.TypeMovie, AddedAt: 1}}
 	if err := c.upsertMovieBatch(ctx, v1); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestUpsertMovieBatch_updatesSameRow(t *testing.T) {
 		t.Fatalf("first insert id=%d err=%v", id1, err)
 	}
 
-	v2 := []PlexItem{{RatingKey: "501", Key: "/m/501", Title: "Beta", Type: "movie", AddedAt: 2}}
+	v2 := []PlexItem{{RatingKey: "501", Key: "/m/501", Title: "Beta", Type: models.TypeMovie, AddedAt: 2}}
 	if err := c.upsertMovieBatch(ctx, v2); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,8 @@ func TestRemoveMoviesNotInSnapshot_clearsRecFK(t *testing.T) {
 	ctx := t.Context()
 
 	if err := c.upsertMovieBatch(ctx, []PlexItem{
-		{RatingKey: "10", Key: "/m/10", Title: "Keep", Type: "movie", AddedAt: 1},
-		{RatingKey: "11", Key: "/m/11", Title: "Drop", Type: "movie", AddedAt: 1},
+		{RatingKey: "10", Key: "/m/10", Title: "Keep", Type: models.TypeMovie, AddedAt: 1},
+		{RatingKey: "11", Key: "/m/11", Title: "Drop", Type: models.TypeMovie, AddedAt: 1},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestRemoveMoviesNotInSnapshot_clearsRecFK(t *testing.T) {
 	day := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	if err := db.Create(&models.Recommendation{
 		Date:  day,
-		Title: "Rec", Type: "movie", Year: 2020, Rating: 8, Genre: "x", TMDbID: 1,
+		Title: "Rec", Type: models.TypeMovie, Year: 2020, Rating: 8, Genre: "x", TMDbID: 1,
 		MovieID: &dropID,
 	}).Error; err != nil {
 		t.Fatal(err)

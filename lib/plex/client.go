@@ -32,6 +32,10 @@ type Client struct {
 
 const (
 	fallbackPosterURL = "https://via.placeholder.com/500x750?text=No+Poster+Available"
+	// titleKey is the shared spelling of the "title" identifier used both as a
+	// structured-log field name and as the GORM-mapped column name for the
+	// title columns on the Movie/TVShow tables.
+	titleKey = "title"
 )
 
 // NewClient creates a new Plex client with the provided configuration.
@@ -164,7 +168,7 @@ func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, err
 		libraryInfo = append(libraryInfo, map[string]any{
 			"key":      info.Key,
 			"type":     info.Type,
-			"title":    info.Title,
+			titleKey:   info.Title,
 			"agent":    info.Agent,
 			"scanner":  info.Scanner,
 			"language": info.Language,
@@ -477,7 +481,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 		for _, item := range items {
 			if item.RatingKey == "" {
 				l.Warnw("Skipping Plex item without ratingKey",
-					"title", item.Title,
+					titleKey, item.Title,
 					"type", item.Type,
 				)
 				continue
@@ -553,11 +557,11 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 // GORM names TMDbID as tm_db_id in SQLite (see schema).
 var movieUpsertColumns = []string{
-	"title", "year", "rating", "genre", "poster_url", "runtime", "tm_db_id", "view_count", "updated_at",
+	titleKey, "year", "rating", "genre", "poster_url", "runtime", "tm_db_id", "view_count", "updated_at",
 }
 
 var tvUpsertColumns = []string{
-	"title", "year", "rating", "genre", "poster_url", "seasons", "tm_db_id", "view_count", "updated_at",
+	titleKey, "year", "rating", "genre", "poster_url", "seasons", "tm_db_id", "view_count", "updated_at",
 }
 
 // upsertMovieBatch upserts movies by plex_rating_key in a single transaction.

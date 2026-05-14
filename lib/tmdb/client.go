@@ -45,6 +45,9 @@ type circuitBreaker struct {
 	timeout      time.Duration
 }
 
+// ErrCircuitOpen lets callers short-circuit retry/log loops when TMDb is known-down.
+var ErrCircuitOpen = errors.New("circuit open")
+
 type circuitState int
 
 const (
@@ -198,7 +201,7 @@ func (cb *circuitBreaker) recordFailure() {
 // leaks into errors or logs because callers only ever see safeURL plus the
 // generic transport error.
 func (c *Client) do(ctx context.Context, safeURL string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", safeURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, safeURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -228,12 +231,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 
 	retryFunc := func() (*SearchResult, error) {
 		if !c.circuitBreaker.canExecute() {
-			return nil, &APIError{
-				StatusCode: http.StatusServiceUnavailable,
-				Message:    "Circuit breaker is open",
-				URL:        safeURL,
-				Method:     "GET",
-			}
+			return nil, ErrCircuitOpen
 		}
 
 		if err := c.rateLimiter.wait(ctx); err != nil {
@@ -247,7 +245,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 				StatusCode: 0,
 				Message:    "transport error",
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 		}
 		defer func() {
@@ -262,7 +260,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 				StatusCode: resp.StatusCode,
 				Message:    string(body),
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
@@ -294,6 +292,12 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 			return result, nil
 		}
 
+		// When the breaker is open every retry will fail the same way, so
+		// fail fast instead of logging warn+sleep+retry 3 times per call.
+		if errors.Is(err, ErrCircuitOpen) {
+			return nil, err
+		}
+
 		l.Warnw("Retrying TMDb search movie",
 			"attempt", attempt+1,
 			zap.Error(err),
@@ -321,12 +325,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 
 	retryFunc := func() (*TVSearchResult, error) {
 		if !c.circuitBreaker.canExecute() {
-			return nil, &APIError{
-				StatusCode: http.StatusServiceUnavailable,
-				Message:    "Circuit breaker is open",
-				URL:        safeURL,
-				Method:     "GET",
-			}
+			return nil, ErrCircuitOpen
 		}
 
 		if err := c.rateLimiter.wait(ctx); err != nil {
@@ -340,7 +339,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 				StatusCode: 0,
 				Message:    "transport error",
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 		}
 		defer func() {
@@ -355,7 +354,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 				StatusCode: resp.StatusCode,
 				Message:    string(body),
 				URL:        safeURL,
-				Method:     "GET",
+				Method:     http.MethodGet,
 			}
 
 			if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
@@ -385,6 +384,10 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		result, err := retryFunc()
 		if err == nil {
 			return result, nil
+		}
+
+		if errors.Is(err, ErrCircuitOpen) {
+			return nil, err
 		}
 
 		l.Warnw("Retrying TMDb search TV show",

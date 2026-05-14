@@ -109,6 +109,15 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error
 	return r, nil
 }
 
+// logTMDbErr demotes breaker-open to warn so an unhealthy TMDb doesn't flood error logs.
+func logTMDbErr(l *zap.SugaredLogger, msg, title string, err error) {
+	if errors.Is(err, tmdb.ErrCircuitOpen) {
+		l.Warnw(msg, "title", title, "reason", "tmdb_circuit_open")
+		return
+	}
+	l.Errorw(msg, "title", title, zap.Error(err))
+}
+
 // recommendationUTCDayRange returns [start, end) for the calendar day of t in UTC.
 // Cron and HandleHome use UTC midnight for "today"; rows store that same instant in `date`.
 func recommendationUTCDayRange(t time.Time) (start, end time.Time) {
@@ -179,14 +188,14 @@ func (r *Recommender) CheckRecommendationsComplete(ctx context.Context, date tim
 
 	// Count movies for the date
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
-		Where("date = ? AND type = ?", date, "movie").
+		Where("date = ? AND type = ?", date, models.TypeMovie).
 		Count(&movieCount).Error; err != nil {
 		return false, fmt.Errorf("failed to count movies: %w", err)
 	}
 
 	// Count TV shows for the date
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).
-		Where("date = ? AND type = ?", date, "tvshow").
+		Where("date = ? AND type = ?", date, models.TypeTVShow).
 		Count(&tvShowCount).Error; err != nil {
 		return false, fmt.Errorf("failed to count TV shows: %w", err)
 	}
@@ -350,7 +359,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					}
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for movie", "title", movie.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for movie", movie.Title, err)
 			}
 		} else {
 			result, err := r.tmdb.SearchMovie(ctx, movie.Title, movie.Year)
@@ -363,13 +372,13 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					l.Errorw("Failed to update movie TMDbID", "title", movie.Title, zap.Error(err))
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for movie", "title", movie.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for movie", movie.Title, err)
 			}
 		}
 
 		allContent = append(allContent, models.Recommendation{
 			Title:     movie.Title,
-			Type:      "movie",
+			Type:      models.TypeMovie,
 			Year:      movie.Year,
 			Rating:    movie.Rating,
 			Genre:     movie.Genre,
@@ -401,7 +410,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					}
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for TV show", "title", tvShow.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for TV show", tvShow.Title, err)
 			}
 		} else {
 			result, err := r.tmdb.SearchTVShow(ctx, tvShow.Title, tvShow.Year)
@@ -414,13 +423,13 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 					l.Errorw("Failed to update TV show TMDbID", "title", tvShow.Title, zap.Error(err))
 				}
 			} else if err != nil {
-				l.Errorw("Failed to search TMDb for TV show", "title", tvShow.Title, zap.Error(err))
+				logTMDbErr(l, "Failed to search TMDb for TV show", tvShow.Title, err)
 			}
 		}
 
 		allContent = append(allContent, models.Recommendation{
 			Title:     tvShow.Title,
-			Type:      "tvshow",
+			Type:      models.TypeTVShow,
 			Year:      tvShow.Year,
 			Rating:    tvShow.Rating,
 			Genre:     tvShow.Genre,
@@ -534,8 +543,8 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	}
 
 	// Process each type of recommendation
-	processItems(recResponse.Movies, "movie")
-	processItems(recResponse.TVShows, "tvshow")
+	processItems(recResponse.Movies, models.TypeMovie)
+	processItems(recResponse.TVShows, models.TypeTVShow)
 
 	// Enforce limits based on content type and requirements
 	typeCounts := make(map[string]int)
@@ -564,25 +573,25 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Process movies according to requirements
 	for _, rec := range recommendations {
-		if rec.Type == "movie" && typeCounts["movie"] < targetMovieCount {
+		if rec.Type == models.TypeMovie && typeCounts[models.TypeMovie] < targetMovieCount {
 			// Try to get diverse genres, but be flexible if content is limited
 			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["movie"]++
+				typeCounts[models.TypeMovie]++
 				movieTypes["funny"] = true
 			} else if (strings.Contains(strings.ToLower(rec.Genre), "action") ||
 				strings.Contains(strings.ToLower(rec.Genre), "drama")) &&
 				!movieTypes["action_drama"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["movie"]++
+				typeCounts[models.TypeMovie]++
 				movieTypes["action_drama"] = true
 			} else if !movieTypes["rewatched"] {
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["movie"]++
+				typeCounts[models.TypeMovie]++
 				movieTypes["rewatched"] = true
-			} else if typeCounts["movie"] < targetMovieCount { // Add additional movies up to target
+			} else if typeCounts[models.TypeMovie] < targetMovieCount { // Add additional movies up to target
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["movie"]++
+				typeCounts[models.TypeMovie]++
 			}
 		}
 	}
@@ -590,16 +599,16 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	// Process TV shows if available
 	if availableTVShows > 0 {
 		for _, rec := range recommendations {
-			if rec.Type == "tvshow" && typeCounts["tvshow"] < targetTVShowCount {
+			if rec.Type == models.TypeTVShow && typeCounts[models.TypeTVShow] < targetTVShowCount {
 				filteredRecommendations = append(filteredRecommendations, rec)
-				typeCounts["tvshow"]++
+				typeCounts[models.TypeTVShow]++
 			}
 		}
 	}
 
 	l.Debugw("Recommendation counts",
-		"movies", typeCounts["movie"],
-		"tvshows", typeCounts["tvshow"],
+		"movies", typeCounts[models.TypeMovie],
+		"tvshows", typeCounts[models.TypeTVShow],
 		"funny_movie", movieTypes["funny"],
 		"action_drama_movie", movieTypes["action_drama"],
 		"rewatched_movie", movieTypes["rewatched"],
@@ -640,8 +649,8 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	l.Debugw("Successfully stored recommendations",
 		"total_count", len(filteredRecommendations),
-		"movies", typeCounts["movie"],
-		"tvshows", typeCounts["tvshow"])
+		"movies", typeCounts[models.TypeMovie],
+		"tvshows", typeCounts[models.TypeTVShow])
 
 	return nil
 }
@@ -657,10 +666,10 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	}
 
 	// Get counts by type
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "movie").Count(&stats.TotalMovies).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", models.TypeMovie).Count(&stats.TotalMovies).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total movies: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", "tvshow").Count(&stats.TotalTVShows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", models.TypeTVShow).Count(&stats.TotalTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total TV shows: %w", err)
 	}
 

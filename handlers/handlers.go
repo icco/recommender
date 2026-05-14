@@ -21,6 +21,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// baseTemplate is the filename of the shared base layout template used by
+// every page render.
+const baseTemplate = "base.html"
+
 type errorData struct {
 	Message string
 }
@@ -68,7 +72,7 @@ func wantsJSON(r *http.Request) bool {
 // renderError renders an error page using the error template.
 func renderError(ctx context.Context, w http.ResponseWriter, message string, status int) {
 	l := logging.FromContext(ctx)
-	tmpl, err := templates.ParseTemplates("base.html", "error.html")
+	tmpl, err := templates.ParseTemplates(baseTemplate, "error.html")
 	if err != nil {
 		l.Errorw("Failed to parse error template", zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -76,7 +80,7 @@ func renderError(ctx context.Context, w http.ResponseWriter, message string, sta
 	}
 
 	w.WriteHeader(status)
-	if err := tmpl.ExecuteTemplate(w, "base.html", errorData{Message: message}); err != nil {
+	if err := tmpl.ExecuteTemplate(w, baseTemplate, errorData{Message: message}); err != nil {
 		l.Errorw("Failed to execute error template", zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
@@ -95,7 +99,7 @@ func renderTemplate(ctx context.Context, w http.ResponseWriter, files []string, 
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	if err := tmpl.ExecuteTemplate(w, "base.html", data); err != nil {
+	if err := tmpl.ExecuteTemplate(w, baseTemplate, data); err != nil {
 		l.Errorw("Failed to execute template", zap.Error(err))
 		if !isResponseStarted(w) {
 			renderError(ctx, w, "Something went wrong while displaying the page.", http.StatusInternalServerError)
@@ -139,7 +143,7 @@ func HandleHome(r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		if !renderTemplate(ctx, w, []string{"base.html", "home.html"}, recommendations) {
+		if !renderTemplate(ctx, w, []string{baseTemplate, "home.html"}, recommendations) {
 			return
 		}
 	}
@@ -189,7 +193,7 @@ func HandleDate(r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		if !renderTemplate(ctx, w, []string{"base.html", "home.html"}, recommendations) {
+		if !renderTemplate(ctx, w, []string{baseTemplate, "home.html"}, recommendations) {
 			return
 		}
 	}
@@ -245,7 +249,7 @@ func HandleDates(r *recommend.Recommender) http.HandlerFunc {
 			TotalPages: int((total + int64(pageSize) - 1) / int64(pageSize)),
 		}
 
-		if !renderTemplate(ctx, w, []string{"base.html", "dates.html"}, data) {
+		if !renderTemplate(ctx, w, []string{baseTemplate, "dates.html"}, data) {
 			return
 		}
 	}
@@ -449,7 +453,7 @@ func HandleStats(r *recommend.Recommender) http.HandlerFunc {
 			return
 		}
 
-		if !renderTemplate(ctx, w, []string{"base.html", "stats.html"}, stats) {
+		if !renderTemplate(ctx, w, []string{baseTemplate, "stats.html"}, stats) {
 			return
 		}
 	}

@@ -4,6 +4,12 @@ import (
 	"time"
 )
 
+// Recommendation type values used in Recommendation.Type and SQL `type` filters.
+const (
+	TypeMovie  = "movie"
+	TypeTVShow = "tvshow"
+)
+
 // Movie represents a movie from Plex
 type Movie struct {
 	ID            uint    `gorm:"primarykey"`
