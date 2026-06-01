@@ -1,3 +1,5 @@
+// Package health exposes a /health HTTP handler that reports liveness and
+// database connectivity for the recommender service.
 package health
 
 import (

@@ -1,3 +1,6 @@
+// Package tmdb provides a small client for The Movie Database REST API,
+// including rate limiting, retry, and circuit-breaker behavior used by the
+// recommender service.
 package tmdb
 
 import (
@@ -286,7 +289,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 		return &result, nil
 	}
 
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		result, err := retryFunc()
 		if err == nil {
 			return result, nil
@@ -380,7 +383,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 		return &result, nil
 	}
 
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		result, err := retryFunc()
 		if err == nil {
 			return result, nil

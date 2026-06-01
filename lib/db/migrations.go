@@ -45,9 +45,7 @@ var (
 
 // RunMigrations runs all database migrations.
 func RunMigrations(ctx context.Context, db *gorm.DB) error {
-	if err := enableSQLiteOptimizations(ctx, db); err != nil {
-		return fmt.Errorf("failed to enable SQLite optimizations: %w", err)
-	}
+	enableSQLiteOptimizations(ctx, db)
 
 	if err := db.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
@@ -68,9 +66,7 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to drop indexes: %w", err)
 	}
 
-	if err := createAdditionalIndexes(ctx, db); err != nil {
-		return fmt.Errorf("failed to create additional indexes: %w", err)
-	}
+	createAdditionalIndexes(ctx, db)
 
 	return nil
 }
@@ -116,7 +112,8 @@ func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string) error
 }
 
 // enableSQLiteOptimizations enables SQLite-specific optimizations.
-func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB) error {
+// Pragma failures are logged but never aborts startup.
+func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB) {
 	l := logging.FromContext(ctx)
 	optimizations := []string{
 		"PRAGMA journal_mode=WAL",    // Enable WAL mode for better concurrency
@@ -135,12 +132,11 @@ func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB) error {
 			l.Infow("Successfully executed pragma", "pragma", pragma)
 		}
 	}
-
-	return nil
 }
 
 // createAdditionalIndexes creates additional indexes for performance.
-func createAdditionalIndexes(ctx context.Context, db *gorm.DB) error {
+// Failures to create an individual index are logged but never aborts startup.
+func createAdditionalIndexes(ctx context.Context, db *gorm.DB) {
 	l := logging.FromContext(ctx)
 	additionalIndexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_movies_title_year ON movies(title, year)",
@@ -161,6 +157,4 @@ func createAdditionalIndexes(ctx context.Context, db *gorm.DB) error {
 			l.Infow("Successfully created index", "sql", indexSQL)
 		}
 	}
-
-	return nil
 }

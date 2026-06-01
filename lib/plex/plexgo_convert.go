@@ -70,7 +70,7 @@ type sectionListMetadata struct {
 	ChildCount *int `json:"childCount,omitempty"`
 }
 
-func sectionMetadataToPlexItem(md sectionListMetadata) PlexItem {
+func sectionMetadataToPlexItem(md sectionListMetadata) Item {
 	var genres []components.Tag
 	for _, g := range md.Genre {
 		genres = append(genres, components.Tag{Tag: g.Tag})
@@ -85,7 +85,7 @@ func sectionMetadataToPlexItem(md sectionListMetadata) PlexItem {
 	if md.Summary != nil {
 		summary = *md.Summary
 	}
-	return PlexItem{
+	return Item{
 		RatingKey:  rk,
 		Key:        md.Key,
 		Title:      md.Title,
@@ -107,11 +107,11 @@ func sectionMetadataToPlexItem(md sectionListMetadata) PlexItem {
 
 // listSectionContentAll pages GET /library/sections/{id}/all with a tolerant JSON decode.
 // It does not use plexgo's full Metadata type (PMS can send numeric booleans on movie rows).
-func (c *Client) listSectionContentAll(ctx context.Context, sectionID string) ([]PlexItem, error) {
+func (c *Client) listSectionContentAll(ctx context.Context, sectionID string) ([]Item, error) {
 	l := logging.FromContext(ctx)
 	const pageSize = 200
 	start := 0
-	var all []PlexItem
+	var all []Item
 	base := strings.TrimRight(c.plexURL, "/")
 
 	for range 500 {

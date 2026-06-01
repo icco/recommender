@@ -1,3 +1,6 @@
+// Package validation provides JSON schema validation helpers used to
+// sanitize external API responses (e.g. OpenAI) and basic input validation
+// (date / pagination parameters) for the recommender service.
 package validation
 
 import (

@@ -1,3 +1,5 @@
+// Package plex provides a thin client over plexgo for fetching library data
+// from a Plex Media Server and persisting it into the local GORM cache.
 package plex
 
 import (
@@ -187,8 +189,8 @@ func (c *Client) GetAllLibraries(ctx context.Context) ([]LibrarySectionInfo, err
 	return libs, nil
 }
 
-// PlexItem represents a media item from Plex
-type PlexItem struct {
+// Item represents a media item from Plex.
+type Item struct {
 	RatingKey  string
 	Key        string
 	Title      string
@@ -209,7 +211,7 @@ type PlexItem struct {
 
 // GetPlexItems lists a section via plexgo Content.ListContent (GET …/library/sections/{id}/all)
 // with container paging. When unwatchedOnly is true, watched items are dropped in memory.
-func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]PlexItem, error) {
+func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedOnly bool) ([]Item, error) {
 	l := logging.FromContext(ctx)
 	l.Debugw("Getting library details from Plex API",
 		"section_key", libraryKey,
@@ -224,7 +226,7 @@ func (c *Client) GetPlexItems(ctx context.Context, libraryKey string, unwatchedO
 		"directory_count", len(rawItems),
 	)
 
-	var allItems []PlexItem
+	var allItems []Item
 	for _, item := range rawItems {
 		if unwatchedOnly && item.ViewCount != nil && *item.ViewCount > 0 {
 			continue
@@ -453,8 +455,8 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	}
 	l.Infow("Successfully fetched libraries", "count", len(libraries))
 
-	var allMovies []PlexItem
-	var allTVShows []PlexItem
+	var allMovies []Item
+	var allTVShows []Item
 	var fetchErrCount int
 
 	libs := libraries
@@ -565,7 +567,7 @@ var tvUpsertColumns = []string{
 }
 
 // upsertMovieBatch upserts movies by plex_rating_key in a single transaction.
-func (c *Client) upsertMovieBatch(ctx context.Context, movies []PlexItem) error {
+func (c *Client) upsertMovieBatch(ctx context.Context, movies []Item) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 		for _, item := range movies {
@@ -625,7 +627,7 @@ func (c *Client) upsertMovieBatch(ctx context.Context, movies []PlexItem) error 
 }
 
 // upsertTVShowBatch upserts TV shows by plex_rating_key in a single transaction.
-func (c *Client) upsertTVShowBatch(ctx context.Context, shows []PlexItem) error {
+func (c *Client) upsertTVShowBatch(ctx context.Context, shows []Item) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 		for _, item := range shows {

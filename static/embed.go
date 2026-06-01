@@ -1,3 +1,5 @@
+// Package static provides the embedded static assets (favicon, etc.) that
+// the recommender service serves under /static/.
 package static
 
 import "embed"

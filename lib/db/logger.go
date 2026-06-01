@@ -1,3 +1,5 @@
+// Package db provides database setup, automatic migrations, and a custom
+// GORM logger that forwards SQL traces through zap-backed structured logging.
 package db
 
 import (
@@ -24,7 +26,7 @@ func NewGormLogger(base *zap.Logger) *GormLogger {
 
 // LogMode is part of gorm's logger.Interface; zap controls leveling so we
 // just return the receiver unchanged.
-func (l *GormLogger) LogMode(level logger.LogLevel) logger.Interface {
+func (l *GormLogger) LogMode(_ logger.LogLevel) logger.Interface {
 	return l
 }
 
