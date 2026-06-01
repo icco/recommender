@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/LukeHagar/plexgo v0.28.6
-	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-chi/chi/v5 v5.3.0
 	github.com/icco/gutil v0.0.0-20260426171854-cab7739e3855
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sashabaranov/go-openai v1.41.2
