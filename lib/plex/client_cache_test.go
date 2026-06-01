@@ -31,7 +31,7 @@ func TestUpsertMovieBatch_updatesSameRow(t *testing.T) {
 	}
 	ctx := t.Context()
 
-	v1 := []PlexItem{{RatingKey: "501", Key: "/m/501", Title: "Alpha", Type: models.TypeMovie, AddedAt: 1}}
+	v1 := []Item{{RatingKey: "501", Key: "/m/501", Title: "Alpha", Type: models.TypeMovie, AddedAt: 1}}
 	if err := c.upsertMovieBatch(ctx, v1); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestUpsertMovieBatch_updatesSameRow(t *testing.T) {
 		t.Fatalf("first insert id=%d err=%v", id1, err)
 	}
 
-	v2 := []PlexItem{{RatingKey: "501", Key: "/m/501", Title: "Beta", Type: models.TypeMovie, AddedAt: 2}}
+	v2 := []Item{{RatingKey: "501", Key: "/m/501", Title: "Beta", Type: models.TypeMovie, AddedAt: 2}}
 	if err := c.upsertMovieBatch(ctx, v2); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestRemoveMoviesNotInSnapshot_clearsRecFK(t *testing.T) {
 	}
 	ctx := t.Context()
 
-	if err := c.upsertMovieBatch(ctx, []PlexItem{
+	if err := c.upsertMovieBatch(ctx, []Item{
 		{RatingKey: "10", Key: "/m/10", Title: "Keep", Type: models.TypeMovie, AddedAt: 1},
 		{RatingKey: "11", Key: "/m/11", Title: "Drop", Type: models.TypeMovie, AddedAt: 1},
 	}); err != nil {

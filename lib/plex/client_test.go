@@ -66,7 +66,7 @@ func TestGetAllLibraries_ignoresNumericBoolsOnSection(t *testing.T) {
 	t.Parallel()
 	// Newer PMS can send 0/1 for flags; plexgo's *bool models reject that — we skip those keys.
 	const payload = `{"MediaContainer":{"allowSync":1,"size":1,"Directory":[{"key":"2","title":"TV","type":"show","content":1,"directory":0,"filters":1,"hidden":0,"language":"en","uuid":"u2"}]}}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(payload))
 	}))
@@ -123,7 +123,7 @@ func TestGetPlexItems_toleratesNumericBoolsAndNumericRatingKey(t *testing.T) {
 	t.Parallel()
 	// Newer PMS can send 0/1 for Metadata fields modeled as *bool in plexgo.
 	const payload = `{"MediaContainer":{"totalSize":1,"Metadata":[{"ratingKey":99,"key":"/library/metadata/99","title":"Numeric Key","type":"movie","addedAt":1,"search":1,"secondary":0,"year":2021,"Genre":[{"tag":"Comedy"}]}]}}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(payload))
 	}))

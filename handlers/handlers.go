@@ -1,3 +1,5 @@
+// Package handlers contains the HTTP handlers and shared rendering helpers
+// for the recommender web service.
 package handlers
 
 import (
@@ -263,6 +265,11 @@ const cronBackgroundLockKey = "cron-serial"
 // HandleCron handles the recommendation generation cron job.
 // It takes a recommender instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and generates recommendations for the current day.
+//
+//nolint:contextcheck // background cron job + deferred Unlock intentionally use a
+// fresh context.Background() rather than the request context, because the work
+// must outlive the inbound HTTP request and the lock must release even if the
+// background timeout fires.
 func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
@@ -326,8 +333,11 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 			return
 		}
 
-		// Background work needs its own context independent of the request, but with the
-		// same logger so cron logs remain correlated.
+		// Background work must outlive the inbound HTTP request, so we deliberately
+		// detach from req.Context() and start a fresh context that only carries the
+		// scoped logger. The request context would otherwise be canceled the moment
+		// we return the 200 response, killing the generation job mid-flight.
+		//nolint:contextcheck // intentional detach: background cron must outlive the request
 		genCtx, genCancel := context.WithTimeout(logging.NewContext(context.Background(), l), 5*time.Minute)
 		l.Infow("Dispatching recommendation generation to background",
 			"date", today,
@@ -336,6 +346,9 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 		go func() {
 			defer func() {
 				genCancel()
+				// Unlock must succeed even if the background context has timed out,
+				// so we use a fresh context.Background() rather than genCtx here.
+				//nolint:contextcheck // intentional detach: unlock must run even after genCtx timeout
 				if err := fl.Unlock(context.Background(), lockKey); err != nil {
 					l.Errorw("Failed to release lock after recommendation generation",
 						"lock_key", lockKey,
@@ -372,6 +385,11 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 // HandleCache handles the Plex cache update cron job.
 // It takes a Plex client instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and updates the cache of available media.
+//
+//nolint:contextcheck // background cache job + deferred Unlock intentionally use a
+// fresh context.Background() rather than the request context, because the work
+// must outlive the inbound HTTP request and the lock must release even if the
+// background timeout fires.
 func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
@@ -404,6 +422,9 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 			return
 		}
 
+		// See HandleCron above: background cache work must outlive the request, so
+		// the context is intentionally detached.
+		//nolint:contextcheck // intentional detach: background cache job must outlive the request
 		bgCtx, cancel := context.WithTimeout(logging.NewContext(context.Background(), l), 5*time.Minute)
 		l.Infow("Dispatching Plex cache update to background",
 			"lock_key", lockKey,
@@ -411,6 +432,7 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 		go func() {
 			defer func() {
 				cancel()
+				//nolint:contextcheck // intentional detach: unlock must run even after bgCtx timeout
 				if err := fl.Unlock(context.Background(), lockKey); err != nil {
 					l.Errorw("Failed to release lock after cache update",
 						"lock_key", lockKey,

@@ -1,3 +1,6 @@
+// Package recommend orchestrates daily movie and TV-show recommendation
+// generation, combining cached Plex library data with OpenAI-powered
+// prompting and result validation.
 package recommend
 
 import (
@@ -527,7 +530,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	seenTitles := make(map[string]bool)
 
 	// Helper function to process recommendation items
-	processItems := func(items []RecommendationItem, contentType string) {
+	processItems := func(items []RecommendationItem, _ string) {
 		for _, item := range items {
 			if seenTitles[item.Title] {
 				continue
@@ -575,21 +578,21 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	for _, rec := range recommendations {
 		if rec.Type == models.TypeMovie && typeCounts[models.TypeMovie] < targetMovieCount {
 			// Try to get diverse genres, but be flexible if content is limited
-			if strings.Contains(strings.ToLower(rec.Genre), "comedy") && !movieTypes["funny"] {
+			genre := strings.ToLower(rec.Genre)
+			switch {
+			case strings.Contains(genre, "comedy") && !movieTypes["funny"]:
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts[models.TypeMovie]++
 				movieTypes["funny"] = true
-			} else if (strings.Contains(strings.ToLower(rec.Genre), "action") ||
-				strings.Contains(strings.ToLower(rec.Genre), "drama")) &&
-				!movieTypes["action_drama"] {
+			case (strings.Contains(genre, "action") || strings.Contains(genre, "drama")) && !movieTypes["action_drama"]:
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts[models.TypeMovie]++
 				movieTypes["action_drama"] = true
-			} else if !movieTypes["rewatched"] {
+			case !movieTypes["rewatched"]:
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts[models.TypeMovie]++
 				movieTypes["rewatched"] = true
-			} else if typeCounts[models.TypeMovie] < targetMovieCount { // Add additional movies up to target
+			case typeCounts[models.TypeMovie] < targetMovieCount: // Add additional movies up to target
 				filteredRecommendations = append(filteredRecommendations, rec)
 				typeCounts[models.TypeMovie]++
 			}
