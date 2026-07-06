@@ -13,17 +13,18 @@ import (
 
 // candidate is a Plex-owned title eligible for recommendation, with a computed score.
 type candidate struct {
-	ID        uint
-	Type      string
-	Title     string
-	Year      int
-	Rating    float64
-	Genres    []string
-	PosterURL string
-	Runtime   int // minutes (movie) or seasons (tv)
-	ViewCount int
-	TMDbID    *int
-	Affinity  float64 // taste-profile boost (Phase 2); 0 otherwise
+	ID          uint
+	Type        string
+	Title       string
+	Year        int
+	Rating      float64
+	Genres      []string
+	PosterURL   string
+	Runtime     int // minutes (movie) or seasons (tv)
+	ViewCount   int
+	TMDbID      *int
+	Affinity    float64 // taste-profile boost (Phase 2); 0 otherwise
+	Watchlisted bool    // present on an external watchlist (Trakt)
 }
 
 // dateSeed derives a stable per-UTC-day seed so shortlists are reproducible.
@@ -32,14 +33,20 @@ func dateSeed(date time.Time) int64 {
 	return int64(y)*10000 + int64(m)*100 + int64(d)
 }
 
+// watchlistBoost lifts titles the user has explicitly watchlisted externally.
+const watchlistBoost = 1.5
+
 // scoreCandidate ranks a title: rating drives it, unwatched gets a novelty
-// boost, taste affinity adds on top.
+// boost, taste affinity and watchlist membership add on top.
 func scoreCandidate(c candidate) float64 {
 	s := c.Rating / 10.0 * 2.0
 	if c.ViewCount == 0 {
 		s += 1.0
 	}
 	s += c.Affinity
+	if c.Watchlisted {
+		s += watchlistBoost
+	}
 	return s
 }
 
@@ -103,6 +110,15 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 		return best
 	}
 
+	watchlistMovies, watchlistTV, err := r.signalIDSet(ctx, models.SignalKindWatchlist)
+	if err != nil {
+		return nil, nil, err
+	}
+	watchedMovies, watchedTV, err := r.signalIDSet(ctx, models.SignalKindWatched)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var dbMovies []models.Movie
 	if err := r.db.WithContext(ctx).Find(&dbMovies).Error; err != nil {
 		return nil, nil, fmt.Errorf("load movies: %w", err)
@@ -112,11 +128,16 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 			continue
 		}
 		genres := splitGenres(m.Genre)
+		vc := m.ViewCount
+		if _, w := watchedMovies[m.ID]; w && vc == 0 {
+			vc = 1 // treat Trakt-watched as watched
+		}
+		_, wl := watchlistMovies[m.ID]
 		movies = append(movies, candidate{
 			ID: m.ID, Type: models.TypeMovie, Title: m.Title, Year: m.Year,
 			Rating: m.Rating, Genres: genres, PosterURL: m.PosterURL,
-			Runtime: m.Runtime, ViewCount: m.ViewCount, TMDbID: m.TMDbID,
-			Affinity: affinityFor(genres),
+			Runtime: m.Runtime, ViewCount: vc, TMDbID: m.TMDbID,
+			Affinity: affinityFor(genres), Watchlisted: wl,
 		})
 	}
 
@@ -128,12 +149,16 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 		if _, skip := excludeTV[s.ID]; skip {
 			continue
 		}
+		if _, watched := watchedTV[s.ID]; watched {
+			continue // watched elsewhere; not a fresh TV pick
+		}
 		genres := splitGenres(s.Genre)
+		_, wl := watchlistTV[s.ID]
 		tvshows = append(tvshows, candidate{
 			ID: s.ID, Type: models.TypeTVShow, Title: s.Title, Year: s.Year,
 			Rating: s.Rating, Genres: genres, PosterURL: s.PosterURL,
 			Runtime: s.Seasons, ViewCount: s.ViewCount, TMDbID: s.TMDbID,
-			Affinity: affinityFor(genres),
+			Affinity: affinityFor(genres), Watchlisted: wl,
 		})
 	}
 	return movies, tvshows, nil
@@ -156,6 +181,25 @@ func (r *Recommender) recentlyRecommendedIDs(ctx context.Context, date time.Time
 		}
 		if rec.TVShowID != nil {
 			tv[*rec.TVShowID] = struct{}{}
+		}
+	}
+	return m, tv, nil
+}
+
+// signalIDSet returns the Movie and TVShow IDs that have a signal of the given kind.
+func (r *Recommender) signalIDSet(ctx context.Context, kind string) (map[uint]struct{}, map[uint]struct{}, error) {
+	var sigs []models.ExternalSignal
+	if err := r.db.WithContext(ctx).Where("kind = ?", kind).Find(&sigs).Error; err != nil {
+		return nil, nil, fmt.Errorf("load %s signals: %w", kind, err)
+	}
+	m := make(map[uint]struct{})
+	tv := make(map[uint]struct{})
+	for _, s := range sigs {
+		if s.MovieID != nil {
+			m[*s.MovieID] = struct{}{}
+		}
+		if s.TVShowID != nil {
+			tv[*s.TVShowID] = struct{}{}
 		}
 	}
 	return m, tv, nil

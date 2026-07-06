@@ -106,3 +106,37 @@ func TestLoadCandidates_excludesRecentAndWatchedTV(t *testing.T) {
 		t.Errorf("tv = %+v, want only Fresh", tv)
 	}
 }
+
+func TestScoreCandidate_watchlistBoost(t *testing.T) {
+	base := mkCand(1, 7.0, 0)
+	boosted := base
+	boosted.Watchlisted = true
+	if scoreCandidate(boosted) <= scoreCandidate(base) {
+		t.Error("watchlisted candidate should score higher")
+	}
+}
+
+func TestLoadCandidates_externalWatched(t *testing.T) {
+	db := testDB(t)
+	r := testRecommender(db)
+	ctx := t.Context()
+	today := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+
+	movie := models.Movie{Title: "M", Year: 2000, Rating: 8, ViewCount: 0, PlexRatingKey: "m1"}
+	show := models.TVShow{Title: "S", Year: 2001, Rating: 8, ViewCount: 0, PlexRatingKey: "s1"}
+	db.Create(&movie)
+	db.Create(&show)
+	db.Create(&models.ExternalSignal{Source: models.SourceTrakt, ExternalRef: "watched:m", Kind: models.SignalKindWatched, MovieID: &movie.ID, Value: 1})
+	db.Create(&models.ExternalSignal{Source: models.SourceTrakt, ExternalRef: "watched:s", Kind: models.SignalKindWatched, TVShowID: &show.ID, Value: 1})
+
+	movies, tv, err := r.loadCandidates(ctx, today)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tv) != 0 {
+		t.Errorf("externally-watched TV should be excluded, got %d", len(tv))
+	}
+	if len(movies) != 1 || movies[0].ViewCount == 0 {
+		t.Errorf("externally-watched movie should be treated as watched: %+v", movies)
+	}
+}
