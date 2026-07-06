@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,7 +18,7 @@ func TestHandleTraktConnect_gate(t *testing.T) {
 	// No token configured → disabled.
 	h := HandleTraktConnect(rec, "")
 	w := httptest.NewRecorder()
-	h(w, httptest.NewRequest(http.MethodGet, "/trakt/connect", nil))
+	h(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/trakt/connect", nil))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("unset token: got %d, want 503", w.Code)
 	}
@@ -25,7 +26,7 @@ func TestHandleTraktConnect_gate(t *testing.T) {
 	// Configured token, wrong value → unauthorized (before any device-flow work).
 	h = HandleTraktConnect(rec, "secret")
 	w = httptest.NewRecorder()
-	h(w, httptest.NewRequest(http.MethodGet, "/trakt/connect?token=nope", nil))
+	h(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/trakt/connect?token=nope", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("wrong token: got %d, want 401", w.Code)
 	}

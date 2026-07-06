@@ -29,7 +29,7 @@ func TestSync_parsesMoviesWithIDs(t *testing.T) {
 }
 
 func TestRequestDeviceCode(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"device_code":"dc","user_code":"1234","verification_url":"https://trakt.tv/activate","expires_in":600,"interval":5}`))
 	}))
 	defer srv.Close()

@@ -66,8 +66,13 @@ docker compose down
 - `GOOGLE_GENAI_USE_VERTEXAI`: `true` to use Vertex AI (recommended)
 - `GEMINI_MODEL`: model ID (defaults to `gemini-2.5-flash`)
 - `GOOGLE_APPLICATION_CREDENTIALS`: service-account key path for local dev (prod uses ambient ADC)
+- `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`: enable Trakt signals
+- `TRAKT_CONNECT_TOKEN`: shared secret required to call `GET /trakt/connect` (disabled when unset)
+- `ANILIST_USERNAME`: enable AniList (public list) signals
 - `PORT`: HTTP server port (defaults to 8080)
 - `DB_PATH`: Database file path (defaults to recommender.db)
+
+External signals (Trakt watched/ratings/watchlist, AniList scores) are synced during `/cron/cache` into `ExternalSignal` and only re-rank owned Plex titles: they feed genre affinity, a watchlist score boost, watched-elsewhere handling, and prompt context. Sources are optional and skipped when their env vars are unset. Trakt OAuth (device flow) tokens live in `OAuthToken`; authorize via `GET /trakt/connect?token=…`.
 
 Auth to Vertex AI uses Application Default Credentials — no API key.
 
@@ -572,6 +577,7 @@ All file operations use restrictive permissions (0600 for files, 0750 for direct
 - `PLEX_TOKEN`: Plex authentication token
 - `TMDB_API_KEY`: The Movie Database API key
 - `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`: Vertex AI project + region (auth via ADC)
+- Optional signals: `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET`/`TRAKT_CONNECT_TOKEN`, `ANILIST_USERNAME`
 - `PORT`: HTTP server port (defaults to 8080)
 
 **Startup Sequence:**

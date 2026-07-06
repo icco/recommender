@@ -303,7 +303,7 @@ func (r *Recommender) TraktConnect(ctx context.Context) (userCode, verificationU
 	}
 	deadline := time.Now().Add(time.Duration(dc.ExpiresIn) * time.Second)
 
-	//nolint:contextcheck // background poll must outlive the request
+	//nolint:contextcheck,gosec // background poll must outlive the request, so it deliberately uses a detached context
 	go func() {
 		bg := logging.NewContext(context.Background(), logging.FromContext(ctx))
 		l := logging.FromContext(bg)

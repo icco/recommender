@@ -63,7 +63,7 @@ func TestAniListSource_Sync_matchesByTitleYear(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":{"User":{"mediaListOptions":{"scoreFormat":"POINT_10"}},
 			"MediaListCollection":{"lists":[{"entries":[
 				{"score":9,"media":{"seasonYear":2019,"title":{"romaji":"Kimetsu","english":"Demon Slayer"}}},
