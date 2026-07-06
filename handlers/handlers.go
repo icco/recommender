@@ -4,6 +4,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -485,8 +486,19 @@ func HandleStats(r *recommend.Recommender) http.HandlerFunc {
 }
 
 // HandleTraktConnect starts the Trakt OAuth device flow and returns the code to enter.
-func HandleTraktConnect(r *recommend.Recommender) http.HandlerFunc {
+// It is gated by a shared secret: the endpoint mints/stores an OAuth token (whoever
+// completes the flow decides which Trakt account is stored), so it is disabled unless
+// connectToken is set and matched via the "token" query parameter.
+func HandleTraktConnect(r *recommend.Recommender, connectToken string) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		if connectToken == "" {
+			writeError(w, req, "endpoint disabled; set TRAKT_CONNECT_TOKEN to enable", http.StatusServiceUnavailable)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(req.URL.Query().Get("token")), []byte(connectToken)) != 1 {
+			writeError(w, req, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		ctx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
 		defer cancel()
 		code, url, err := r.TraktConnect(ctx)
