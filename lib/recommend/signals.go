@@ -239,3 +239,44 @@ func matchByTitleYear(ctx context.Context, db *gorm.DB, title string, year int) 
 	}
 	return nil, nil
 }
+
+// SignalConfig holds credentials/usernames for external signal sources. Empty
+// fields disable that source.
+type SignalConfig struct {
+	TraktClientID     string
+	TraktClientSecret string
+	AniListUsername   string
+}
+
+// traktClient returns a Trakt client if credentials are configured, else nil.
+func (r *Recommender) traktClient() *trakt.Client {
+	if r.sigCfg.TraktClientID == "" || r.sigCfg.TraktClientSecret == "" {
+		return nil
+	}
+	return trakt.NewClient(r.sigCfg.TraktClientID, r.sigCfg.TraktClientSecret)
+}
+
+// configuredSources returns the enabled signal sources.
+func (r *Recommender) configuredSources() []SignalSource {
+	var out []SignalSource
+	if c := r.traktClient(); c != nil {
+		out = append(out, &traktSource{db: r.db, client: c})
+	}
+	if r.sigCfg.AniListUsername != "" {
+		out = append(out, &anilistSource{db: r.db, client: anilist.NewClient(), username: r.sigCfg.AniListUsername})
+	}
+	return out
+}
+
+// SyncSignals runs every configured source best-effort; failures are logged.
+func (r *Recommender) SyncSignals(ctx context.Context) {
+	l := logging.FromContext(ctx)
+	for _, src := range r.configuredSources() {
+		n, err := src.Sync(ctx)
+		if err != nil {
+			l.Warnw("signal source sync failed", "source", src.Name(), zap.Error(err))
+			continue
+		}
+		l.Infow("signal source synced", "source", src.Name(), "count", n)
+	}
+}

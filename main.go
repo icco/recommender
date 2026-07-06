@@ -131,7 +131,13 @@ func main() {
 		log.Fatalw("Failed to create Gemini client", zap.Error(err))
 	}
 
-	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, chat, geminiModel)
+	sigCfg := recommend.SignalConfig{
+		TraktClientID:     os.Getenv("TRAKT_CLIENT_ID"),
+		TraktClientSecret: os.Getenv("TRAKT_CLIENT_SECRET"),
+		AniListUsername:   os.Getenv("ANILIST_USERNAME"),
+	}
+
+	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, chat, geminiModel, sigCfg)
 	if err != nil {
 		log.Fatalw("Failed to create recommender", zap.Error(err))
 	}
@@ -148,7 +154,7 @@ func main() {
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
 	r.Get("/dates", handlers.HandleDates(recommender))
 	r.Get("/cron/recommend", handlers.HandleCron(recommender, fileLock))
-	r.Get("/cron/cache", handlers.HandleCache(plexClient, fileLock))
+	r.Get("/cron/cache", handlers.HandleCache(plexClient, recommender, fileLock))
 	r.Get("/stats", handlers.HandleStats(recommender))
 	r.Get("/health", health.Check(gormDB))
 	r.Method(http.MethodGet, "/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))

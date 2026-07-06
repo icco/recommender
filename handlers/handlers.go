@@ -392,7 +392,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 // background timeout fires.
 //
 //nolint:contextcheck // background cache job + deferred Unlock intentionally use a
-func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
+func HandleCache(p *plex.Client, rec *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		l := logging.FromContext(ctx)
@@ -452,6 +452,7 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 				l.Infow("Cache update completed successfully",
 					"duration", time.Since(startTime),
 				)
+				rec.SyncSignals(bgCtx)
 			}
 		}()
 
