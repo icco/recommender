@@ -58,7 +58,7 @@ func buildShortlist(cands []candidate, date time.Time, poolSize, shortlistSize i
 	if poolSize < len(sorted) {
 		sorted = sorted[:poolSize]
 	}
-	rng := rand.New(rand.NewSource(dateSeed(date)))
+	rng := rand.New(rand.NewSource(dateSeed(date))) //nolint:gosec // deterministic daily shuffle, not security-sensitive
 	rng.Shuffle(len(sorted), func(i, j int) { sorted[i], sorted[j] = sorted[j], sorted[i] })
 	if shortlistSize < len(sorted) {
 		sorted = sorted[:shortlistSize]

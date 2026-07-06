@@ -7,8 +7,8 @@ import (
 	"github.com/icco/recommender/models"
 )
 
-func mkCand(id uint, rating float64, view int, genres ...string) candidate {
-	return candidate{ID: id, Type: "movie", Title: "T", Rating: rating, ViewCount: view, Genres: genres}
+func mkCand(id uint, rating float64, view int) candidate {
+	return candidate{ID: id, Type: "movie", Title: "T", Rating: rating, ViewCount: view}
 }
 
 func TestScoreCandidate_ratingAndNovelty(t *testing.T) {

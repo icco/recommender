@@ -66,7 +66,7 @@ type sectionListMetadata struct {
 	Genre     []struct {
 		Tag string `json:"tag"`
 	} `json:"Genre,omitempty"`
-	Guid []struct {
+	GUID []struct {
 		ID string `json:"id"`
 	} `json:"Guid,omitempty"`
 	LeafCount  *int `json:"leafCount,omitempty"`
@@ -89,7 +89,7 @@ func sectionMetadataToPlexItem(md sectionListMetadata) Item {
 		summary = *md.Summary
 	}
 	var guids []string
-	for _, g := range md.Guid {
+	for _, g := range md.GUID {
 		if g.ID != "" {
 			guids = append(guids, g.ID)
 		}

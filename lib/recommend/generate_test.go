@@ -12,7 +12,7 @@ import (
 
 type fakeChatter struct{ reply string }
 
-func (f fakeChatter) Complete(ctx context.Context, system, user string, schema *genai.Schema) (string, error) {
+func (f fakeChatter) Complete(_ context.Context, _, _ string, _ *genai.Schema) (string, error) {
 	return f.reply, nil
 }
 

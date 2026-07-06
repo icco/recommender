@@ -108,11 +108,11 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 }
 
 func (r *Recommender) renderPrompts(ctx context.Context, movies, tvshows []candidate) (system, user string, err error) {
-	sysTmpl, err := prompts.FS.ReadFile("system_openai.txt")
+	sysTmpl, err := prompts.FS.ReadFile("system.txt")
 	if err != nil {
 		return "", "", fmt.Errorf("read system prompt: %w", err)
 	}
-	userTmplBytes, err := prompts.FS.ReadFile("recommendation_openai.txt")
+	userTmplBytes, err := prompts.FS.ReadFile("recommendation.txt")
 	if err != nil {
 		return "", "", fmt.Errorf("read user prompt: %w", err)
 	}
@@ -199,7 +199,7 @@ func (r *Recommender) recordRun(ctx context.Context, date time.Time, movieCount,
 		run.Error = genErr.Error()
 	}
 	if err := r.db.WithContext(ctx).Create(&run).Error; err != nil {
-		return fmt.Errorf("record run: %w (original: %v)", err, genErr)
+		return fmt.Errorf("record run: %w", errors.Join(err, genErr))
 	}
 	return genErr
 }

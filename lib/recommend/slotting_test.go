@@ -2,10 +2,12 @@ package recommend
 
 import (
 	"testing"
+
+	"github.com/icco/recommender/models"
 )
 
-func cand(id uint, typ string, view int, genres ...string) candidate {
-	return candidate{ID: id, Type: typ, Title: "t", Genres: genres, ViewCount: view, Rating: 7}
+func cand(id uint, view int, genres ...string) candidate {
+	return candidate{ID: id, Type: models.TypeMovie, Title: "t", Genres: genres, ViewCount: view, Rating: 7}
 }
 
 func TestParsePickResponse_ok(t *testing.T) {
@@ -21,10 +23,10 @@ func TestParsePickResponse_ok(t *testing.T) {
 
 func TestSelectMovies_ignoresUnknownIDsAndFillsRoles(t *testing.T) {
 	shortlist := []candidate{
-		cand(1, "movie", 0, "Comedy"),
-		cand(2, "movie", 0, "Action"),
-		cand(3, "movie", 4, "Drama"), // watched -> eligible for rewatch slot
-		cand(4, "movie", 0, "Horror"),
+		cand(1, 0, "Comedy"),
+		cand(2, 0, "Action"),
+		cand(3, 4, "Drama"), // watched -> eligible for rewatch slot
+		cand(4, 0, "Horror"),
 	}
 	picks := []pick{
 		{ID: 1, Explanation: "funny"},
@@ -51,7 +53,7 @@ func TestSelectMovies_ignoresUnknownIDsAndFillsRoles(t *testing.T) {
 func TestSelectMovies_rewatchRequiresWatched(t *testing.T) {
 	// Only unwatched titles available: rewatch slot cannot be filled by a watched
 	// title, but the target count is still met by padding.
-	shortlist := []candidate{cand(1, "movie", 0, "Comedy"), cand(2, "movie", 0, "Action"), cand(3, "movie", 0, "Drama")}
+	shortlist := []candidate{cand(1, 0, "Comedy"), cand(2, 0, "Action"), cand(3, 0, "Drama")}
 	picks := []pick{{ID: 1}, {ID: 2}, {ID: 3}}
 	recs := selectMovies(picks, shortlist, 4)
 	if len(recs) != 3 {
