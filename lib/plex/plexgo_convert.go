@@ -66,11 +66,49 @@ type sectionListMetadata struct {
 	Genre     []struct {
 		Tag string `json:"tag"`
 	} `json:"Genre,omitempty"`
-	GUID []struct {
-		ID string `json:"id"`
-	} `json:"Guid,omitempty"`
-	LeafCount  *int `json:"leafCount,omitempty"`
-	ChildCount *int `json:"childCount,omitempty"`
+	GUID       plexGUIDs `json:"Guid,omitempty"`
+	LeafCount  *int      `json:"leafCount,omitempty"`
+	ChildCount *int      `json:"childCount,omitempty"`
+}
+
+// plexGUIDs decodes Plex's GUID field, which varies: an array of {id} objects
+// when includeGuids adds them, or (via Go's case-insensitive key matching) the
+// lowercase `guid` string when the array is absent. Both decode without error.
+type plexGUIDs []string
+
+func (g *plexGUIDs) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*g = nil
+		return nil
+	}
+	switch b[0] {
+	case '[':
+		var arr []struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(b, &arr); err != nil {
+			return err
+		}
+		out := make(plexGUIDs, 0, len(arr))
+		for _, e := range arr {
+			if e.ID != "" {
+				out = append(out, e.ID)
+			}
+		}
+		*g = out
+	case '"':
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s != "" {
+			*g = plexGUIDs{s}
+		}
+	default:
+		*g = nil // unknown shape; ignore rather than fail the whole page
+	}
+	return nil
 }
 
 func sectionMetadataToPlexItem(md sectionListMetadata) Item {
@@ -88,12 +126,7 @@ func sectionMetadataToPlexItem(md sectionListMetadata) Item {
 	if md.Summary != nil {
 		summary = *md.Summary
 	}
-	var guids []string
-	for _, g := range md.GUID {
-		if g.ID != "" {
-			guids = append(guids, g.ID)
-		}
-	}
+	guids := []string(md.GUID)
 	return Item{
 		RatingKey:  rk,
 		Key:        md.Key,
