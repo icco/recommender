@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"text/template"
 	"time"
 
@@ -50,16 +49,6 @@ type Recommender struct {
 	plex   *plex.Client
 	tmdb   *tmdb.Client
 	openai *openai.Client
-
-	cacheMu sync.Mutex
-	cache   map[string]*CacheEntry
-}
-
-// CacheEntry represents a cached recommendation with metadata
-type CacheEntry struct {
-	Recommendation *models.Recommendation
-	Timestamp      time.Time
-	TTL            time.Duration
 }
 
 // RecommendationContext contains the context used for generating recommendations.
@@ -102,12 +91,7 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error
 		plex:   plex,
 		tmdb:   tmdb,
 		openai: openaiClient,
-		cache:  make(map[string]*CacheEntry),
 	}
-
-	// Cleanup runs in the background; we want it to inherit a logger we control,
-	// so callers should provide ctx via StartCacheCleanup if structured background logging is needed.
-	go r.startCacheCleanup(context.Background())
 
 	return r, nil
 }
@@ -292,15 +276,6 @@ func (r *Recommender) formatContent(items []models.Recommendation) string {
 	return content.String()
 }
 
-// limitPreviousRecommendations limits the number of previous recommendations to prevent token limit issues
-func (r *Recommender) limitPreviousRecommendations(recs []models.Recommendation) []models.Recommendation {
-	// Only keep the last 10 recommendations
-	if len(recs) > 10 {
-		return recs[len(recs)-10:]
-	}
-	return recs
-}
-
 // GenerateRecommendations generates new recommendations for the specified date.
 // It uses OpenAI to analyze unwatched content and previous recommendations,
 // then stores the generated recommendations in the database.
@@ -339,9 +314,6 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("failed to get previous recommendations: %w", err)
 	}
-
-	// Limit previous recommendations
-	prevRecs = r.limitPreviousRecommendations(prevRecs)
 
 	// Movies: include watched and unwatched so the model can pick a rewatch; TV: unwatched only.
 	var allContent []models.Recommendation
@@ -446,9 +418,8 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	// Prepare content for OpenAI
 	content := RecommendationContext{
-		Content: r.formatContent(allContent),
-		Preferences: "User enjoys a mix of genres including action, drama, comedy, and sci-fi. " +
-			"Prefers content with high ratings (above 7.5) and appreciates both popular and lesser-known titles.",
+		Content:                 r.formatContent(allContent),
+		Preferences:             "",
 		PreviousRecommendations: r.formatContent(prevRecs),
 	}
 
@@ -757,85 +728,6 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	}
 
 	return &stats, nil
-}
-
-// startCacheCleanup starts a goroutine that periodically cleans up expired cache entries.
-func (r *Recommender) startCacheCleanup(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			r.cleanupCache(ctx)
-		}
-	}
-}
-
-// cleanupCache removes expired entries from the cache.
-func (r *Recommender) cleanupCache(ctx context.Context) {
-	l := logging.FromContext(ctx)
-	now := time.Now()
-
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-
-	var expiredKeys []string
-	for key, entry := range r.cache {
-		if now.Sub(entry.Timestamp) > entry.TTL {
-			expiredKeys = append(expiredKeys, key)
-		}
-	}
-
-	for _, key := range expiredKeys {
-		delete(r.cache, key)
-	}
-
-	if len(expiredKeys) > 0 {
-		l.Debugw("Cleaned up expired cache entries",
-			"expired_count", len(expiredKeys),
-			"remaining_count", len(r.cache))
-	}
-}
-
-// SetCache adds or updates a cache entry.
-func (r *Recommender) SetCache(key string, recommendation *models.Recommendation, ttl time.Duration) {
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-	r.cache[key] = &CacheEntry{
-		Recommendation: recommendation,
-		Timestamp:      time.Now(),
-		TTL:            ttl,
-	}
-}
-
-// GetCache retrieves a cache entry if it exists and is not expired.
-func (r *Recommender) GetCache(key string) (*models.Recommendation, bool) {
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-
-	entry, exists := r.cache[key]
-	if !exists {
-		return nil, false
-	}
-
-	if time.Since(entry.Timestamp) > entry.TTL {
-		delete(r.cache, key)
-		return nil, false
-	}
-
-	return entry.Recommendation, true
-}
-
-// ClearCache removes all cache entries.
-func (r *Recommender) ClearCache(ctx context.Context) {
-	r.cacheMu.Lock()
-	r.cache = make(map[string]*CacheEntry)
-	r.cacheMu.Unlock()
-
-	logging.FromContext(ctx).Debugw("Cache cleared")
 }
 
 // retryOpenAIRequest implements retry logic for OpenAI API calls with exponential backoff.

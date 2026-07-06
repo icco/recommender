@@ -27,10 +27,7 @@ func testDB(t *testing.T) *gorm.DB {
 }
 
 func testRecommender(db *gorm.DB) *Recommender {
-	return &Recommender{
-		db:    db,
-		cache: make(map[string]*CacheEntry),
-	}
+	return &Recommender{db: db}
 }
 
 func TestGetRecommendationDates_distinctDaysAndPagination(t *testing.T) {
