@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,6 +41,37 @@ const (
 	// title columns on the Movie/TVShow tables.
 	titleKey = "title"
 )
+
+// DownloadImage fetches a Plex image URL (adding the auth token) and writes it to
+// dest, creating parent directories as needed. Used to cache posters locally so
+// the public web page doesn't need to reach the private Plex host.
+func (c *Client) DownloadImage(ctx context.Context, imageURL, dest string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Plex-Token", c.plexToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch image: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetch image %s: HTTP %d", imageURL, resp.StatusCode)
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return fmt.Errorf("create poster dir: %w", err)
+	}
+	f, err := os.Create(dest) //nolint:gosec // dest is server-controlled (poster dir + sanitized name)
+	if err != nil {
+		return fmt.Errorf("create poster file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("write poster: %w", err)
+	}
+	return nil
+}
 
 // NewClient creates a new Plex client with the provided configuration.
 // It initializes the Plex API client with the given URL and authentication token.

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
 
 	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/lib/recommend/prompts"
-	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -85,7 +85,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 
 	for i := range recs {
 		recs[i].Date = date
-		r.fillPoster(ctx, &recs[i])
+		r.cachePoster(ctx, &recs[i])
 	}
 
 	movieCount, tvCount := 0, 0
@@ -141,37 +141,32 @@ func (r *Recommender) renderPrompts(ctx context.Context, movies, tvshows []candi
 	return string(sysTmpl), b.String(), nil
 }
 
-// fillPoster lazily fetches a TMDb poster only when one is missing. Bounded to the
-// finalist set, so at most a handful of calls per run.
-func (r *Recommender) fillPoster(ctx context.Context, rec *models.Recommendation) {
-	if rec.PosterURL != "" || r.tmdb == nil {
+// cachePoster downloads the finalist's Plex poster into the local poster dir and
+// rewrites PosterURL to a public /posters/ path the web page can load. Plex thumb
+// URLs point at a private, token-gated host browsers can't reach. Bounded to the
+// finalist set, so at most a handful of downloads per run.
+func (r *Recommender) cachePoster(ctx context.Context, rec *models.Recommendation) {
+	if r.posterDir == "" || rec.PosterURL == "" || r.plex == nil {
 		return
 	}
-	l := logging.FromContext(ctx)
-	switch rec.Type {
-	case models.TypeMovie:
-		res, err := r.tmdb.SearchMovie(ctx, rec.Title, rec.Year)
-		if err != nil {
-			if !errors.Is(err, tmdb.ErrCircuitOpen) {
-				l.Warnw("poster fill (movie) failed", "title", rec.Title, zap.Error(err))
-			}
-			return
-		}
-		if len(res.Results) > 0 {
-			rec.PosterURL = r.tmdb.GetPosterURL(res.Results[0].PosterPath)
-		}
-	case models.TypeTVShow:
-		res, err := r.tmdb.SearchTVShow(ctx, rec.Title, rec.Year)
-		if err != nil {
-			if !errors.Is(err, tmdb.ErrCircuitOpen) {
-				l.Warnw("poster fill (tv) failed", "title", rec.Title, zap.Error(err))
-			}
-			return
-		}
-		if len(res.Results) > 0 {
-			rec.PosterURL = r.tmdb.GetPosterURL(res.Results[0].PosterPath)
-		}
+	name := fmt.Sprintf("%s-%d.jpg", rec.Type, posterID(rec))
+	dest := filepath.Join(r.posterDir, name)
+	if err := r.plex.DownloadImage(ctx, rec.PosterURL, dest); err != nil {
+		logging.FromContext(ctx).Warnw("cache poster failed", "title", rec.Title, zap.Error(err))
+		return
 	}
+	rec.PosterURL = "/posters/" + name
+}
+
+// posterID returns the Plex-backed ID used to name the cached poster file.
+func posterID(rec *models.Recommendation) uint {
+	switch {
+	case rec.MovieID != nil:
+		return *rec.MovieID
+	case rec.TVShowID != nil:
+		return *rec.TVShowID
+	}
+	return 0
 }
 
 func (r *Recommender) saveRecommendations(ctx context.Context, date time.Time, recs []models.Recommendation) error {

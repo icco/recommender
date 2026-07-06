@@ -10,7 +10,7 @@ import (
 )
 
 func TestHandleTraktConnect_gate(t *testing.T) {
-	rec, err := recommend.New(nil, nil, nil, nil, "test", recommend.SignalConfig{})
+	rec, err := recommend.New(nil, nil, nil, nil, "test", recommend.SignalConfig{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

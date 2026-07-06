@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -137,7 +138,13 @@ func main() {
 		AniListUsername:   os.Getenv("ANILIST_USERNAME"),
 	}
 
-	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, chat, geminiModel, sigCfg)
+	// posterDir sits next to the DB in the data volume; DB_PATH is operator config.
+	posterDir := filepath.Join(filepath.Dir(dbPath), "posters")
+	if err := os.MkdirAll(posterDir, 0o750); err != nil { //nolint:gosec // posterDir derived from operator-set DB_PATH, not user input
+		log.Fatalw("Failed to create poster dir", zap.Error(err))
+	}
+
+	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, chat, geminiModel, sigCfg, posterDir)
 	if err != nil {
 		log.Fatalw("Failed to create recommender", zap.Error(err))
 	}
@@ -149,6 +156,7 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(static.Files))))
+	r.Handle("/posters/*", http.StripPrefix("/posters/", http.FileServer(http.Dir(posterDir))))
 
 	r.Get("/", handlers.HandleHome(recommender))
 	r.Get("/date/{date}", handlers.HandleDate(recommender))
