@@ -43,9 +43,8 @@ func scoreCandidate(c candidate) float64 {
 	return s
 }
 
-// buildShortlist keeps the best poolSize titles by score, then applies a
-// date-seeded shuffle and returns the first shortlistSize. This yields quality
-// (only good titles) plus daily variety, deterministically.
+// buildShortlist takes the top poolSize by score, then a date-seeded shuffle to
+// shortlistSize — quality plus deterministic daily variety.
 func buildShortlist(cands []candidate, date time.Time, poolSize, shortlistSize int) []candidate {
 	sorted := make([]candidate, len(cands))
 	copy(sorted, cands)

@@ -86,10 +86,9 @@ func hasGenre(c candidate, want string) bool {
 	return false
 }
 
-// selectMovies fills up to `target` movie slots (comedy, action/drama, rewatch,
-// then wildcards) from the model's valid picks, padding from the shortlist when
-// the model under-delivers. Unknown IDs are ignored; the rewatch slot only
-// accepts a watched (ViewCount>0) title. Date is set by the caller (0 here).
+// selectMovies fills up to `target` slots (comedy, action/drama, rewatch, wildcard)
+// from valid picks, padding from the shortlist if short. Unknown IDs are ignored;
+// the rewatch slot requires ViewCount>0. Caller sets Date.
 func selectMovies(picks []pick, shortlist []candidate, target int) []models.Recommendation {
 	byID := candByID(shortlist)
 	used := make(map[uint]bool)
