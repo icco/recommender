@@ -42,15 +42,22 @@ const (
 	titleKey = "title"
 )
 
-// DownloadImage fetches a Plex image URL (adding the auth token) and writes it to
-// dest, creating parent directories as needed. Used to cache posters locally so
-// the public web page doesn't need to reach the private Plex host.
+// maxPosterBytes caps a single poster download so a misbehaving host can't fill
+// the disk.
+const maxPosterBytes = 25 << 20 // 25 MiB
+
+// DownloadImage fetches an image URL and writes it to dest. The X-Plex-Token is
+// attached only when imageURL is on the configured Plex host: thumb metadata can
+// carry absolute off-host URLs, and sending the token there would leak it and
+// allow SSRF with the service's credentials.
 func (c *Client) DownloadImage(ctx context.Context, imageURL, dest string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-Plex-Token", c.plexToken)
+	if sameHost(imageURL, c.plexURL) {
+		req.Header.Set("X-Plex-Token", c.plexToken)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fetch image: %w", err)
@@ -67,10 +74,24 @@ func (c *Client) DownloadImage(ctx context.Context, imageURL, dest string) error
 		return fmt.Errorf("create poster file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxPosterBytes)); err != nil {
 		return fmt.Errorf("write poster: %w", err)
 	}
 	return nil
+}
+
+// sameHost reports whether two URLs target the same host:port. A parse failure
+// on either side returns false, so the caller fails closed (no token attached).
+func sameHost(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	return ua.Host != "" && strings.EqualFold(ua.Host, ub.Host)
 }
 
 // NewClient creates a new Plex client with the provided configuration.

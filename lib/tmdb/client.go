@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
 
@@ -230,7 +230,7 @@ func (c *Client) SearchMovie(ctx context.Context, title string, year int) (*Sear
 	l := logging.FromContext(ctx)
 	// safeURL never includes the api key so it is safe to embed in errors and logs.
 	safeURL := fmt.Sprintf("%s/search/movie?query=%s&year=%d",
-		c.baseURL, strings.ReplaceAll(title, " ", "+"), year)
+		c.baseURL, url.QueryEscape(title), year)
 
 	retryFunc := func() (*SearchResult, error) {
 		if !c.circuitBreaker.canExecute() {
@@ -324,7 +324,7 @@ func (c *Client) SearchTVShow(ctx context.Context, title string, year int) (*TVS
 	l := logging.FromContext(ctx)
 	// safeURL never includes the api key so it is safe to embed in errors and logs.
 	safeURL := fmt.Sprintf("%s/search/tv?query=%s&first_air_date_year=%d",
-		c.baseURL, strings.ReplaceAll(title, " ", "+"), year)
+		c.baseURL, url.QueryEscape(title), year)
 
 	retryFunc := func() (*TVSearchResult, error) {
 		if !c.circuitBreaker.canExecute() {

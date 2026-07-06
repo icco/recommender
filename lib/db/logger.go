@@ -8,6 +8,7 @@ import (
 
 	"github.com/icco/gutil/logging"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
@@ -18,6 +19,8 @@ import (
 type GormLogger struct {
 	logger *zap.SugaredLogger
 }
+
+var _ gorm.ParamsFilter = (*GormLogger)(nil)
 
 // NewGormLogger creates a new GORM logger that forwards to zap.
 func NewGormLogger(base *zap.Logger) *GormLogger {
@@ -53,6 +56,12 @@ func (l *GormLogger) Warn(ctx context.Context, msg string, data ...interface{}) 
 // Error logs error messages.
 func (l *GormLogger) Error(ctx context.Context, msg string, data ...interface{}) {
 	l.loggerFor(ctx).Errorw(msg, "data", data)
+}
+
+// ParamsFilter drops bound parameter values so GORM logs SQL with placeholders
+// left un-interpolated, keeping secrets (e.g. OAuth tokens) and PII out of logs.
+func (l *GormLogger) ParamsFilter(_ context.Context, sql string, _ ...any) (string, []any) {
+	return sql, nil
 }
 
 // Trace logs SQL query execution at debug level (or error level on failure).
