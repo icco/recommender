@@ -93,8 +93,11 @@ func main() {
 		log.Fatalw("TMDB_API_KEY environment variable is required")
 	}
 
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		log.Fatalw("OPENAI_API_KEY environment variable is required")
+	if os.Getenv("GOOGLE_CLOUD_PROJECT") == "" {
+		log.Fatalw("GOOGLE_CLOUD_PROJECT environment variable is required")
+	}
+	if os.Getenv("GOOGLE_CLOUD_LOCATION") == "" {
+		log.Fatalw("GOOGLE_CLOUD_LOCATION environment variable is required")
 	}
 
 	dbPath := os.Getenv("DB_PATH")
@@ -119,7 +122,16 @@ func main() {
 
 	plexClient := plex.NewClient(plexURL, plexToken, gormDB, tmdbClient)
 
-	recommender, err := recommend.New(gormDB, plexClient, tmdbClient)
+	geminiModel := os.Getenv("GEMINI_MODEL")
+	if geminiModel == "" {
+		geminiModel = "gemini-2.5-flash"
+	}
+	chat, err := recommend.NewGeminiChatter(ctx, geminiModel)
+	if err != nil {
+		log.Fatalw("Failed to create Gemini client", zap.Error(err))
+	}
+
+	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, chat, geminiModel)
 	if err != nil {
 		log.Fatalw("Failed to create recommender", zap.Error(err))
 	}

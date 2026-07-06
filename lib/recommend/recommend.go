@@ -49,6 +49,8 @@ type Recommender struct {
 	plex   *plex.Client
 	tmdb   *tmdb.Client
 	openai *openai.Client
+	chat   Chatter
+	model  string
 }
 
 // RecommendationContext contains the context used for generating recommendations.
@@ -69,7 +71,7 @@ type UnwatchedContent struct {
 // New creates a new Recommender instance with the provided dependencies.
 // It initializes the OpenAI client with proper timeout and retry configuration.
 // Loggers are sourced from per-call ctx via gutil/logging.
-func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error) {
+func New(db *gorm.DB, plexClient *plex.Client, tmdbClient *tmdb.Client, chat Chatter, model string) (*Recommender, error) {
 	httpClient := &http.Client{
 		Timeout: 120 * time.Second,
 		Transport: &http.Transport{
@@ -88,9 +90,11 @@ func New(db *gorm.DB, plex *plex.Client, tmdb *tmdb.Client) (*Recommender, error
 
 	r := &Recommender{
 		db:     db,
-		plex:   plex,
-		tmdb:   tmdb,
+		plex:   plexClient,
+		tmdb:   tmdbClient,
 		openai: openaiClient,
+		chat:   chat,
+		model:  model,
 	}
 
 	return r, nil
