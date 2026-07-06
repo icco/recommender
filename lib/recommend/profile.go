@@ -114,3 +114,46 @@ func (r *Recommender) tasteProfile(ctx context.Context) (string, error) {
 	}
 	return "Favorite genres, most to least: " + strings.Join(tops, ", ") + ".", nil
 }
+
+// lovedTitles summarizes up to 5 highly-rated (Value >= 8) owned titles from
+// external signals, for prompt context. Empty when there are none.
+func (r *Recommender) lovedTitles(ctx context.Context) (string, error) {
+	var sigs []models.ExternalSignal
+	if err := r.db.WithContext(ctx).
+		Where("kind IN ? AND value >= ?", []string{models.SignalKindRated, models.SignalKindScore}, 8.0).
+		Order("value DESC").Limit(20).Find(&sigs).Error; err != nil {
+		return "", fmt.Errorf("loved signals: %w", err)
+	}
+	seen := make(map[string]struct{})
+	var titles []string
+	for _, sig := range sigs {
+		var title string
+		switch {
+		case sig.MovieID != nil:
+			var m models.Movie
+			if err := r.db.WithContext(ctx).First(&m, *sig.MovieID).Error; err == nil {
+				title = m.Title
+			}
+		case sig.TVShowID != nil:
+			var s models.TVShow
+			if err := r.db.WithContext(ctx).First(&s, *sig.TVShowID).Error; err == nil {
+				title = s.Title
+			}
+		}
+		if title == "" {
+			continue
+		}
+		if _, dup := seen[title]; dup {
+			continue
+		}
+		seen[title] = struct{}{}
+		titles = append(titles, title)
+		if len(titles) == 5 {
+			break
+		}
+	}
+	if len(titles) == 0 {
+		return "", nil
+	}
+	return "Recently loved: " + strings.Join(titles, ", ") + ".", nil
+}

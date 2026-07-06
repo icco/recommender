@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/icco/recommender/models"
@@ -60,5 +61,22 @@ func TestGenreAffinity_blendsRatedSignals(t *testing.T) {
 	}
 	if aff["Comedy"] <= aff["Horror"] {
 		t.Errorf("rated signal should lift Comedy (%.2f) above Horror (%.2f)", aff["Comedy"], aff["Horror"])
+	}
+}
+
+func TestLovedTitles_listsHighlyRated(t *testing.T) {
+	db := testDB(t)
+	r := testRecommender(db)
+	ctx := context.Background()
+	m := models.Movie{Title: "Loved Film", Year: 2000, PlexRatingKey: "a"}
+	db.Create(&m)
+	db.Create(&models.ExternalSignal{Source: models.SourceTrakt, ExternalRef: "rated:1", Kind: models.SignalKindRated, MovieID: &m.ID, Value: 10})
+
+	s, err := r.lovedTitles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s, "Loved Film") {
+		t.Errorf("expected loved summary to include the title, got %q", s)
 	}
 }

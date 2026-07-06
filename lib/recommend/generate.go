@@ -27,6 +27,7 @@ type promptData struct {
 	TargetMovies  int
 	TargetTVShows int
 	Profile       string
+	Loved         string
 	Movies        string
 	TVShows       string
 }
@@ -120,14 +121,19 @@ func (r *Recommender) renderPrompts(ctx context.Context, movies, tvshows []candi
 	if err != nil {
 		return "", "", fmt.Errorf("parse user prompt: %w", err)
 	}
-	profile, err := r.tasteProfile(ctx) // Phase 2; returns "" until Task 8
+	profile, err := r.tasteProfile(ctx)
 	if err != nil {
 		logging.FromContext(ctx).Warnw("taste profile failed; continuing without", zap.Error(err))
 		profile = ""
 	}
+	loved, err := r.lovedTitles(ctx)
+	if err != nil {
+		logging.FromContext(ctx).Warnw("loved titles failed; continuing without", zap.Error(err))
+		loved = ""
+	}
 	var b strings.Builder
 	if err := userTmpl.Execute(&b, promptData{
-		TargetMovies: targetMovies, TargetTVShows: targetTVShows, Profile: profile,
+		TargetMovies: targetMovies, TargetTVShows: targetTVShows, Profile: profile, Loved: loved,
 		Movies: formatShortlist(movies), TVShows: formatShortlist(tvshows),
 	}); err != nil {
 		return "", "", fmt.Errorf("execute user prompt: %w", err)
