@@ -14,7 +14,7 @@ require (
 	go.uber.org/zap v1.28.0
 	google.golang.org/genai v1.62.0
 	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.31.1
+	gorm.io/gorm v1.31.2
 )
 
 require (
