@@ -64,7 +64,7 @@ no bulk external calls**. All enrichment happens at cache time.
 /cron/recommend  eligible pool = owned − last-30-days recs
               → score (rating + novelty + genre + taste affinity)
               → date-seeded shuffle → diverse shortlist (~80)
-              → OpenAI (structured outputs, strict json_schema): pick IDs + reason
+              → Gemini on Vertex AI (responseSchema, JSON): pick IDs + reason
               → match by ID → deterministic slotting/validation in Go
               → lazy poster fill for the ~7 finalists only
               → persist recommendations + a GenerationRun row
@@ -94,17 +94,36 @@ no bulk external calls**. All enrichment happens at cache time.
   without external randomness. This keeps runs reproducible and testable.
 - Emit a diverse shortlist (target ~80 titles, spread across genres) to the model.
 
-### 3. ID-based LLM contract (structured outputs)
+### 3. ID-based LLM contract (Gemini structured output)
 
 - Each shortlist item is presented with a short numeric ID (the DB row ID).
-- Use OpenAI **structured outputs** (`response_format` = `json_schema`, `strict:
-  true`) so the response shape is guaranteed. The model returns chosen **IDs** and
-  a one-line `explanation` per pick, grouped by requested role.
+- Use Gemini **controlled generation**: set `ResponseMIMEType = "application/json"`
+  and a `ResponseSchema` (OpenAPI-subset) so the response shape is guaranteed. The
+  model returns chosen **IDs** and a one-line `explanation` per pick, grouped by
+  requested role.
 - Matching is by ID only. No fuzzy title matching. The model never supplies TMDb
   IDs, so it can't overwrite correct ones.
 - Prompt shrinks to "choose the best fits from this shortlist and explain briefly,"
   which plays to the model's strengths and removes any reliance on it knowing the
   full library.
+
+### LLM provider: Gemini on Vertex AI
+
+- Replace the `github.com/sashabaranov/go-openai` dependency with the unified
+  Google Gen AI SDK, `google.golang.org/genai`. Construct the client with
+  `Backend: genai.BackendVertexAI`; the same SDK/code also supports the Gemini
+  Developer API (API key) for local dev by config only.
+- Auth uses Application Default Credentials (ADC) — no API key to manage in prod
+  (service account / workload identity). Config via env:
+  - `GOOGLE_GENAI_USE_VERTEXAI=true`
+  - `GOOGLE_CLOUD_PROJECT` (GCP project ID) — **required**
+  - `GOOGLE_CLOUD_LOCATION` (e.g. `us-central1`) — **required**
+  - `GOOGLE_APPLICATION_CREDENTIALS` (path to SA key) for local dev, or ambient ADC
+  - `GEMINI_MODEL` (optional, default `gemini-2.5-flash`)
+  - Remove `OPENAI_API_KEY`.
+- `main.go` startup validation, `README.md`, `template.env`, `docker-compose.yml`,
+  and `CLAUDE.md` update to the new variables. `gpt-5*` temperature quirks are
+  dropped; the retry-with-backoff wrapper is retained, adapted to `genai` errors.
 
 ### 4. Deterministic slotting + validation (Go)
 
@@ -150,9 +169,10 @@ Phases 0–2 ship in **one PR**. Phases 3–4 are follow-ons, each with its own 
 - **Phase 0 — Delete cruft.** Remove the dead cache subsystem, hardcoded
   preferences, and `limitPreviousRecommendations`.
 - **Phase 1 — Reliable core.** Plex GUID + full-genre extraction; cache-time
-  incremental enrichment; Go candidate selection + date-seeded shuffle; ID-based
-  structured-output contract; deterministic slotting; `GenerationRun`; 30-day
-  dedupe; surface explanations in the template; tests with mocked OpenAI/TMDb.
+  incremental enrichment; swap OpenAI → Gemini on Vertex AI; Go candidate
+  selection + date-seeded shuffle; ID-based Gemini structured-output contract;
+  deterministic slotting; `GenerationRun`; 30-day dedupe; surface explanations in
+  the template; tests with mocked Gemini/TMDb.
 - **Phase 2 — Taste profile from Plex signals.** Compute affinity from Plex
   `ViewCount` + Plex ratings; write `ExternalSignal` rows with `Source = "plex"`;
   replace the hardcoded preferences with a generated taste-profile block fed into
@@ -175,15 +195,17 @@ and `lib/plex` test patterns:
 - ID-based matching ignores unknown/hallucinated IDs.
 - Signal aggregation → taste profile (Phase 2).
 
-External services (OpenAI, TMDb, and later Trakt/AniList) are accessed through
+External services (Gemini, TMDb, and later Trakt/AniList) are accessed through
 interfaces and mocked in tests. No network calls in the unit suite.
 
 ## Risks / open questions
 
-- **Structured outputs + model choice.** Current code uses `openai.GPT5Mini` with a
-  JSON-object response format. The plan switches to strict `json_schema`; confirm
-  the chosen model + `go-openai` version support strict structured outputs, else
-  fall back to json-object + validation with a repair retry.
+- **Gemini/Vertex access.** Requires a GCP project with the Vertex AI API enabled
+  and ADC available to the runtime (SA key locally, workload identity in prod).
+  Confirm the chosen model (`gemini-2.5-flash`) is available in `GOOGLE_CLOUD_LOCATION`.
+  `ResponseSchema` accepts only an OpenAPI subset — keep the schema flat (arrays of
+  `{id, explanation}`); if a field is unsupported, fall back to
+  `ResponseMIMEType: application/json` + Go-side validation with a repair retry.
 - **Cache enrichment budget.** Bounded per-run enrichment (`N` titles) trades
   first-run completeness for reliability; a large library takes several cache runs
   to fully enrich. Acceptable — recommend time no longer depends on full
