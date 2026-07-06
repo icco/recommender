@@ -29,7 +29,7 @@ func testDB(t *testing.T) *gorm.DB {
 	})
 	if err := db.AutoMigrate(
 		&models.Recommendation{}, &models.Movie{}, &models.TVShow{},
-		&models.GenerationRun{}, &models.ExternalSignal{},
+		&models.GenerationRun{}, &models.ExternalSignal{}, &models.OAuthToken{},
 	); err != nil {
 		t.Fatal(err)
 	}
