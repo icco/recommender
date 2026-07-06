@@ -47,7 +47,10 @@ var (
 func RunMigrations(ctx context.Context, db *gorm.DB) error {
 	enableSQLiteOptimizations(ctx, db)
 
-	if err := db.WithContext(ctx).AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
+	if err := db.WithContext(ctx).AutoMigrate(
+		&models.Movie{}, &models.TVShow{}, &models.Recommendation{},
+		&models.GenerationRun{}, &models.ExternalSignal{},
+	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
 
