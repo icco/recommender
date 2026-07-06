@@ -4,6 +4,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: recommender_test
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v7
       - name: Setup Go
@@ -15,4 +24,6 @@ jobs:
       - name: Build
         run: go build -v ./...
       - name: Test with the Go CLI
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/recommender_test?sslmode=disable
         run: go test -v ./...

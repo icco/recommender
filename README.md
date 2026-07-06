@@ -2,7 +2,7 @@
 
 Daily movie and TV recommendations from your **Plex** library, enriched with **TMDb** metadata and chosen by **Gemini** (on Vertex AI). This is an experiment in building an app with generative AI.
 
-Stack: **Go**, **Chi** (routing), **GORM** (ORM), **SQLite**, **Gemini on Vertex AI** (`google.golang.org/genai`), **zap + gutil/logging** (JSON logs), **OpenTelemetry** (HTTP metrics on `/metrics`).
+Stack: **Go**, **Chi** (routing), **GORM** (ORM), **Postgres**, **Gemini on Vertex AI** (`google.golang.org/genai`), **zap + gutil/logging** (JSON logs), **OpenTelemetry** (HTTP metrics on `/metrics`).
 
 ## What you get
 
@@ -34,7 +34,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | GET | `/date/YYYY-MM-DD` | Recommendations for that day |
 | GET | `/dates` | Paginated list of days (`?page`, `?size`) |
 | GET | `/cron/recommend` | Start recommendation generation (async; file lock) |
-| GET | `/cron/cache` | Refresh Plex → SQLite cache (async; file lock) |
+| GET | `/cron/cache` | Refresh Plex → Postgres cache (async; file lock) |
 | GET | `/stats` | DB statistics |
 | GET | `/health` | JSON health including DB ping |
 | GET | `/metrics` | Prometheus exposition (otelhttp HTTP server metrics) |
@@ -44,6 +44,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `DATABASE_URL` | yes | Postgres connection string, e.g. `postgres://user:pass@host:5432/recommender?sslmode=disable` |
 | `PLEX_URL` | yes | Plex server base URL |
 | `PLEX_TOKEN` | yes | Plex token |
 | `TMDB_API_KEY` | yes | TMDb API key |
@@ -57,7 +58,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | `TRAKT_CONNECT_TOKEN` | no | Shared secret required to call `GET /trakt/connect?token=…`; the endpoint is disabled when unset |
 | `ANILIST_USERNAME` | no | AniList username (public list); enables AniList signals |
 | `PORT` | no | HTTP port (default `8080`) |
-| `DB_PATH` | no | SQLite file path (default `recommender.db`; Docker Compose uses `/data/recommender.db`) |
+| `POSTER_DIR` | no | Directory for locally cached Plex posters (default `posters`; Docker Compose uses `/data/posters`) |
 
 Authentication to Vertex AI uses [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) — no API key. Locally, run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS`.
 
@@ -96,12 +97,13 @@ Package docs: [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github
 
 ```bash
 gcloud auth application-default login   # or set GOOGLE_APPLICATION_CREDENTIALS
+export DATABASE_URL=postgres://recommender:recommender@localhost:5432/recommender?sslmode=disable
 export PLEX_URL=... PLEX_TOKEN=... TMDB_API_KEY=...
 export GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=... GOOGLE_CLOUD_LOCATION=us-central1
 go run .
 ```
 
-Optional: `DB_PATH=/path/to/recommender.db`.
+Optional: `POSTER_DIR=/path/to/posters`. Need a local Postgres? `docker compose up -d postgres`.
 
 ### Docker Compose
 
@@ -118,11 +120,11 @@ curl -sS "http://localhost:8080/cron/recommend"
 
 Logs: `docker compose logs -f`. Stop: `docker compose down`.
 
-The compose file mounts `./data` at `/data` and sets `DB_PATH=/data/recommender.db`.
+The compose file runs a bundled `postgres:17` service (data in the `pgdata` volume) and mounts `./data` at `/data` for cached posters (`POSTER_DIR=/data/posters`).
 
 ## Recommendation flow (summary)
 
-1. **`/cron/cache`** — Reads Plex libraries and stores all movies and TV shows in SQLite, including `view_count`, GUIDs (imdb/tmdb/tvdb), and the full genre list. Poster thumbs are stored as absolute URLs when Plex returns relative paths.
+1. **`/cron/cache`** — Reads Plex libraries and stores all movies and TV shows in Postgres, including `view_count`, GUIDs (imdb/tmdb/tvdb), and the full genre list. Poster thumbs are stored as absolute URLs when Plex returns relative paths.
 2. **`/cron/recommend`** — Skips if a successful run already exists for the UTC day. Otherwise: loads cached titles (minus anything recommended in the last 30 days), scores them (rating + novelty + Plex-derived taste affinity), takes a date-seeded diverse shortlist, asks Gemini to pick the best fits **by ID** with a one-line reason, slots them deterministically (comedy / action-drama / rewatch / wildcard movies + unwatched TV), lazily fills any missing posters from TMDb, and **replaces** that day's rows in one transaction. Every attempt records a `GenerationRun`.
 
 A day is "done" when a `GenerationRun` with status `ok` exists for it — tracked explicitly rather than inferred from row counts, so cron never re-runs a completed day.

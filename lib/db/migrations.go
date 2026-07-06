@@ -45,8 +45,6 @@ var (
 
 // RunMigrations runs all database migrations.
 func RunMigrations(ctx context.Context, db *gorm.DB) error {
-	enableSQLiteOptimizations(ctx, db)
-
 	if err := db.WithContext(ctx).AutoMigrate(
 		&models.Movie{}, &models.TVShow{}, &models.Recommendation{},
 		&models.GenerationRun{}, &models.ExternalSignal{}, &models.OAuthToken{},
@@ -112,29 +110,6 @@ func dropTableIfExists(ctx context.Context, db *gorm.DB, tableName string) error
 	}
 	l.Infow("Successfully dropped table", "table", tableName)
 	return nil
-}
-
-// enableSQLiteOptimizations enables SQLite-specific optimizations.
-// Pragma failures are logged but never aborts startup.
-func enableSQLiteOptimizations(ctx context.Context, db *gorm.DB) {
-	l := logging.FromContext(ctx)
-	optimizations := []string{
-		"PRAGMA journal_mode=WAL",    // Enable WAL mode for better concurrency
-		"PRAGMA synchronous=NORMAL",  // Faster writes while maintaining safety
-		"PRAGMA cache_size=1000",     // Increase cache size
-		"PRAGMA foreign_keys=ON",     // Enable foreign key constraints
-		"PRAGMA temp_store=MEMORY",   // Store temporary tables in memory
-		"PRAGMA mmap_size=134217728", // Enable memory-mapped I/O (128MB)
-		"PRAGMA optimize",            // Enable query optimization
-	}
-
-	for _, pragma := range optimizations {
-		if err := db.WithContext(ctx).Exec(pragma).Error; err != nil {
-			l.Warnw("Failed to execute pragma", "pragma", pragma, zap.Error(err))
-		} else {
-			l.Infow("Successfully executed pragma", "pragma", pragma)
-		}
-	}
 }
 
 // createAdditionalIndexes creates additional indexes for performance.

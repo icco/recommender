@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -33,7 +32,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.uber.org/zap"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -101,17 +100,25 @@ func main() {
 		log.Fatalw("GOOGLE_CLOUD_LOCATION environment variable is required")
 	}
 
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "recommender.db"
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatalw("DATABASE_URL environment variable is required")
 	}
 
-	gormDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	gormDB, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
 		Logger: db.NewGormLogger(log.Desugar()),
 	})
 	if err != nil {
 		log.Fatalw("Failed to connect to database", zap.Error(err))
 	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		log.Fatalw("Failed to get database handle", zap.Error(err))
+	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	if err := db.RunMigrations(ctx, gormDB); err != nil {
 		log.Fatalw("Failed to run migrations", zap.Error(err))
@@ -138,9 +145,12 @@ func main() {
 		AniListUsername:   os.Getenv("ANILIST_USERNAME"),
 	}
 
-	// posterDir sits next to the DB in the data volume; DB_PATH is operator config.
-	posterDir := filepath.Join(filepath.Dir(dbPath), "posters")
-	if err := os.MkdirAll(posterDir, 0o750); err != nil { //nolint:gosec // posterDir derived from operator-set DB_PATH, not user input
+	// posterDir holds locally cached Plex posters; POSTER_DIR is operator config.
+	posterDir := os.Getenv("POSTER_DIR")
+	if posterDir == "" {
+		posterDir = "posters"
+	}
+	if err := os.MkdirAll(posterDir, 0o750); err != nil { //nolint:gosec // posterDir is operator-set config, not user input
 		log.Fatalw("Failed to create poster dir", zap.Error(err))
 	}
 

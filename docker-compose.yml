@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - 8080:8080
     environment:
@@ -15,10 +18,29 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       # Point at the mounted service-account key so ADC works in the container.
       - GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-sa.json
-      - DB_PATH=/data/recommender.db
+      - DATABASE_URL=${DATABASE_URL:-postgres://recommender:recommender@postgres:5432/recommender?sslmode=disable}
+      - POSTER_DIR=/data/posters
       - PORT=${PORT:-8080}
     volumes:
       - ./data:/data
       # Mount a GCP service-account key (read-only) for Vertex AI auth.
       - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/secrets/gcp-sa.json:ro
     restart: unless-stopped
+  postgres:
+    image: postgres:17
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-recommender}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-recommender}
+      - POSTGRES_DB=${POSTGRES_DB:-recommender}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-recommender} -d ${POSTGRES_DB:-recommender}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+volumes:
+  pgdata:

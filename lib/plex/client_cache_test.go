@@ -4,17 +4,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/icco/recommender/lib/dbtest"
 	"github.com/icco/recommender/models"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func testPlexDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := dbtest.New(t)
 	if err := db.AutoMigrate(&models.Movie{}, &models.TVShow{}, &models.Recommendation{}); err != nil {
 		t.Fatal(err)
 	}

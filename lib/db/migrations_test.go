@@ -4,16 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/icco/recommender/lib/dbtest"
 	"github.com/icco/recommender/models"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestRunMigrations_createsNewTables(t *testing.T) {
-	gdb, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	gdb := dbtest.New(t)
 	if err := RunMigrations(t.Context(), gdb); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}

@@ -230,11 +230,11 @@ func (s *anilistSource) Sync(ctx context.Context) (int, error) {
 // checking TV shows first (anime are usually series), then movies.
 func matchByTitleYear(ctx context.Context, db *gorm.DB, title string, year int) (movieID, tvID *uint) {
 	var show models.TVShow
-	if err := db.WithContext(ctx).Where("title = ? COLLATE NOCASE AND year = ?", title, year).First(&show).Error; err == nil {
+	if err := db.WithContext(ctx).Where("LOWER(title) = LOWER(?) AND year = ?", title, year).First(&show).Error; err == nil {
 		return nil, &show.ID
 	}
 	var movie models.Movie
-	if err := db.WithContext(ctx).Where("title = ? COLLATE NOCASE AND year = ?", title, year).First(&movie).Error; err == nil {
+	if err := db.WithContext(ctx).Where("LOWER(title) = LOWER(?) AND year = ?", title, year).First(&movie).Error; err == nil {
 		return &movie.ID, nil
 	}
 	return nil, nil
