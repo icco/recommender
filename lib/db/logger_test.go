@@ -1,45 +1,23 @@
 package db
 
 import (
-	"strings"
+	"context"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
-func TestRedactSQL(t *testing.T) {
-	cases := []struct {
-		name    string
-		sql     string
-		redacts bool
-	}{
-		{
-			name:    "oauth token upsert is redacted",
-			sql:     `INSERT INTO "o_auth_tokens" ("source","access_token","refresh_token") VALUES ('trakt','live-access','live-refresh')`,
-			redacts: true,
-		},
-		{
-			name:    "case-insensitive table match",
-			sql:     `SELECT * FROM O_AUTH_TOKENS WHERE source = 'trakt'`,
-			redacts: true,
-		},
-		{
-			name:    "ordinary query is untouched",
-			sql:     `SELECT * FROM movies WHERE year = 2001`,
-			redacts: false,
-		},
+// TestParamsFilterDropsValues verifies bound parameters are stripped so GORM
+// logs placeholders instead of interpolated values (keeping OAuth tokens and
+// other secrets out of query traces).
+func TestParamsFilterDropsValues(t *testing.T) {
+	l := NewGormLogger(zap.NewNop())
+	sql := `INSERT INTO "o_auth_tokens" ("access_token","refresh_token") VALUES ($1,$2)`
+	gotSQL, gotParams := l.ParamsFilter(context.Background(), sql, "live-access", "live-refresh")
+	if gotSQL != sql {
+		t.Fatalf("SQL altered: got %q want %q", gotSQL, sql)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := redactSQL(tc.sql)
-			if tc.redacts {
-				if got == tc.sql {
-					t.Fatalf("expected redaction, got original SQL")
-				}
-				if strings.Contains(got, "live-access") || strings.Contains(got, "live-refresh") {
-					t.Fatalf("redacted SQL still leaked token values: %q", got)
-				}
-			} else if got != tc.sql {
-				t.Fatalf("non-sensitive SQL altered: got %q want %q", got, tc.sql)
-			}
-		})
+	if gotParams != nil {
+		t.Fatalf("expected params dropped, got %v", gotParams)
 	}
 }

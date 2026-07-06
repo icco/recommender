@@ -133,4 +133,4 @@ A day is "done" when a `GenerationRun` with status `ok` exists for it — tracke
 
 - **`/cron/cache`, `/cron/recommend`, and `/metrics` are unauthenticated.** The cron endpoints trigger paid Gemini calls and full Plex/Trakt/AniList syncs, so anyone who can reach them can drive cost and load. Restrict `/cron/*` and `/metrics` to trusted callers at the ingress/reverse proxy (source-IP allow-list or an internal-only route); the app does not gate them itself.
 - Cached-poster downloads only send the private `X-Plex-Token` to the configured Plex host, so an absolute thumb URL pointing off-host cannot exfiltrate the token or be used for SSRF with credentials.
-- SQL statements touching the OAuth token table are redacted before logging, so Trakt tokens never land in query traces.
+- The GORM logger strips bound parameter values from query traces (via `gorm.ParamsFilter`), so SQL is logged with placeholders and secrets like Trakt tokens never land in logs.
