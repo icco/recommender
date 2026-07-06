@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/icco/gutil/logging"
+	"github.com/icco/recommender/lib/anilist"
 	"github.com/icco/recommender/lib/trakt"
 	"github.com/icco/recommender/models"
 	"go.uber.org/zap"
@@ -185,4 +187,55 @@ func itoaOrEmpty(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
+}
+
+// anilistSource syncs a user's AniList anime scores, matched to owned Plex titles
+// by title + year.
+type anilistSource struct {
+	db       *gorm.DB
+	client   *anilist.Client
+	username string
+}
+
+func (s *anilistSource) Name() string { return models.SourceAniList }
+
+// Sync fetches the AniList list and upserts score signals for titles owned in Plex.
+func (s *anilistSource) Sync(ctx context.Context) (int, error) {
+	l := logging.FromContext(ctx)
+	entries, err := s.client.List(ctx, s.username)
+	if err != nil {
+		return 0, fmt.Errorf("anilist list: %w", err)
+	}
+	count := 0
+	for _, e := range entries {
+		movieID, tvID := matchByTitleYear(ctx, s.db, e.Title, e.Year)
+		if movieID == nil && tvID == nil {
+			continue
+		}
+		ref := fmt.Sprintf("score:%s:%d", strings.ToLower(e.Title), e.Year)
+		if err := upsertSignal(ctx, s.db, models.ExternalSignal{
+			Source: models.SourceAniList, ExternalRef: ref, Kind: models.SignalKindScore,
+			MovieID: movieID, TVShowID: tvID, Value: e.Score,
+		}); err != nil {
+			l.Warnw("upsert anilist signal failed", "ref", ref, zap.Error(err))
+			continue
+		}
+		count++
+	}
+	l.Infow("anilist sync", "entries", len(entries), "matched", count)
+	return count, nil
+}
+
+// matchByTitleYear finds an owned Plex title by case-insensitive title + year,
+// checking TV shows first (anime are usually series), then movies.
+func matchByTitleYear(ctx context.Context, db *gorm.DB, title string, year int) (movieID, tvID *uint) {
+	var show models.TVShow
+	if err := db.WithContext(ctx).Where("title = ? COLLATE NOCASE AND year = ?", title, year).First(&show).Error; err == nil {
+		return nil, &show.ID
+	}
+	var movie models.Movie
+	if err := db.WithContext(ctx).Where("title = ? COLLATE NOCASE AND year = ?", title, year).First(&movie).Error; err == nil {
+		return &movie.ID, nil
+	}
+	return nil, nil
 }
