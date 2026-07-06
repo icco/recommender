@@ -42,3 +42,23 @@ func TestTasteProfile_nonEmptyWhenSignalsExist(t *testing.T) {
 		t.Error("expected a non-empty profile when watched titles exist")
 	}
 }
+
+func TestGenreAffinity_blendsRatedSignals(t *testing.T) {
+	db := testDB(t)
+	r := testRecommender(db)
+	ctx := context.Background()
+
+	comedy := models.Movie{Title: "C", Genre: "Comedy", Rating: 0, ViewCount: 0, PlexRatingKey: "a"}
+	horror := models.Movie{Title: "H", Genre: "Horror", Rating: 0, ViewCount: 0, PlexRatingKey: "b"}
+	db.Create(&comedy)
+	db.Create(&horror)
+	db.Create(&models.ExternalSignal{Source: models.SourceTrakt, ExternalRef: "rated:1", Kind: models.SignalKindRated, MovieID: &comedy.ID, Value: 10})
+
+	aff, err := r.genreAffinity(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aff["Comedy"] <= aff["Horror"] {
+		t.Errorf("rated signal should lift Comedy (%.2f) above Horror (%.2f)", aff["Comedy"], aff["Horror"])
+	}
+}

@@ -13,9 +13,11 @@ import (
 // and highly-rated Plex titles. Watched titles and higher ratings weigh more.
 func (r *Recommender) genreAffinity(ctx context.Context) (map[string]float64, error) {
 	raw := make(map[string]float64)
+	movieGenres := make(map[uint][]string)
+	tvGenres := make(map[uint][]string)
 
-	accumulate := func(genre string, rating float64, viewCount int) {
-		for _, g := range splitGenres(genre) {
+	accumulate := func(genres []string, rating float64, viewCount int) {
+		for _, g := range genres {
 			w := rating / 10.0
 			if viewCount > 0 {
 				w += 1.0
@@ -29,14 +31,38 @@ func (r *Recommender) genreAffinity(ctx context.Context) (map[string]float64, er
 		return nil, fmt.Errorf("affinity movies: %w", err)
 	}
 	for _, m := range movies {
-		accumulate(m.Genre, m.Rating, m.ViewCount)
+		g := splitGenres(m.Genre)
+		movieGenres[m.ID] = g
+		accumulate(g, m.Rating, m.ViewCount)
 	}
 	var shows []models.TVShow
 	if err := r.db.WithContext(ctx).Find(&shows).Error; err != nil {
 		return nil, fmt.Errorf("affinity shows: %w", err)
 	}
 	for _, s := range shows {
-		accumulate(s.Genre, s.Rating, s.ViewCount)
+		g := splitGenres(s.Genre)
+		tvGenres[s.ID] = g
+		accumulate(g, s.Rating, s.ViewCount)
+	}
+
+	// Fold in external rated/score signals: a high signal lifts its title's genres.
+	var sigs []models.ExternalSignal
+	if err := r.db.WithContext(ctx).
+		Where("kind IN ?", []string{models.SignalKindRated, models.SignalKindScore}).
+		Find(&sigs).Error; err != nil {
+		return nil, fmt.Errorf("affinity signals: %w", err)
+	}
+	for _, sig := range sigs {
+		var genres []string
+		switch {
+		case sig.MovieID != nil:
+			genres = movieGenres[*sig.MovieID]
+		case sig.TVShowID != nil:
+			genres = tvGenres[*sig.TVShowID]
+		}
+		for _, g := range genres {
+			raw[g] += sig.Value / 10.0
+		}
 	}
 
 	peak := 0.0
