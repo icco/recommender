@@ -483,3 +483,21 @@ func HandleStats(r *recommend.Recommender) http.HandlerFunc {
 		}
 	}
 }
+
+// HandleTraktConnect starts the Trakt OAuth device flow and returns the code to enter.
+func HandleTraktConnect(r *recommend.Recommender) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		ctx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+		defer cancel()
+		code, url, err := r.TraktConnect(ctx)
+		if err != nil {
+			writeError(w, req, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := fmt.Fprintf(w, `{"message":"Go to %s and enter code %s","user_code":"%s","verification_url":"%s"}`,
+			url, code, code, url); err != nil {
+			logging.FromContext(ctx).Errorw("write trakt connect response", zap.Error(err))
+		}
+	}
+}

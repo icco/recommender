@@ -280,3 +280,52 @@ func (r *Recommender) SyncSignals(ctx context.Context) {
 		l.Infow("signal source synced", "source", src.Name(), "count", n)
 	}
 }
+
+// storeTraktToken persists a Trakt token set.
+func (r *Recommender) storeTraktToken(ctx context.Context, tok *trakt.Token) error {
+	return (&traktSource{db: r.db}).saveToken(ctx, tok)
+}
+
+// TraktConnect starts the OAuth device flow and returns the user code + URL to
+// visit. A background goroutine polls until authorized and stores the token.
+func (r *Recommender) TraktConnect(ctx context.Context) (userCode, verificationURL string, err error) {
+	client := r.traktClient()
+	if client == nil {
+		return "", "", fmt.Errorf("trakt not configured (set TRAKT_CLIENT_ID/SECRET)")
+	}
+	dc, err := client.RequestDeviceCode(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("request device code: %w", err)
+	}
+	interval := time.Duration(dc.Interval) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	deadline := time.Now().Add(time.Duration(dc.ExpiresIn) * time.Second)
+
+	//nolint:contextcheck // background poll must outlive the request
+	go func() {
+		bg := logging.NewContext(context.Background(), logging.FromContext(ctx))
+		l := logging.FromContext(bg)
+		for time.Now().Before(deadline) {
+			time.Sleep(interval)
+			tok, perr := client.PollForToken(bg, dc.DeviceCode)
+			if perr != nil {
+				l.Warnw("trakt poll failed", zap.Error(perr))
+				return
+			}
+			if tok == nil {
+				continue // pending
+			}
+			if serr := r.storeTraktToken(bg, tok); serr != nil {
+				l.Errorw("store trakt token failed", zap.Error(serr))
+				return
+			}
+			l.Infow("trakt connected; token stored")
+			return
+		}
+		l.Warnw("trakt device code expired before authorization")
+	}()
+
+	return dc.UserCode, dc.VerificationURL, nil
+}

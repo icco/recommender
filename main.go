@@ -155,6 +155,7 @@ func main() {
 	r.Get("/dates", handlers.HandleDates(recommender))
 	r.Get("/cron/recommend", handlers.HandleCron(recommender, fileLock))
 	r.Get("/cron/cache", handlers.HandleCache(plexClient, recommender, fileLock))
+	r.Get("/trakt/connect", handlers.HandleTraktConnect(recommender))
 	r.Get("/stats", handlers.HandleStats(recommender))
 	r.Get("/health", health.Check(gormDB))
 	r.Method(http.MethodGet, "/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))

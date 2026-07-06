@@ -88,3 +88,19 @@ func TestAniListSource_Sync_matchesByTitleYear(t *testing.T) {
 		t.Fatalf("bad anilist signals: %+v", sigs)
 	}
 }
+
+func TestStoreTraktToken_upserts(t *testing.T) {
+	db := testDB(t)
+	r := &Recommender{db: db, sigCfg: SignalConfig{TraktClientID: "a", TraktClientSecret: "b"}}
+	ctx := context.Background()
+	if err := r.storeTraktToken(ctx, &trakt.Token{AccessToken: "x", RefreshToken: "y", ExpiresIn: 3600, CreatedAt: 1700000000}); err != nil {
+		t.Fatal(err)
+	}
+	var tok models.OAuthToken
+	if err := db.Where("source = ?", models.SourceTrakt).First(&tok).Error; err != nil {
+		t.Fatal(err)
+	}
+	if tok.AccessToken != "x" {
+		t.Fatalf("bad token: %+v", tok)
+	}
+}
