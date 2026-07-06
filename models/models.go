@@ -90,6 +90,8 @@ const (
 // Signal source + kind values for ExternalSignal.
 const (
 	SourcePlex          = "plex"
+	SourceTrakt         = "trakt"
+	SourceAniList       = "anilist"
 	SignalKindWatched   = "watched"
 	SignalKindRated     = "rated"
 	SignalKindScore     = "score"
@@ -120,4 +122,14 @@ type ExternalSignal struct {
 	TVShowID    *uint   `gorm:"index"`
 	Value       float64 `gorm:"default:0"`
 	UpdatedAt   time.Time
+}
+
+// OAuthToken stores an OAuth token set for an external source (e.g. Trakt).
+type OAuthToken struct {
+	ID           uint   `gorm:"primarykey"`
+	Source       string `gorm:"type:varchar(32);not null;uniqueIndex:idx_oauth_source"`
+	AccessToken  string `gorm:"type:varchar(512)"`
+	RefreshToken string `gorm:"type:varchar(512)"`
+	ExpiresAt    time.Time
+	UpdatedAt    time.Time
 }

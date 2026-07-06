@@ -49,7 +49,7 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 
 	if err := db.WithContext(ctx).AutoMigrate(
 		&models.Movie{}, &models.TVShow{}, &models.Recommendation{},
-		&models.GenerationRun{}, &models.ExternalSignal{},
+		&models.GenerationRun{}, &models.ExternalSignal{}, &models.OAuthToken{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}

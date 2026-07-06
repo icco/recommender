@@ -10,6 +10,7 @@ Rules:
 
 {{if .Profile}}User taste profile:
 {{.Profile}}
+{{end}}{{if .Loved}}{{.Loved}}
 {{end}}
 Movie shortlist:
 {{.Movies}}

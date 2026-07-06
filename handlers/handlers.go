@@ -4,6 +4,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -392,7 +393,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 // background timeout fires.
 //
 //nolint:contextcheck // background cache job + deferred Unlock intentionally use a
-func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
+func HandleCache(p *plex.Client, rec *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		l := logging.FromContext(ctx)
@@ -452,6 +453,7 @@ func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 				l.Infow("Cache update completed successfully",
 					"duration", time.Since(startTime),
 				)
+				rec.SyncSignals(bgCtx)
 			}
 		}()
 
@@ -479,6 +481,35 @@ func HandleStats(r *recommend.Recommender) http.HandlerFunc {
 
 		if !renderTemplate(ctx, w, []string{baseTemplate, "stats.html"}, stats) {
 			return
+		}
+	}
+}
+
+// HandleTraktConnect starts the Trakt OAuth device flow and returns the code to enter.
+// It is gated by a shared secret: the endpoint mints/stores an OAuth token (whoever
+// completes the flow decides which Trakt account is stored), so it is disabled unless
+// connectToken is set and matched via the "token" query parameter.
+func HandleTraktConnect(r *recommend.Recommender, connectToken string) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		if connectToken == "" {
+			writeError(w, req, "endpoint disabled; set TRAKT_CONNECT_TOKEN to enable", http.StatusServiceUnavailable)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(req.URL.Query().Get("token")), []byte(connectToken)) != 1 {
+			writeError(w, req, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		ctx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+		defer cancel()
+		code, url, err := r.TraktConnect(ctx)
+		if err != nil {
+			writeError(w, req, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := fmt.Fprintf(w, `{"message":"Go to %s and enter code %s","user_code":"%s","verification_url":"%s"}`,
+			url, code, code, url); err != nil {
+			logging.FromContext(ctx).Errorw("write trakt connect response", zap.Error(err))
 		}
 	}
 }

@@ -35,22 +35,24 @@ type StatsData struct {
 // Recommender produces and serves daily Plex/TMDb recommendations using
 // Gemini. Loggers are taken from per-call ctx via gutil/logging.
 type Recommender struct {
-	db    *gorm.DB
-	plex  *plex.Client
-	tmdb  *tmdb.Client
-	chat  Chatter
-	model string
+	db     *gorm.DB
+	plex   *plex.Client
+	tmdb   *tmdb.Client
+	chat   Chatter
+	model  string
+	sigCfg SignalConfig
 }
 
 // New creates a new Recommender instance with the provided dependencies.
 // Loggers are sourced from per-call ctx via gutil/logging.
-func New(db *gorm.DB, plexClient *plex.Client, tmdbClient *tmdb.Client, chat Chatter, model string) (*Recommender, error) {
+func New(db *gorm.DB, plexClient *plex.Client, tmdbClient *tmdb.Client, chat Chatter, model string, sigCfg SignalConfig) (*Recommender, error) {
 	return &Recommender{
-		db:    db,
-		plex:  plexClient,
-		tmdb:  tmdbClient,
-		chat:  chat,
-		model: model,
+		db:     db,
+		plex:   plexClient,
+		tmdb:   tmdbClient,
+		chat:   chat,
+		model:  model,
+		sigCfg: sigCfg,
 	}, nil
 }
 

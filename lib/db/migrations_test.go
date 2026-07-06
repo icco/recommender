@@ -23,6 +23,9 @@ func TestRunMigrations_createsNewTables(t *testing.T) {
 	if !gdb.Migrator().HasTable(&models.ExternalSignal{}) {
 		t.Fatal("external_signals table missing")
 	}
+	if !gdb.Migrator().HasTable(&models.OAuthToken{}) {
+		t.Fatal("oauth_tokens table missing")
+	}
 	run := models.GenerationRun{Date: time.Now().UTC().Truncate(24 * time.Hour), Status: models.RunStatusOK, MovieCount: 4}
 	if err := gdb.Create(&run).Error; err != nil {
 		t.Fatalf("create run: %v", err)

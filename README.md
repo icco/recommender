@@ -52,10 +52,23 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | `GOOGLE_GENAI_USE_VERTEXAI` | no | `true` to use Vertex AI (recommended); the SDK also supports the Gemini Developer API |
 | `GEMINI_MODEL` | no | Model ID (default `gemini-2.5-flash`) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | no | Path to a service-account key for local dev; production uses ambient ADC (workload identity) |
+| `TRAKT_CLIENT_ID` | no | Trakt API app client id; enables Trakt signals |
+| `TRAKT_CLIENT_SECRET` | no | Trakt API app client secret |
+| `TRAKT_CONNECT_TOKEN` | no | Shared secret required to call `GET /trakt/connect?token=…`; the endpoint is disabled when unset |
+| `ANILIST_USERNAME` | no | AniList username (public list); enables AniList signals |
 | `PORT` | no | HTTP port (default `8080`) |
 | `DB_PATH` | no | SQLite file path (default `recommender.db`; Docker Compose uses `/data/recommender.db`) |
 
 Authentication to Vertex AI uses [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) — no API key. Locally, run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS`.
+
+### Signal sources (optional)
+
+External sources only **re-rank titles you already own in Plex** — they never add new titles. Both are off unless configured, and are synced during `/cron/cache`.
+
+- **Trakt** (watched / ratings / watchlist): register a Trakt API app, set `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` and a `TRAKT_CONNECT_TOKEN`, then authorize once — `curl "http://localhost:8080/trakt/connect?token=$TRAKT_CONNECT_TOKEN"` and enter the returned code at the Trakt URL. Tokens persist in the DB and auto-refresh.
+- **AniList** (anime scores): set `ANILIST_USERNAME` (public list; no auth). Matched to owned anime by title + year.
+
+Signals feed genre affinity, a watchlist score boost, watched-elsewhere handling, and a short "recently loved" line in the prompt.
 
 ## Repository layout
 
