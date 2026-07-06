@@ -26,6 +26,7 @@ import (
 	"github.com/icco/recommender/static"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/unrolled/secure"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
@@ -161,8 +162,22 @@ func main() {
 
 	r := chi.NewRouter()
 
+	secureMiddleware := secure.New(secure.Options{
+		SSLRedirect:          false,
+		SSLProxyHeaders:      map[string]string{"X-Forwarded-Proto": "https"},
+		STSSeconds:           63072000,
+		STSIncludeSubdomains: true,
+		STSPreload:           true,
+		FrameDeny:            true,
+		ContentTypeNosniff:   true,
+		BrowserXssFilter:     true,
+		ReferrerPolicy:       "no-referrer",
+		PermissionsPolicy:    "geolocation=(), midi=(), sync-xhr=(), microphone=(), camera=(), magnetometer=(), gyroscope=(), fullscreen=(), payment=(), usb=()",
+	})
+
 	r.Use(logging.Middleware(log.Desugar()))
 	r.Use(routeTag)
+	r.Use(secureMiddleware.Handler)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(static.Files))))

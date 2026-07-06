@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/icco/gutil/logging"
@@ -56,9 +57,15 @@ func (l *GormLogger) Error(ctx context.Context, msg string, data ...interface{})
 }
 
 // Trace logs SQL query execution at debug level (or error level on failure).
+//
+// GORM renders trace SQL with parameter values already interpolated, so any
+// statement touching the OAuth token table would otherwise write live
+// access/refresh tokens into logs (at debug for every query, and at error on any
+// failed write regardless of log level). redactSQL scrubs those statements.
 func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
 	elapsed := time.Since(begin)
 	sql, rows := fc()
+	sql = redactSQL(sql)
 	scoped := l.loggerFor(ctx)
 
 	if err != nil {
@@ -76,4 +83,14 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql 
 		"rows", rows,
 		"elapsed", elapsed,
 	)
+}
+
+// redactSQL replaces statements that touch credential-bearing tables with a
+// placeholder so interpolated secrets never reach the logs.
+func redactSQL(sql string) string {
+	// GORM maps the OAuthToken model to the "o_auth_tokens" table.
+	if strings.Contains(strings.ToLower(sql), "o_auth_tokens") {
+		return "[redacted: statement touches o_auth_tokens]"
+	}
+	return sql
 }
