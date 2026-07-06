@@ -90,6 +90,20 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 		return nil, nil, err
 	}
 
+	aff, err := r.genreAffinity(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	affinityFor := func(genres []string) float64 {
+		best := 0.0
+		for _, g := range genres {
+			if v := aff[g]; v > best {
+				best = v
+			}
+		}
+		return best
+	}
+
 	var dbMovies []models.Movie
 	if err := r.db.WithContext(ctx).Find(&dbMovies).Error; err != nil {
 		return nil, nil, fmt.Errorf("load movies: %w", err)
@@ -98,10 +112,12 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 		if _, skip := excludeMovies[m.ID]; skip {
 			continue
 		}
+		genres := splitGenres(m.Genre)
 		movies = append(movies, candidate{
 			ID: m.ID, Type: models.TypeMovie, Title: m.Title, Year: m.Year,
-			Rating: m.Rating, Genres: splitGenres(m.Genre), PosterURL: m.PosterURL,
+			Rating: m.Rating, Genres: genres, PosterURL: m.PosterURL,
 			Runtime: m.Runtime, ViewCount: m.ViewCount, TMDbID: m.TMDbID,
+			Affinity: affinityFor(genres),
 		})
 	}
 
@@ -113,10 +129,12 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 		if _, skip := excludeTV[s.ID]; skip {
 			continue
 		}
+		genres := splitGenres(s.Genre)
 		tvshows = append(tvshows, candidate{
 			ID: s.ID, Type: models.TypeTVShow, Title: s.Title, Year: s.Year,
-			Rating: s.Rating, Genres: splitGenres(s.Genre), PosterURL: s.PosterURL,
+			Rating: s.Rating, Genres: genres, PosterURL: s.PosterURL,
 			Runtime: s.Seasons, ViewCount: s.ViewCount, TMDbID: s.TMDbID,
+			Affinity: affinityFor(genres),
 		})
 	}
 	return movies, tvshows, nil
