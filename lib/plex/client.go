@@ -205,6 +205,7 @@ type Item struct {
 	UpdatedAt  *int64
 	ViewCount  *int
 	Genre      []components.Tag
+	Guids      []string
 	LeafCount  *int
 	ChildCount *int
 }
@@ -559,11 +560,13 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 
 // GORM names TMDbID as tm_db_id in SQLite (see schema).
 var movieUpsertColumns = []string{
-	titleKey, "year", "rating", "genre", "poster_url", "runtime", "tm_db_id", "view_count", "updated_at",
+	titleKey, "year", "rating", "genre", "poster_url", "runtime",
+	"tm_db_id", "im_db_id", "tv_db_id", "enriched_at", "view_count", "updated_at",
 }
 
 var tvUpsertColumns = []string{
-	titleKey, "year", "rating", "genre", "poster_url", "seasons", "tm_db_id", "view_count", "updated_at",
+	titleKey, "year", "rating", "genre", "poster_url", "seasons",
+	"tm_db_id", "im_db_id", "tv_db_id", "enriched_at", "view_count", "updated_at",
 }
 
 // upsertMovieBatch upserts movies by plex_rating_key in a single transaction.
@@ -581,10 +584,7 @@ func (c *Client) upsertMovieBatch(ctx context.Context, movies []Item) error {
 				rating = *item.Rating
 			}
 
-			genre := ""
-			if len(item.Genre) > 0 {
-				genre = item.Genre[0].Tag
-			}
+			genre := joinGenres(item.Genre)
 
 			runtime := 0
 			if item.Duration != nil {
@@ -602,6 +602,12 @@ func (c *Client) upsertMovieBatch(ctx context.Context, movies []Item) error {
 			}
 			posterURL := c.resolvePosterURL(thumb)
 
+			imdb, tmdbID, tvdb := parseGUIDs(item.Guids)
+			var enrichedAt *time.Time
+			if tmdbID != nil || imdb != "" {
+				enrichedAt = &now
+			}
+
 			movie := models.Movie{
 				PlexRatingKey: item.RatingKey,
 				Title:         item.Title,
@@ -610,7 +616,10 @@ func (c *Client) upsertMovieBatch(ctx context.Context, movies []Item) error {
 				Genre:         genre,
 				PosterURL:     posterURL,
 				Runtime:       runtime,
-				TMDbID:        nil,
+				TMDbID:        tmdbID,
+				IMDbID:        imdb,
+				TVDbID:        tvdb,
+				EnrichedAt:    enrichedAt,
 				ViewCount:     viewCount,
 				UpdatedAt:     now,
 			}
@@ -641,10 +650,7 @@ func (c *Client) upsertTVShowBatch(ctx context.Context, shows []Item) error {
 				rating = *item.Rating
 			}
 
-			genre := ""
-			if len(item.Genre) > 0 {
-				genre = item.Genre[0].Tag
-			}
+			genre := joinGenres(item.Genre)
 
 			seasons := 0
 			if item.ChildCount != nil {
@@ -662,6 +668,12 @@ func (c *Client) upsertTVShowBatch(ctx context.Context, shows []Item) error {
 			}
 			posterURL := c.resolvePosterURL(thumb)
 
+			imdb, tmdbID, tvdb := parseGUIDs(item.Guids)
+			var enrichedAt *time.Time
+			if tmdbID != nil || imdb != "" {
+				enrichedAt = &now
+			}
+
 			tvShow := models.TVShow{
 				PlexRatingKey: item.RatingKey,
 				Title:         item.Title,
@@ -670,7 +682,10 @@ func (c *Client) upsertTVShowBatch(ctx context.Context, shows []Item) error {
 				Genre:         genre,
 				PosterURL:     posterURL,
 				Seasons:       seasons,
-				TMDbID:        nil,
+				TMDbID:        tmdbID,
+				IMDbID:        imdb,
+				TVDbID:        tvdb,
+				EnrichedAt:    enrichedAt,
 				ViewCount:     viewCount,
 				UpdatedAt:     now,
 			}

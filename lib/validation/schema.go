@@ -1,5 +1,5 @@
 // Package validation provides JSON schema validation helpers used to
-// sanitize external API responses (e.g. OpenAI) and basic input validation
+// sanitize external API responses (e.g. the LLM) and basic input validation
 // (date / pagination parameters) for the recommender service.
 package validation
 
@@ -9,27 +9,27 @@ import (
 	"strings"
 )
 
-// RecommendationResponse represents the expected structure from OpenAI
+// RecommendationResponse represents the expected structure from the LLM
 type RecommendationResponse struct {
 	Movies  []MovieRecommendation  `json:"movies"`
 	TVShows []TVShowRecommendation `json:"tvshows"`
 }
 
-// MovieRecommendation represents a movie recommendation from OpenAI
+// MovieRecommendation represents a movie recommendation from the LLM
 type MovieRecommendation struct {
 	Title       string `json:"title"`
 	TMDbID      int    `json:"tmdb_id"`
 	Explanation string `json:"explanation"`
 }
 
-// TVShowRecommendation represents a TV show recommendation from OpenAI
+// TVShowRecommendation represents a TV show recommendation from the LLM
 type TVShowRecommendation struct {
 	Title       string `json:"title"`
 	TMDbID      int    `json:"tmdb_id"`
 	Explanation string `json:"explanation"`
 }
 
-// ValidateAndParseRecommendationResponse validates and parses the OpenAI response
+// ValidateAndParseRecommendationResponse validates and parses the LLM response
 func ValidateAndParseRecommendationResponse(responseBody string) (*RecommendationResponse, error) {
 	// First, parse the JSON
 	var response RecommendationResponse

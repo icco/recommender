@@ -66,6 +66,9 @@ type sectionListMetadata struct {
 	Genre     []struct {
 		Tag string `json:"tag"`
 	} `json:"Genre,omitempty"`
+	GUID []struct {
+		ID string `json:"id"`
+	} `json:"Guid,omitempty"`
 	LeafCount  *int `json:"leafCount,omitempty"`
 	ChildCount *int `json:"childCount,omitempty"`
 }
@@ -85,6 +88,12 @@ func sectionMetadataToPlexItem(md sectionListMetadata) Item {
 	if md.Summary != nil {
 		summary = *md.Summary
 	}
+	var guids []string
+	for _, g := range md.GUID {
+		if g.ID != "" {
+			guids = append(guids, g.ID)
+		}
+	}
 	return Item{
 		RatingKey:  rk,
 		Key:        md.Key,
@@ -100,6 +109,7 @@ func sectionMetadataToPlexItem(md sectionListMetadata) Item {
 		UpdatedAt:  md.UpdatedAt,
 		ViewCount:  md.ViewCount,
 		Genre:      genres,
+		Guids:      guids,
 		LeafCount:  md.LeafCount,
 		ChildCount: md.ChildCount,
 	}
@@ -122,6 +132,7 @@ func (c *Client) listSectionContentAll(ctx context.Context, sectionID string) ([
 		q := url.Values{}
 		q.Set("X-Plex-Container-Start", strconv.Itoa(start))
 		q.Set("X-Plex-Container-Size", strconv.Itoa(pageSize))
+		q.Set("includeGuids", "1")
 		full := u + "?" + q.Encode()
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)

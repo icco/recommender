@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a personalized content recommendation service that uses OpenAI to generate daily recommendations for movies and TV shows. The service integrates with Plex (for library data), TMDb (for metadata), and generates recommendations based on watch history, ratings, and preferences.
+This is a personalized content recommendation service that uses Gemini (on Vertex AI) to generate daily recommendations for movies and TV shows. The service integrates with Plex (for library data + GUIDs), TMDb (for fallback posters), and generates recommendations based on watch history, ratings, and a Plex-derived taste profile. All recommendations are titles already in the Plex library.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ This is a personalized content recommendation service that uses OpenAI to genera
 - `models/`: GORM database models for movies, TV shows, and recommendations
 
 **Key Libraries:**
-- `lib/recommend/`: OpenAI-powered recommendation generation with prompt templates
+- `lib/recommend/`: Gemini-powered recommendation generation — candidate scoring/shortlisting (`candidates.go`), ID-based slotting (`slotting.go`), the Gemini client (`llm.go`), the taste profile (`profile.go`), and the pipeline (`generate.go`)
 - `lib/plex/`: Plex API client for fetching library data
 - `lib/tmdb/`: TMDb API client with rate limiting and circuit breaker
 - `lib/db/`: Database utilities, migrations, and custom GORM JSON logger
@@ -24,7 +24,7 @@ This is a personalized content recommendation service that uses OpenAI to genera
 
 **Data Flow:**
 1. Cron endpoints (`/cron/recommend`, `/cron/cache`) trigger data collection from Plex/TMDb
-2. Recommendation engine uses OpenAI to generate 4 movies + 3 TV shows daily
+2. Recommendation engine scores cached titles, shortlists them (date-seeded), and uses Gemini to pick 4 movies + 3 TV shows daily by ID
 3. Web interface serves recommendations with posters, ratings, and metadata
 
 ## Development Commands
@@ -38,7 +38,9 @@ go run main.go
 go build -o recommender
 
 # Run with environment variables
-PLEX_URL=<url> PLEX_TOKEN=<token> TMDB_API_KEY=<key> OPENAI_API_KEY=<key> go run main.go
+PLEX_URL=<url> PLEX_TOKEN=<token> TMDB_API_KEY=<key> \
+  GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<proj> GOOGLE_CLOUD_LOCATION=us-central1 \
+  go run main.go   # requires ADC: `gcloud auth application-default login`
 ```
 
 **Docker Development:**
@@ -57,11 +59,17 @@ docker compose down
 - `PLEX_URL`: Plex server URL
 - `PLEX_TOKEN`: Plex authentication token
 - `TMDB_API_KEY`: The Movie Database API key
-- `OPENAI_API_KEY`: OpenAI API key for recommendations
-- `PORT`: HTTP server port (defaults to 8080)
+- `GOOGLE_CLOUD_PROJECT`: GCP project ID (Vertex AI API enabled)
+- `GOOGLE_CLOUD_LOCATION`: Vertex AI region (e.g. `us-central1`)
 
 **Optional Environment Variables:**
+- `GOOGLE_GENAI_USE_VERTEXAI`: `true` to use Vertex AI (recommended)
+- `GEMINI_MODEL`: model ID (defaults to `gemini-2.5-flash`)
+- `GOOGLE_APPLICATION_CREDENTIALS`: service-account key path for local dev (prod uses ambient ADC)
+- `PORT`: HTTP server port (defaults to 8080)
 - `DB_PATH`: Database file path (defaults to recommender.db)
+
+Auth to Vertex AI uses Application Default Credentials — no API key.
 
 ## Development Workflow and Best Practices
 
@@ -337,11 +345,10 @@ The system generates exactly:
 
 **Concurrency Control:**
 - File-based locking prevents concurrent cron job execution
-- Cache management with TTL and automatic cleanup
-- JSON validation for OpenAI responses
+- ID-based matching + deterministic slotting of the model's picks
 - Batch processing for large database operations
 
-OpenAI prompts are in `lib/recommend/prompts/` and use Go templates with user data.
+Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the scored shortlist.
 
 ## API Integration Features
 
@@ -351,10 +358,10 @@ OpenAI prompts are in `lib/recommend/prompts/` and use Go templates with user da
 - Exponential backoff retry logic
 - Comprehensive error handling with status codes
 
-**OpenAI Client:**
-- Extended timeouts for generation requests
-- Retry logic with exponential backoff
-- JSON response validation and sanitization
+**Gemini Client (`lib/recommend/llm.go`):**
+- Vertex AI backend via `google.golang.org/genai`, auth by ADC
+- JSON-constrained output via `ResponseMIMEType` + `ResponseSchema`
+- Isolated behind the `Chatter` interface so tests use a fake
 
 **Plex Client:**
 - Batch processing for large library updates
@@ -564,7 +571,7 @@ All file operations use restrictive permissions (0600 for files, 0750 for direct
 - `PLEX_URL`: Plex server URL
 - `PLEX_TOKEN`: Plex authentication token
 - `TMDB_API_KEY`: The Movie Database API key
-- `OPENAI_API_KEY`: OpenAI API key for recommendations
+- `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`: Vertex AI project + region (auth via ADC)
 - `PORT`: HTTP server port (defaults to 8080)
 
 **Startup Sequence:**

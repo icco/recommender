@@ -1,8 +1,8 @@
 # Recommender
 
-Daily movie and TV recommendations from your **Plex** library, enriched with **TMDb** metadata and chosen by **OpenAI**. This is an experiment in building an app with generative AI.
+Daily movie and TV recommendations from your **Plex** library, enriched with **TMDb** metadata and chosen by **Gemini** (on Vertex AI). This is an experiment in building an app with generative AI.
 
-Stack: **Go**, **Chi** (routing), **GORM** (ORM), **SQLite**, **zap + gutil/logging** (JSON logs), **OpenTelemetry** (HTTP metrics on `/metrics`).
+Stack: **Go**, **Chi** (routing), **GORM** (ORM), **SQLite**, **Gemini on Vertex AI** (`google.golang.org/genai`), **zap + gutil/logging** (JSON logs), **OpenTelemetry** (HTTP metrics on `/metrics`).
 
 ## What you get
 
@@ -17,9 +17,9 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 
 ## Data sources (implemented)
 
-- **Plex** — library scan and watch counts during cache update
-- **TMDb** — posters and IDs during recommendation generation (not during bulk cache, for speed)
-- **OpenAI** — JSON recommendations from a constrained prompt
+- **Plex** — library scan, watch counts, and GUIDs (imdb/tmdb/tvdb) + full genres during cache update
+- **TMDb** — fallback poster fill for the day's finalists when Plex has no poster
+- **Gemini (Vertex AI)** — picks recommendations by ID from a scored shortlist via JSON-constrained output
 
 ### Not implemented (possible future work)
 
@@ -47,9 +47,15 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | `PLEX_URL` | yes | Plex server base URL |
 | `PLEX_TOKEN` | yes | Plex token |
 | `TMDB_API_KEY` | yes | TMDb API key |
-| `OPENAI_API_KEY` | yes | OpenAI API key |
+| `GOOGLE_CLOUD_PROJECT` | yes | GCP project ID (Vertex AI API enabled) |
+| `GOOGLE_CLOUD_LOCATION` | yes | Vertex AI region, e.g. `us-central1` |
+| `GOOGLE_GENAI_USE_VERTEXAI` | no | `true` to use Vertex AI (recommended); the SDK also supports the Gemini Developer API |
+| `GEMINI_MODEL` | no | Model ID (default `gemini-2.5-flash`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | no | Path to a service-account key for local dev; production uses ambient ADC (workload identity) |
 | `PORT` | no | HTTP port (default `8080`) |
 | `DB_PATH` | no | SQLite file path (default `recommender.db`; Docker Compose uses `/data/recommender.db`) |
+
+Authentication to Vertex AI uses [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) — no API key. Locally, run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ## Repository layout
 
@@ -61,7 +67,7 @@ recommender/
 │   ├── health/       # Health check
 │   ├── lock/         # File locks for cron endpoints
 │   ├── plex/         # Plex client and cache update
-│   ├── recommend/    # OpenAI generation and queries
+│   ├── recommend/    # Gemini generation, candidate scoring, and queries
 │   ├── tmdb/         # TMDb client
 │   └── validation/   # Request and response validation helpers
 ├── models/           # GORM models
@@ -76,7 +82,9 @@ Package docs: [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github
 ### Local
 
 ```bash
-export PLEX_URL=... PLEX_TOKEN=... TMDB_API_KEY=... OPENAI_API_KEY=...
+gcloud auth application-default login   # or set GOOGLE_APPLICATION_CREDENTIALS
+export PLEX_URL=... PLEX_TOKEN=... TMDB_API_KEY=...
+export GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=... GOOGLE_CLOUD_LOCATION=us-central1
 go run .
 ```
 
@@ -101,7 +109,7 @@ The compose file mounts `./data` at `/data` and sets `DB_PATH=/data/recommender.
 
 ## Recommendation flow (summary)
 
-1. **`/cron/cache`** — Reads Plex libraries, stores all movies and TV shows in SQLite (including `view_count` from Plex). Poster thumbs are stored as absolute URLs when Plex returns relative paths.
-2. **`/cron/recommend`** — If the day is not yet “complete,” loads cached titles, builds the prompt (movies include watched + unwatched; TV prompts only unwatched), calls OpenAI, filters results, then **replaces** any existing rows for that UTC date so partial runs can succeed on retry.
+1. **`/cron/cache`** — Reads Plex libraries and stores all movies and TV shows in SQLite, including `view_count`, GUIDs (imdb/tmdb/tvdb), and the full genre list. Poster thumbs are stored as absolute URLs when Plex returns relative paths.
+2. **`/cron/recommend`** — Skips if a successful run already exists for the UTC day. Otherwise: loads cached titles (minus anything recommended in the last 30 days), scores them (rating + novelty + Plex-derived taste affinity), takes a date-seeded diverse shortlist, asks Gemini to pick the best fits **by ID** with a one-line reason, slots them deterministically (comedy / action-drama / rewatch / wildcard movies + unwatched TV), lazily fills any missing posters from TMDb, and **replaces** that day's rows in one transaction. Every attempt records a `GenerationRun`.
 
-“Complete” for a day depends on what exists in the cache (e.g. both movies and TV in library ⇒ need both types in that day’s recommendations).
+A day is "done" when a `GenerationRun` with status `ok` exists for it — tracked explicitly rather than inferred from row counts, so cron never re-runs a completed day.

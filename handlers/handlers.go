@@ -266,10 +266,11 @@ const cronBackgroundLockKey = "cron-serial"
 // It takes a recommender instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and generates recommendations for the current day.
 //
-//nolint:contextcheck // background cron job + deferred Unlock intentionally use a
 // fresh context.Background() rather than the request context, because the work
 // must outlive the inbound HTTP request and the lock must release even if the
 // background timeout fires.
+//
+//nolint:contextcheck // background cron job + deferred Unlock intentionally use a
 func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
@@ -304,7 +305,7 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 			return
 		}
 
-		exists, err := r.CheckRecommendationsExist(ctx, today)
+		exists, err := r.DidRunToday(ctx, today)
 		if err != nil {
 			if unlockErr := fl.Unlock(ctx, lockKey); unlockErr != nil {
 				l.Errorw("Failed to unlock after error", zap.Error(unlockErr))
@@ -386,10 +387,11 @@ func HandleCron(r *recommend.Recommender, fl *lock.FileLock) http.HandlerFunc {
 // It takes a Plex client instance and file lock, and returns an HTTP handler.
 // The job runs asynchronously and updates the cache of available media.
 //
-//nolint:contextcheck // background cache job + deferred Unlock intentionally use a
 // fresh context.Background() rather than the request context, because the work
 // must outlive the inbound HTTP request and the lock must release even if the
 // background timeout fires.
+//
+//nolint:contextcheck // background cache job + deferred Unlock intentionally use a
 func HandleCache(p *plex.Client, fl *lock.FileLock) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()

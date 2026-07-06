@@ -8,10 +8,17 @@ services:
     environment:
       - PLEX_URL=${PLEX_URL}
       - PLEX_TOKEN=${PLEX_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TMDB_API_KEY=${TMDB_API_KEY}
+      - GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-true}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      # Point at the mounted service-account key so ADC works in the container.
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-sa.json
       - DB_PATH=/data/recommender.db
       - PORT=${PORT:-8080}
     volumes:
       - ./data:/data
+      # Mount a GCP service-account key (read-only) for Vertex AI auth.
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/secrets/gcp-sa.json:ro
     restart: unless-stopped

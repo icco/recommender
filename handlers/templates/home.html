@@ -17,6 +17,7 @@
           <p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
           <p class="text-gray-600">Genre: {{.Genre}}</p>
           <p class="text-gray-600">Runtime: {{.Runtime}} minutes</p>
+          {{if .Explanation}}<p class="text-gray-500 italic mt-2">{{.Explanation}}</p>{{end}}
         </div>
       </div>
       {{end}}
@@ -38,6 +39,7 @@
           <p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
           <p class="text-gray-600">Genre: {{.Genre}}</p>
           <p class="text-gray-600">Seasons: {{.Runtime}}</p>
+          {{if .Explanation}}<p class="text-gray-500 italic mt-2">{{.Explanation}}</p>{{end}}
         </div>
       </div>
       {{end}}

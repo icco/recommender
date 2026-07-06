@@ -1,0 +1,18 @@
+Pick recommendations for the user from ONLY the shortlist below, using the id values.
+
+Movies: choose up to {{.TargetMovies}} — ideally one comedy, one action/drama,
+one worth rewatching, and the rest your best picks.
+TV shows: choose up to {{.TargetTVShows}}.
+
+Rules:
+- Use only ids present in the shortlist. Do not repeat an id.
+- Give a short, specific reason per pick.
+
+{{if .Profile}}User taste profile:
+{{.Profile}}
+{{end}}
+Movie shortlist:
+{{.Movies}}
+
+TV shortlist:
+{{.TVShows}}
