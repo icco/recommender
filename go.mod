@@ -7,7 +7,6 @@ require (
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/icco/gutil v0.0.0-20260623132927-4c8ee808ca1d
 	github.com/prometheus/client_golang v1.23.2
-	github.com/sashabaranov/go-openai v1.41.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.66.0

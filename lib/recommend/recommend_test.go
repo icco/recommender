@@ -16,11 +16,21 @@ const testGenreComedy = "Comedy"
 
 func testDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	// Unique named in-memory DB per test so shared-cache state never leaks across tests.
+	dsn := "file:" + t.Name() + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.Recommendation{}, &models.Movie{}, &models.TVShow{}); err != nil {
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := db.AutoMigrate(
+		&models.Recommendation{}, &models.Movie{}, &models.TVShow{},
+		&models.GenerationRun{}, &models.ExternalSignal{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -122,43 +132,42 @@ func distinctDateCount(ctx context.Context, db *gorm.DB) (int64, error) {
 	return n, err
 }
 
-func TestCheckRecommendationsExist_partialDay(t *testing.T) {
+func TestDidRunToday(t *testing.T) {
 	db := testDB(t)
 	r := testRecommender(db)
 	ctx := t.Context()
-
-	if err := db.Create(&models.Movie{
-		PlexRatingKey: "test-plex-movie-1", Title: "LibMovie", Year: 2020, Rating: 8, Genre: "Action",
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&models.TVShow{
-		PlexRatingKey: "test-plex-show-1", Title: "LibShow", Year: 2019, Rating: 8, Genre: "Drama", Seasons: 3,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-
 	day := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
-	if err := db.Create(&models.Recommendation{
-		Date: day, Title: "OnlyMovie", Type: models.TypeMovie, Year: 2020,
-		Rating: 8, Genre: testGenreComedy, TMDbID: 10,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
 
-	exists, err := r.CheckRecommendationsExist(ctx, day)
+	// No run yet.
+	done, err := r.DidRunToday(ctx, day)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exists {
-		t.Fatal("expected incomplete day to report exists=false so cron can regenerate")
+	if done {
+		t.Fatal("expected no successful run initially")
 	}
 
-	complete, err := r.CheckRecommendationsComplete(ctx, day)
+	// An error run does not count as done.
+	if err := db.Create(&models.GenerationRun{Date: day, Status: models.RunStatusError}).Error; err != nil {
+		t.Fatal(err)
+	}
+	done, err = r.DidRunToday(ctx, day)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if complete {
-		t.Fatal("expected day with only movie rec to be incomplete when both library types exist")
+	if done {
+		t.Fatal("an error run must not count as done")
+	}
+
+	// A successful run counts.
+	if err := db.Create(&models.GenerationRun{Date: day, Status: models.RunStatusOK, MovieCount: 4}).Error; err != nil {
+		t.Fatal(err)
+	}
+	done, err = r.DidRunToday(ctx, day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !done {
+		t.Fatal("expected done after a successful run")
 	}
 }
