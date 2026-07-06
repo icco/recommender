@@ -21,7 +21,7 @@ import (
 
 // defaultDSN matches the Postgres service wired up in .github/workflows/test.yml
 // and the docker-compose dev database, so tests run with no extra config locally.
-const defaultDSN = "postgres://postgres:postgres@localhost:5432/recommender_test?sslmode=disable"
+const defaultDSN = "postgres://postgres:postgres@localhost:5432/recommender_test?sslmode=disable" //nolint:gosec // test-only default DSN, not a real credential
 
 // New returns a *gorm.DB scoped to a private schema for the duration of the
 // test. It does not run migrations; callers migrate the models (or invoke

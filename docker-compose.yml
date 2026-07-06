@@ -26,7 +26,6 @@ services:
       # Mount a GCP service-account key (read-only) for Vertex AI auth.
       - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/secrets/gcp-sa.json:ro
     restart: unless-stopped
-
   postgres:
     image: postgres:17
     environment:
@@ -34,13 +33,14 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-recommender}
       - POSTGRES_DB=${POSTGRES_DB:-recommender}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-recommender} -d ${POSTGRES_DB:-recommender}"]
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-recommender} -d ${POSTGRES_DB:-recommender}
       interval: 10s
       timeout: 5s
       retries: 5
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
-
 volumes:
   pgdata:
