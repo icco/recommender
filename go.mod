@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/LukeHagar/plexgo v0.28.6
-	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/icco/gutil v0.0.0-20260630032459-de9e83f7fbb2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/unrolled/secure v1.17.0
@@ -54,7 +54,7 @@ require (
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/api v0.287.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260630182238-925bb5da69e7 // indirect
 	google.golang.org/grpc v1.82.0 // indirect
