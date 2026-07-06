@@ -1,6 +1,6 @@
 // Package recommend orchestrates daily movie and TV-show recommendation
-// generation, combining cached Plex library data with OpenAI-powered
-// prompting and result validation.
+// generation, combining cached Plex library data with Gemini (Vertex AI)
+// prompting and deterministic slotting.
 package recommend
 
 import (
