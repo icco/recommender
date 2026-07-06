@@ -20,8 +20,6 @@ type GormLogger struct {
 	logger *zap.SugaredLogger
 }
 
-// GormLogger implements gorm.ParamsFilter so bound parameters are stripped
-// before GORM interpolates them into traced SQL.
 var _ gorm.ParamsFilter = (*GormLogger)(nil)
 
 // NewGormLogger creates a new GORM logger that forwards to zap.
@@ -60,18 +58,13 @@ func (l *GormLogger) Error(ctx context.Context, msg string, data ...interface{})
 	l.loggerFor(ctx).Errorw(msg, "data", data)
 }
 
-// ParamsFilter drops bound parameter values from traced SQL. GORM calls this on
-// loggers that implement gorm.ParamsFilter, returning the SQL with placeholders
-// left un-interpolated ($1, $2, …). This keeps secrets (e.g. OAuth tokens) and
-// PII out of query logs — it is GORM's native ParameterizedQueries mechanism,
-// applied to this custom zap-backed logger.
+// ParamsFilter drops bound parameter values so GORM logs SQL with placeholders
+// left un-interpolated, keeping secrets (e.g. OAuth tokens) and PII out of logs.
 func (l *GormLogger) ParamsFilter(_ context.Context, sql string, _ ...any) (string, []any) {
 	return sql, nil
 }
 
 // Trace logs SQL query execution at debug level (or error level on failure).
-// Bound parameter values are stripped by ParamsFilter, so the logged SQL keeps
-// placeholders rather than interpolated values.
 func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
 	elapsed := time.Since(begin)
 	sql, rows := fc()

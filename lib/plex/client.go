@@ -42,18 +42,14 @@ const (
 	titleKey = "title"
 )
 
-// maxPosterBytes caps how much a single poster download may write to disk, so a
-// hostile or misbehaving image host can't exhaust local storage.
+// maxPosterBytes caps a single poster download so a misbehaving host can't fill
+// the disk.
 const maxPosterBytes = 25 << 20 // 25 MiB
 
-// DownloadImage fetches an image URL and writes it to dest, creating parent
-// directories as needed. Used to cache posters locally so the public web page
-// doesn't need to reach the private Plex host.
-//
-// The private X-Plex-Token is attached ONLY when imageURL is hosted on the
-// configured Plex server. Plex thumb metadata can contain absolute third-party
-// URLs (or attacker-influenced ones from scraped metadata); sending the token to
-// an arbitrary host would leak it and enable SSRF with the service's credentials.
+// DownloadImage fetches an image URL and writes it to dest. The X-Plex-Token is
+// attached only when imageURL is on the configured Plex host: thumb metadata can
+// carry absolute off-host URLs, and sending the token there would leak it and
+// allow SSRF with the service's credentials.
 func (c *Client) DownloadImage(ctx context.Context, imageURL, dest string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
