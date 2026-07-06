@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/icco/recommender/lib/dbtest"
 	"github.com/icco/recommender/models"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -16,17 +16,7 @@ const testGenreComedy = "Comedy"
 
 func testDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	// Unique named in-memory DB per test so shared-cache state never leaks across tests.
-	dsn := "file:" + t.Name() + "?mode=memory&cache=shared"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
+	db := dbtest.New(t)
 	if err := db.AutoMigrate(
 		&models.Recommendation{}, &models.Movie{}, &models.TVShow{},
 		&models.GenerationRun{}, &models.ExternalSignal{}, &models.OAuthToken{},
@@ -127,8 +117,8 @@ func distinctDateCount(ctx context.Context, db *gorm.DB) (int64, error) {
 	err := db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
 			SELECT 1 FROM recommendations
-			GROUP BY strftime('%Y-%m-%d', "date")
-		)`).Scan(&n).Error
+			GROUP BY to_char("date", 'YYYY-MM-DD')
+		) AS sub`).Scan(&n).Error
 	return n, err
 }
 

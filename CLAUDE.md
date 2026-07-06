@@ -56,6 +56,7 @@ docker compose down
 ```
 
 **Required Environment Variables:**
+- `DATABASE_URL`: Postgres connection string
 - `PLEX_URL`: Plex server URL
 - `PLEX_TOKEN`: Plex authentication token
 - `TMDB_API_KEY`: The Movie Database API key
@@ -70,7 +71,7 @@ docker compose down
 - `TRAKT_CONNECT_TOKEN`: shared secret required to call `GET /trakt/connect` (disabled when unset)
 - `ANILIST_USERNAME`: enable AniList (public list) signals
 - `PORT`: HTTP server port (defaults to 8080)
-- `DB_PATH`: Database file path (defaults to recommender.db)
+- `POSTER_DIR`: Directory for locally cached Plex posters (defaults to `posters`)
 
 External signals (Trakt watched/ratings/watchlist, AniList scores) are synced during `/cron/cache` into `ExternalSignal` and only re-rank owned Plex titles: they feed genre affinity, a watchlist score boost, watched-elsewhere handling, and prompt context. Sources are optional and skipped when their env vars are unset. Trakt OAuth (device flow) tokens live in `OAuthToken`; authorize via `GET /trakt/connect?token=…`.
 
@@ -320,16 +321,18 @@ This workflow ensures code quality, prevents integration issues, and maintains a
 
 ## Database
 
-Uses SQLite with GORM ORM. Database file: `recommender.db` (or `/data/recommender.db` in Docker).
+Uses Postgres with GORM ORM. Connection string comes from `DATABASE_URL`. Docker Compose runs a bundled `postgres:17` service; tests use an isolated schema per test on the Postgres named by `DATABASE_URL` (see `lib/dbtest`).
 
 **Schema Features:**
 - Comprehensive indexing on all frequently queried columns
 - Unique constraints on title+year combinations to prevent duplicates
 - Foreign key relationships with cascade deletes
 - Check constraints for data validation
-- SQLite optimizations: WAL mode, connection pooling, query optimization
+- Connection pooling tuned in `main.go` (`SetMaxOpenConns`/`SetConnMaxLifetime`)
 
 Migrations are automatically run on startup via `lib/db/migrations.go`.
+
+Any raw SQL must be Postgres dialect (e.g. `to_char()` for date formatting, not SQLite's `strftime()`).
 
 ## Key API Endpoints
 
@@ -432,8 +435,8 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 
 **Build Issues:**
 - Ensure all required environment variables are set
-- Check Go version compatibility (requires Go 1.24+)
-- Verify SQLite dependencies are installed
+- Check Go version compatibility (see `go.mod`)
+- Build is pure Go (`CGO_ENABLED=0`); no C toolchain required
 
 **Runtime Issues:**
 - Check logs for API rate limiting errors
@@ -443,8 +446,8 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 
 **Database Issues:**
 - Migrations run automatically on startup
-- Check disk space for SQLite database growth
-- Monitor index usage with EXPLAIN QUERY PLAN
+- Check Postgres connectivity and `DATABASE_URL` correctness
+- Monitor index usage with EXPLAIN ANALYZE
 - Review transaction batch processing logs
 
 **Performance Monitoring:**

@@ -591,7 +591,7 @@ func (c *Client) UpdateCache(ctx context.Context) error {
 	return nil
 }
 
-// GORM names TMDbID as tm_db_id in SQLite (see schema).
+// GORM maps the TMDbID field to the tm_db_id column (see schema).
 var movieUpsertColumns = []string{
 	titleKey, "year", "rating", "genre", "poster_url", "runtime",
 	"tm_db_id", "im_db_id", "tv_db_id", "enriched_at", "view_count", "updated_at",

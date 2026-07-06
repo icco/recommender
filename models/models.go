@@ -1,4 +1,4 @@
-// Package models defines the GORM-mapped types persisted to the SQLite
+// Package models defines the GORM-mapped types persisted to the Postgres
 // database (movies, TV shows, recommendations) plus the small set of shared
 // type-name constants used to discriminate rows.
 package models
