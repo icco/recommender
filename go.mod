@@ -3,7 +3,7 @@ module github.com/icco/recommender
 go 1.26.2
 
 require (
-	github.com/LukeHagar/plexgo v0.28.6
+	github.com/LukeHagar/plexgo v0.29.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/icco/gutil v0.0.0-20260630032459-de9e83f7fbb2
 	github.com/prometheus/client_golang v1.23.2
