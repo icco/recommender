@@ -152,7 +152,7 @@ func formatBookShortlist(cands []candidate) string {
 // loadCandidates loads eligible movies and TV shows, excluding titles recommended
 // in the last 30 days. TV is restricted to unwatched shows.
 func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movies, tvshows []candidate, err error) {
-	excludeMovies, excludeTV, err := r.recentlyRecommendedIDs(ctx, date, 30)
+	excludeMovies, excludeTV, err := r.recentlyRecommendedIDs(ctx, date, recentExclusionDays)
 	if err != nil {
 		return nil, nil, err
 	}
