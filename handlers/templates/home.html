@@ -1,3 +1,22 @@
+{{/* Metacritic score badge + link. Colors follow Metacritic's own bands:
+     61+ favorable (green), 40-60 mixed (yellow), below 40 unfavorable (red). */}}
+{{define "metacritic"}}
+{{if .HasMetascore}}
+{{$score := .MetascoreValue}}
+<p class="text-gray-600 flex items-center gap-2 mt-1">
+  <span class="inline-flex items-center justify-center w-8 h-8 rounded text-white text-sm font-bold
+    {{if ge $score 61}}bg-green-600{{else if ge $score 40}}bg-yellow-500{{else}}bg-red-600{{end}}">
+    {{$score}}
+  </span>
+  {{if .MetacriticURL}}
+  <a href="{{.MetacriticURL}}" rel="noopener noreferrer" target="_blank" class="text-blue-600 hover:text-blue-800">Metacritic</a>
+  {{else}}
+  <span>Metacritic</span>
+  {{end}}
+</p>
+{{end}}
+{{end}}
+
 {{define "content"}}
 <div class="container mx-auto px-4 py-8">
   {{if .}}
@@ -15,6 +34,7 @@
           <h3 class="text-lg font-semibold">{{.Title}}</h3>
           <p class="text-gray-600">{{.Year}}</p>
           <p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
+          {{template "metacritic" .}}
           <p class="text-gray-600">Genre: {{.Genre}}</p>
           <p class="text-gray-600">Runtime: {{.Runtime}} minutes</p>
           {{if .Explanation}}<p class="text-gray-500 italic mt-2">{{.Explanation}}</p>{{end}}
@@ -37,6 +57,7 @@
           <h3 class="text-lg font-semibold">{{.Title}}</h3>
           <p class="text-gray-600">{{.Year}}</p>
           <p class="text-gray-600">Rating: {{printf "%.1f" .Rating}}/10</p>
+          {{template "metacritic" .}}
           <p class="text-gray-600">Genre: {{.Genre}}</p>
           <p class="text-gray-600">Seasons: {{.Runtime}}</p>
           {{if .Explanation}}<p class="text-gray-500 italic mt-2">{{.Explanation}}</p>{{end}}

@@ -18,6 +18,8 @@ This is a personalized content recommendation service that uses Gemini (on Verte
 - `lib/recommend/`: Gemini-powered recommendation generation — candidate scoring/shortlisting (`candidates.go`), ID-based slotting (`slotting.go`), the Gemini client (`llm.go`), the taste profile (`profile.go`), and the pipeline (`generate.go`)
 - `lib/plex/`: Plex API client for fetching library data
 - `lib/tmdb/`: TMDb API client with rate limiting and circuit breaker
+- `lib/omdb/`: OMDb API client (Metacritic Metascores) — same rate limit / circuit breaker / key-safe-URL shape as `lib/tmdb`
+- `lib/metacritic/`: builds metacritic.com links from title slugs (Metacritic exposes no joinable ID)
 - `lib/db/`: Database utilities, migrations, and custom GORM JSON logger
 - `lib/lock/`: File-based locking system for concurrency control
 - `lib/validation/`: JSON validation for external API responses
@@ -70,10 +72,12 @@ docker compose down
 - `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET`: enable Trakt signals
 - `TRAKT_CONNECT_TOKEN`: shared secret required to call `GET /trakt/connect` (disabled when unset)
 - `ANILIST_USERNAME`: enable AniList (public list) signals
+- `OMDB_API_KEY`: enable Metacritic Metascores (fetched via OMDb, joined on IMDb ID)
+- `OMDB_BATCH_SIZE`: OMDb lookups per cache run (defaults to 40, sized for OMDb's free 1000/day quota)
 - `PORT`: HTTP server port (defaults to 8080)
 - `POSTER_DIR`: Directory for locally cached Plex posters (defaults to `posters`)
 
-External signals (Trakt watched/ratings/watchlist, AniList scores) are synced during `/cron/cache` into `ExternalSignal` and only re-rank owned Plex titles: they feed genre affinity, a watchlist score boost, watched-elsewhere handling, and prompt context. Sources are optional and skipped when their env vars are unset. Trakt OAuth (device flow) tokens live in `OAuthToken`; authorize via `GET /trakt/connect?token=…`.
+External signals (Trakt watched/ratings/watchlist, AniList scores) are synced during `/cron/cache` into `ExternalSignal` and only re-rank owned Plex titles: they feed genre affinity, a watchlist score boost, watched-elsewhere handling, and prompt context. Sources are optional and skipped when their env vars are unset. Metacritic enrichment (`lib/recommend/metascore.go`) rides the same `SignalSource` interface but writes `Metascore`/`MetascoreAt` onto `Movie`/`TVShow` rather than `ExternalSignal`, because a critic score is title metadata, not a per-user signal. It is incremental and batch-capped: a run takes the oldest never-checked or stale rows only, and stamps `MetascoreAt` even on a miss so uncovered titles aren't retried every hour. Trakt OAuth (device flow) tokens live in `OAuthToken`; authorize via `GET /trakt/connect?token=…`.
 
 Auth to Vertex AI uses Application Default Credentials — no API key.
 
@@ -359,6 +363,12 @@ The system generates exactly:
 Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the scored shortlist.
 
 ## API Integration Features
+
+**OMDb Client (`lib/omdb/client.go`):**
+- Metacritic has no public API; OMDb exposes the Metascore keyed by IMDb ID, which Plex GUIDs already give us
+- `Metascore` arrives as a *string* and is frequently `"N/A"` — especially for TV, since Metacritic rates seasons rather than series. Parse defensively into `*int` so missing stays distinguishable from zero
+- Free tier is 1000 requests/day, hence the per-run batch cap rather than a full-library sweep
+- Same rate limiting, circuit breaker, retry, and key-safe-URL handling as the TMDb client
 
 **TMDb Client:**
 - Rate limiting (40 requests per 10 seconds)

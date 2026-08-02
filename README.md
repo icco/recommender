@@ -19,11 +19,13 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 
 - **Plex** — library scan, watch counts, and GUIDs (imdb/tmdb/tvdb) + full genres during cache update
 - **TMDb** — fallback poster fill for the day's finalists when Plex has no poster
+- **Metacritic (via OMDb)** — critic Metascores joined by IMDb ID; feeds ranking, prompt context, and a score badge + link on each card
 - **Gemini (Vertex AI)** — picks recommendations by ID from a scored shortlist via JSON-constrained output
 
 ### Not implemented (possible future work)
 
-- AniList, Letterboxd, Trakt, and other catalogs mentioned in earlier notes
+- Letterboxd and other catalogs mentioned in earlier notes
+- Per-season Metacritic scores for TV (Metacritic rates seasons, not series, so many shows have no series-level Metascore)
 - Incremental “fill missing slots only” runs (each successful run replaces the whole day’s rows when incomplete)
 
 ## API endpoints
@@ -57,6 +59,8 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | `TRAKT_CLIENT_SECRET` | no | Trakt API app client secret |
 | `TRAKT_CONNECT_TOKEN` | no | Shared secret required to call `GET /trakt/connect?token=…`; the endpoint is disabled when unset |
 | `ANILIST_USERNAME` | no | AniList username (public list); enables AniList signals |
+| `OMDB_API_KEY` | no | [OMDb](https://www.omdbapi.com/apikey.aspx) key; enables Metacritic Metascores |
+| `OMDB_BATCH_SIZE` | no | OMDb lookups per cache run (default `40`, sized for OMDb's free 1000/day quota) |
 | `PORT` | no | HTTP port (default `8080`) |
 | `POSTER_DIR` | no | Directory for locally cached Plex posters (default `posters`; Docker Compose uses `/data/posters`) |
 
@@ -68,8 +72,11 @@ External sources only **re-rank titles you already own in Plex** — they never 
 
 - **Trakt** (watched / ratings / watchlist): register a Trakt API app, set `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` and a `TRAKT_CONNECT_TOKEN`, then authorize once — `curl "http://localhost:8080/trakt/connect?token=$TRAKT_CONNECT_TOKEN"` and enter the returned code at the Trakt URL. Tokens persist in the DB and auto-refresh.
 - **AniList** (anime scores): set `ANILIST_USERNAME` (public list; no auth). Matched to owned anime by title + year.
+- **Metacritic** (critic Metascores): set `OMDB_API_KEY`. Metacritic has no public API, so scores come from [OMDb](https://www.omdbapi.com/), joined on the IMDb ID Plex already provides. Enrichment is incremental — each cache run looks up `OMDB_BATCH_SIZE` titles that have never been checked (or went stale after 90 days), so a full library backfills over a few days inside the free tier. Titles Metacritic doesn't cover are stamped too, so they aren't retried every run.
 
 Signals feed genre affinity, a watchlist score boost, watched-elsewhere handling, and a short "recently loved" line in the prompt.
+
+The Metascore is used three ways: it adds a modest term to candidate scoring (centered on 55, so an unscored title ranks the same as an average one rather than being penalized), it appears on the shortlist lines sent to Gemini, and it renders on each card as a colored badge linking to metacritic.com. That link is built from the title slug — Metacritic exposes no ID to join on — so it is only published for titles that actually have a Metascore.
 
 ## Repository layout
 
@@ -80,6 +87,8 @@ recommender/
 │   ├── db/           # Migrations and GORM logger
 │   ├── health/       # Health check
 │   ├── lock/         # File locks for cron endpoints
+│   ├── metacritic/   # metacritic.com link building
+│   ├── omdb/         # OMDb client (Metacritic Metascores)
 │   ├── plex/         # Plex client and cache update
 │   ├── recommend/    # Gemini generation, candidate scoring, and queries
 │   ├── tmdb/         # TMDb client
@@ -124,8 +133,8 @@ The compose file runs a bundled `postgres:17` service (data in the `pgdata` volu
 
 ## Recommendation flow (summary)
 
-1. **`/cron/cache`** — Reads Plex libraries and stores all movies and TV shows in Postgres, including `view_count`, GUIDs (imdb/tmdb/tvdb), and the full genre list. Poster thumbs are stored as absolute URLs when Plex returns relative paths.
-2. **`/cron/recommend`** — Skips if a successful run already exists for the UTC day. Otherwise: loads cached titles (minus anything recommended in the last 30 days), scores them (rating + novelty + Plex-derived taste affinity), takes a date-seeded diverse shortlist, asks Gemini to pick the best fits **by ID** with a one-line reason, slots them deterministically (comedy / action-drama / rewatch / wildcard movies + unwatched TV), lazily fills any missing posters from TMDb, and **replaces** that day's rows in one transaction. Every attempt records a `GenerationRun`.
+1. **`/cron/cache`** — Reads Plex libraries and stores all movies and TV shows in Postgres, including `view_count`, GUIDs (imdb/tmdb/tvdb), and the full genre list. Poster thumbs are stored as absolute URLs when Plex returns relative paths. External signals sync afterward, including a capped batch of OMDb Metascore lookups.
+2. **`/cron/recommend`** — Skips if a successful run already exists for the UTC day. Otherwise: loads cached titles (minus anything recommended in the last 30 days), scores them (rating + novelty + Plex-derived taste affinity + Metacritic reception), takes a date-seeded diverse shortlist, asks Gemini to pick the best fits **by ID** with a one-line reason, slots them deterministically (comedy / action-drama / rewatch / wildcard movies + unwatched TV), lazily fills any missing posters from TMDb, and **replaces** that day's rows in one transaction. Every attempt records a `GenerationRun`.
 
 A day is "done" when a `GenerationRun` with status `ok` exists for it — tracked explicitly rather than inferred from row counts, so cron never re-runs a completed day.
 

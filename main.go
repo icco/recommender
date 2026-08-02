@@ -144,6 +144,16 @@ func main() {
 		TraktClientID:     os.Getenv("TRAKT_CLIENT_ID"),
 		TraktClientSecret: os.Getenv("TRAKT_CLIENT_SECRET"),
 		AniListUsername:   os.Getenv("ANILIST_USERNAME"),
+		OMDbAPIKey:        os.Getenv("OMDB_API_KEY"),
+	}
+	// OMDB_BATCH_SIZE caps Metacritic lookups per cache run; unset uses the
+	// default sized for OMDb's free daily quota.
+	if v := os.Getenv("OMDB_BATCH_SIZE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			log.Fatalw("OMDB_BATCH_SIZE must be a non-negative integer", "value", v)
+		}
+		sigCfg.OMDbBatchSize = n
 	}
 
 	// posterDir holds locally cached Plex posters; POSTER_DIR is operator config.

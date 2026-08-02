@@ -19,6 +19,8 @@ services:
       # Point at the mounted service-account key so ADC works in the container.
       - GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-sa.json
       - DATABASE_URL=${DATABASE_URL:-postgres://recommender:recommender@postgres:5432/recommender?sslmode=disable}
+      - OMDB_API_KEY=${OMDB_API_KEY}
+      - OMDB_BATCH_SIZE=${OMDB_BATCH_SIZE}
       - POSTER_DIR=/data/posters
       - PORT=${PORT:-8080}
     volumes:
