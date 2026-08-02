@@ -68,7 +68,7 @@ Authentication to Vertex AI uses [Application Default Credentials](https://cloud
 
 ### Signal sources (optional)
 
-External sources only **re-rank titles you already own in Plex** — they never add new titles. Both are off unless configured, and are synced during `/cron/cache`.
+External sources only **re-rank titles you already own in Plex** — they never add new titles. Each is off unless configured, and all are synced during `/cron/cache`.
 
 - **Trakt** (watched / ratings / watchlist): register a Trakt API app, set `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` and a `TRAKT_CONNECT_TOKEN`, then authorize once — `curl "http://localhost:8080/trakt/connect?token=$TRAKT_CONNECT_TOKEN"` and enter the returned code at the Trakt URL. Tokens persist in the DB and auto-refresh.
 - **AniList** (anime scores): set `ANILIST_USERNAME` (public list; no auth). Matched to owned anime by title + year.

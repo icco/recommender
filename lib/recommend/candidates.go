@@ -44,7 +44,9 @@ const metascoreWeight = 1.0
 // instead of penalized.
 const metascoreNeutral = 55.0
 
-// metascoreBoost maps 0-100 onto roughly [-1, +1] × weight, or 0 if unknown.
+// metascoreBoost maps 0-100 onto [-1.0, +0.82] × weight, or 0 if unknown. The
+// range is asymmetric because neutral sits above the midpoint: a panned title
+// loses more than an acclaimed one gains.
 func metascoreBoost(score *int) float64 {
 	if score == nil {
 		return 0
