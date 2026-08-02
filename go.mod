@@ -5,7 +5,11 @@ go 1.26.2
 require (
 	github.com/LukeHagar/plexgo v0.29.0
 	github.com/go-chi/chi/v5 v5.3.1
+	github.com/icco/anilist v1.0.0
+	github.com/icco/goodreads v1.0.0
 	github.com/icco/gutil v0.0.0-20260630032459-de9e83f7fbb2
+	github.com/icco/omdb v1.0.0
+	github.com/icco/trakt v1.0.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/unrolled/secure v1.17.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0

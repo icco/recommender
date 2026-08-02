@@ -16,13 +16,17 @@ This is a personalized content recommendation service that uses Gemini (on Verte
 
 **Key Libraries:**
 - `lib/recommend/`: Gemini-powered recommendation generation — candidate scoring/shortlisting (`candidates.go`), ID-based slotting (`slotting.go`), the Gemini client (`llm.go`), the taste profile (`profile.go`), and the pipeline (`generate.go`)
-- `lib/goodreads/`: Goodreads shelf client over the per-shelf RSS feed. The official API was retired in Dec 2020 and issues no new keys, so RSS is the only supported public route; it needs no key or auth for a public profile. **The user id is from `/user/show/<id>`, a different namespace from `/author/show/<id>`** — passing an author id returns a different person's shelves with no error
 - `lib/plex/`: Plex API client for fetching library data
 - `lib/omdb/`: OMDb API client (Metacritic Metascores) — sliding-window rate limit, circuit breaker, and a key-safe URL
 - `lib/metacritic/`: builds metacritic.com links from title slugs (Metacritic exposes no joinable ID)
 - `lib/db/`: Database utilities, migrations, and custom GORM JSON logger
 - `lib/lock/`: File-based locking system for concurrency control
 - `lib/validation/`: JSON validation for external API responses
+
+**External API clients (extracted to their own repos):** `lib/goodreads`, `lib/omdb`, `lib/trakt`, and `lib/anilist` used to live here. They are now standalone MIT modules — `github.com/icco/{goodreads,omdb,trakt,anilist}` — because none of them were recommender-specific and several fill real gaps in the Go ecosystem. Fix bugs upstream and bump the dependency; do not re-add a local copy. Two behaviors worth knowing without reading their source:
+
+- **goodreads**: the user id is from `/user/show/<id>`, a *different namespace* from `/author/show/<id>`. Passing an author id returns a different person's shelves with no error. `Shelf` returns `ErrTruncated` alongside partial results past `MaxPages`.
+- **omdb**: score fields are `*int`/`*float64` because OMDb reports a missing score as the string `"N/A"`; nil keeps "unscored" distinguishable from "scored zero".
 
 **Data Flow:**
 1. Cron endpoints (`/cron/recommend`, `/cron/cache`) trigger data collection from Plex
@@ -370,7 +374,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 
 ## API Integration Features
 
-**OMDb Client (`lib/omdb/client.go`):**
+**OMDb Client (`github.com/icco/omdb`):**
 - Metacritic has no public API; OMDb exposes the Metascore keyed by IMDb ID, which Plex GUIDs already give us
 - **Movies only.** OMDb has no Metacritic data for TV — verified against a real key: 0 of 12 series returned a Metascore by title or by IMDb id, and the season/episode endpoints have no score field. Do not re-add TV lookups; they spend quota to store nothing. TV ratings come from Plex `audienceRating`
 - `Metascore` arrives as a *string* and can be `"N/A"`. Parse defensively into `*int` so missing stays distinguishable from zero
@@ -382,7 +386,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 - JSON-constrained output via `ResponseMIMEType` + `ResponseSchema`
 - Isolated behind the `Chatter` interface so tests use a fake
 
-**Books (`lib/recommend/books.go`, `lib/goodreads`):**
+**Books (`lib/recommend/books.go`, `github.com/icco/goodreads`):**
 - Books are the one source that owns its candidate pool. Trakt/AniList/OMDb only re-rank owned Plex titles via `ExternalSignal`, which can join to a Movie or TVShow but not a Book; the want-to-read shelf *is* the recommendable set, so books get their own table
 - **Author affinity, not genre affinity.** The shelf feed has no genre field — only `user_shelves`, the user's own shelf names, which are near-empty on real accounts (measured on Nat's profile: 4 "fiction", 3 "digital-owned", 1 "top-ten" out of 100 read books). Read-shelf star ratings are rich by contrast (40× 5-star, 30× 4-star), so affinity keys on author
 - `Book.Rating` stores the Goodreads community average **rescaled ×2 to 0-10**, so one scoring path serves all three tiers. Cards divide back for display via `Recommendation.GoodreadsRating()`
