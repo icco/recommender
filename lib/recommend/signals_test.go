@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/recommender/lib/anilist"
-	"github.com/icco/recommender/lib/trakt"
+	"github.com/icco/anilist"
 	"github.com/icco/recommender/models"
+	"github.com/icco/trakt"
 )
 
 func TestTraktSource_Sync_joinsAndUpserts(t *testing.T) {

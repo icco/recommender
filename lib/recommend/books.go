@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/icco/goodreads"
 	"github.com/icco/gutil/logging"
-	"github.com/icco/recommender/lib/goodreads"
 	"github.com/icco/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"

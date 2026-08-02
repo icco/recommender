@@ -36,8 +36,16 @@ github.com/googleapis/gax-go/v2 v2.22.0 h1:PjIWBpgGIVKGoCXuiCoP64altEJCj3/Ei+kSU
 github.com/googleapis/gax-go/v2 v2.22.0/go.mod h1:irWBbALSr0Sk3qlqb9SyJ1h68WjgeFuiOzI4Rqw5+aY=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/icco/anilist v1.0.0 h1:8uJag2cwVOcluO4cKHvWHQzHOgwhtpoBKJuk4wGaK8Q=
+github.com/icco/anilist v1.0.0/go.mod h1:kFq+0gYbGget8IGH3CS1DVxQ15a5UDgeqTobsGKFcaA=
+github.com/icco/goodreads v1.0.0 h1:4B6hTbLEDg6gSglb1FFoTdtmKW3shYIThxwWHHI4Yac=
+github.com/icco/goodreads v1.0.0/go.mod h1:oVaR95O17bpV4CvtqNiKTiHy8Us6v608OXIgVp3GdqI=
 github.com/icco/gutil v0.0.0-20260630032459-de9e83f7fbb2 h1:EFeFjeYUfb5VsSHefvAcRH4467OanjbO0o0YFVgUrKg=
 github.com/icco/gutil v0.0.0-20260630032459-de9e83f7fbb2/go.mod h1:QuT+5tTYEEiosiNKKu5nHW2p8GFJTJLokiAtnou9e20=
+github.com/icco/omdb v1.0.0 h1:zit3sZQRYy7pwR1Fc/DnSOJllD84pbHGnMG7uNubHws=
+github.com/icco/omdb v1.0.0/go.mod h1:ayXKs7bca1bXTZEygzCxFuCu2/mCsrGAuCRoZteZClE=
+github.com/icco/trakt v1.0.0 h1:me6B3OQjqTdapByBVbH3j/yBhiibyuTYQ+pdSDpfQCE=
+github.com/icco/trakt v1.0.0/go.mod h1:2latnyI/ZF0mB/UC9B/7G6KGAvH8tfxRUH8TbPw+knk=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=

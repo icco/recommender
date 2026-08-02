@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/icco/goodreads"
 	"github.com/icco/recommender/lib/dbtest"
-	"github.com/icco/recommender/lib/goodreads"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
 )
