@@ -22,7 +22,6 @@ import (
 	"github.com/icco/recommender/lib/lock"
 	"github.com/icco/recommender/lib/plex"
 	"github.com/icco/recommender/lib/recommend"
-	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/static"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -89,11 +88,6 @@ func main() {
 		log.Fatalw("PLEX_TOKEN environment variable is required")
 	}
 
-	tmdbAPIKey := os.Getenv("TMDB_API_KEY")
-	if tmdbAPIKey == "" {
-		log.Fatalw("TMDB_API_KEY environment variable is required")
-	}
-
 	if os.Getenv("GOOGLE_CLOUD_PROJECT") == "" {
 		log.Fatalw("GOOGLE_CLOUD_PROJECT environment variable is required")
 	}
@@ -127,9 +121,7 @@ func main() {
 
 	fileLock := lock.NewFileLock(ctx)
 
-	tmdbClient := tmdb.NewClient(tmdbAPIKey)
-
-	plexClient := plex.NewClient(plexURL, plexToken, gormDB, tmdbClient)
+	plexClient := plex.NewClient(plexURL, plexToken, gormDB)
 
 	geminiModel := os.Getenv("GEMINI_MODEL")
 	if geminiModel == "" {
@@ -166,7 +158,7 @@ func main() {
 		log.Fatalw("Failed to create poster dir", zap.Error(err))
 	}
 
-	recommender, err := recommend.New(gormDB, plexClient, tmdbClient, chat, geminiModel, sigCfg, posterDir)
+	recommender, err := recommend.New(gormDB, plexClient, chat, geminiModel, sigCfg, posterDir)
 	if err != nil {
 		log.Fatalw("Failed to create recommender", zap.Error(err))
 	}

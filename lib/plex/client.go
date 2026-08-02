@@ -17,7 +17,6 @@ import (
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/components"
 	"github.com/icco/gutil/logging"
-	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -31,7 +30,6 @@ type Client struct {
 	plexURL   string
 	db        *gorm.DB
 	plexToken string
-	tmdb      *tmdb.Client
 }
 
 const (
@@ -97,7 +95,7 @@ func sameHost(a, b string) bool {
 // NewClient creates a new Plex client with the provided configuration.
 // It initializes the Plex API client with the given URL and authentication token.
 // Loggers are pulled from per-call ctx via gutil/logging.
-func NewClient(plexURL, plexToken string, db *gorm.DB, tmdbClient *tmdb.Client) *Client {
+func NewClient(plexURL, plexToken string, db *gorm.DB) *Client {
 	plex := plexgo.New(
 		plexgo.WithSecurity(plexToken),
 		plexgo.WithServerURL(plexURL),
@@ -108,7 +106,6 @@ func NewClient(plexURL, plexToken string, db *gorm.DB, tmdbClient *tmdb.Client) 
 		plexURL:   plexURL,
 		db:        db,
 		plexToken: plexToken,
-		tmdb:      tmdbClient,
 	}
 }
 
