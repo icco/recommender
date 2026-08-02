@@ -30,7 +30,7 @@ func NewGeminiChatter(ctx context.Context, model string) (*GeminiChatter, error)
 		Model:    model,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create genai client: %w", err)
+		return nil, fmt.Errorf("create vertex client: %w", err)
 	}
 	return &GeminiChatter{v: v}, nil
 }
