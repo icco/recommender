@@ -56,14 +56,16 @@ type sectionListMetadata struct {
 	Type      string        `json:"type"`
 	Year      *int          `json:"year,omitempty"`
 	Rating    *float32      `json:"rating,omitempty"`
-	Summary   *string       `json:"summary,omitempty"`
-	Thumb     *string       `json:"thumb,omitempty"`
-	Art       *string       `json:"art,omitempty"`
-	Duration  *int          `json:"duration,omitempty"`
-	AddedAt   int64         `json:"addedAt"`
-	UpdatedAt *int64        `json:"updatedAt,omitempty"`
-	ViewCount *int          `json:"viewCount,omitempty"`
-	Genre     []struct {
+	// The only score Plex sets on shows: 0 of 1408 had `rating`, 1397 had this.
+	AudienceRating *float32 `json:"audienceRating,omitempty"`
+	Summary        *string  `json:"summary,omitempty"`
+	Thumb          *string  `json:"thumb,omitempty"`
+	Art            *string  `json:"art,omitempty"`
+	Duration       *int     `json:"duration,omitempty"`
+	AddedAt        int64    `json:"addedAt"`
+	UpdatedAt      *int64   `json:"updatedAt,omitempty"`
+	ViewCount      *int     `json:"viewCount,omitempty"`
+	Genre          []struct {
 		Tag string `json:"tag"`
 	} `json:"Genre,omitempty"`
 	GUID       plexGUIDs `json:"Guid,omitempty"`
@@ -111,17 +113,26 @@ func (g *plexGUIDs) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// firstNonNil returns the first non-nil score widened to float64, or nil.
+func firstNonNil(scores ...*float32) *float64 {
+	for _, s := range scores {
+		if s != nil {
+			x := float64(*s)
+			return &x
+		}
+	}
+	return nil
+}
+
 func sectionMetadataToPlexItem(md sectionListMetadata) Item {
 	var genres []components.Tag
 	for _, g := range md.Genre {
 		genres = append(genres, components.Tag{Tag: g.Tag})
 	}
 	rk := string(md.RatingKey)
-	var rating *float64
-	if md.Rating != nil {
-		x := float64(*md.Rating)
-		rating = &x
-	}
+	// Critic rating, else audience. Both are 0-10; without the fallback every
+	// TV card rendered 0.0.
+	rating := firstNonNil(md.Rating, md.AudienceRating)
 	summary := ""
 	if md.Summary != nil {
 		summary = *md.Summary

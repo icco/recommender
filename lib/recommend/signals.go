@@ -10,6 +10,7 @@ import (
 
 	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/lib/anilist"
+	"github.com/icco/recommender/lib/omdb"
 	"github.com/icco/recommender/lib/trakt"
 	"github.com/icco/recommender/models"
 	"go.uber.org/zap"
@@ -246,6 +247,9 @@ type SignalConfig struct {
 	TraktClientID     string
 	TraktClientSecret string
 	AniListUsername   string
+	OMDbAPIKey        string
+	// OMDbBatchSize caps OMDb lookups per cache run; <= 0 uses the default.
+	OMDbBatchSize int
 }
 
 // traktClient returns a Trakt client if credentials are configured, else nil.
@@ -264,6 +268,13 @@ func (r *Recommender) configuredSources() []SignalSource {
 	}
 	if r.sigCfg.AniListUsername != "" {
 		out = append(out, &anilistSource{db: r.db, client: anilist.NewClient(), username: r.sigCfg.AniListUsername})
+	}
+	if r.sigCfg.OMDbAPIKey != "" {
+		batch := r.sigCfg.OMDbBatchSize
+		if batch <= 0 {
+			batch = defaultMetascoreBatch
+		}
+		out = append(out, &metascoreSource{db: r.db, client: omdb.NewClient(r.sigCfg.OMDbAPIKey), batch: batch})
 	}
 	return out
 }

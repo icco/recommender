@@ -27,6 +27,8 @@ type Movie struct {
 	IMDbID        string     `gorm:"type:varchar(32);index:idx_movies_imdb_id"`               // Plex GUID imdb://
 	TVDbID        string     `gorm:"type:varchar(32)"`                                        // Plex GUID tvdb://
 	EnrichedAt    *time.Time `gorm:"index:idx_movies_enriched_at"`                            // last TMDb enrichment; nil = never
+	Metascore     *int       `gorm:"index:idx_movies_metascore"`                              // Metacritic critic score 0-100 via OMDb; nil = none
+	MetascoreAt   *time.Time `gorm:"index:idx_movies_metascore_at"`                           // last OMDb lookup; nil = never (a lookup with no score still stamps this)
 	ViewCount     int        `gorm:"default:0;index:idx_movies_view_count"`                   // Plex view count (0 = unwatched)
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -49,6 +51,8 @@ type TVShow struct {
 	IMDbID        string     `gorm:"type:varchar(32);index:idx_tvshows_imdb_id"`               // Plex GUID imdb://
 	TVDbID        string     `gorm:"type:varchar(32)"`                                         // Plex GUID tvdb://
 	EnrichedAt    *time.Time `gorm:"index:idx_tvshows_enriched_at"`                            // last TMDb enrichment; nil = never
+	Metascore     *int       `gorm:"index:idx_tvshows_metascore"`                              // Metacritic critic score 0-100 via OMDb; nil = none. Often absent: Metacritic scores seasons, not series
+	MetascoreAt   *time.Time `gorm:"index:idx_tvshows_metascore_at"`                           // last OMDb lookup; nil = never (a lookup with no score still stamps this)
 	ViewCount     int        `gorm:"default:0;index:idx_tvshows_view_count"`                   // Plex view count (0 = unwatched)
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -59,26 +63,41 @@ type TVShow struct {
 
 // Recommendation represents a single recommendation item with its metadata.
 type Recommendation struct {
-	ID          uint      `gorm:"primarykey"`
-	Date        time.Time `gorm:"not null;index:idx_recommendations_date;uniqueIndex:idx_recommendations_date_title"`                    // The date this recommendation was generated
-	Title       string    `gorm:"type:varchar(500);not null;index:idx_recommendations_title;uniqueIndex:idx_recommendations_date_title"` // Title of the content
-	Type        string    `gorm:"type:varchar(20);not null;index:idx_recommendations_type;check:type IN ('movie', 'tvshow')"`            // "movie" or "tvshow"
-	Year        int       `gorm:"not null;index:idx_recommendations_year"`                                                               // Release year
-	Rating      float64   `gorm:"index:idx_recommendations_rating"`                                                                      // Rating (e.g., from IMDB)
-	Genre       string    `gorm:"type:varchar(255);index:idx_recommendations_genre"`                                                     // Genre(s)
-	PosterURL   string    `gorm:"type:varchar(1000)"`                                                                                    // URL to the poster image
-	Explanation string    `gorm:"type:varchar(1000)"`                                                                                    // model's one-line reason for this pick
-	Runtime     int       `gorm:"default:0"`                                                                                             // Runtime in minutes (for movies) or seasons (for TV shows)
-	MovieID     *uint     `gorm:"index:idx_recommendations_movie_id;constraint:OnDelete:CASCADE"`                                        // Reference to Movie if Type is "movie"
-	TVShowID    *uint     `gorm:"index:idx_recommendations_tvshow_id;constraint:OnDelete:CASCADE"`                                       // Reference to TVShow if Type is "tvshow"
-	TMDbID      int       `gorm:"not null;index:idx_recommendations_tmdb_id"`                                                            // The Movie Database ID
-	ViewCount   int       `gorm:"-"`                                                                                                     // Plex views when building prompts only (not stored)
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            uint      `gorm:"primarykey"`
+	Date          time.Time `gorm:"not null;index:idx_recommendations_date;uniqueIndex:idx_recommendations_date_title"`                    // The date this recommendation was generated
+	Title         string    `gorm:"type:varchar(500);not null;index:idx_recommendations_title;uniqueIndex:idx_recommendations_date_title"` // Title of the content
+	Type          string    `gorm:"type:varchar(20);not null;index:idx_recommendations_type;check:type IN ('movie', 'tvshow')"`            // "movie" or "tvshow"
+	Year          int       `gorm:"not null;index:idx_recommendations_year"`                                                               // Release year
+	Rating        float64   `gorm:"index:idx_recommendations_rating"`                                                                      // Rating (e.g., from IMDB)
+	Genre         string    `gorm:"type:varchar(255);index:idx_recommendations_genre"`                                                     // Genre(s)
+	PosterURL     string    `gorm:"type:varchar(1000)"`                                                                                    // URL to the poster image
+	Explanation   string    `gorm:"type:varchar(1000)"`                                                                                    // model's one-line reason for this pick
+	Metascore     *int      `gorm:"index:idx_recommendations_metascore"`                                                                   // Metacritic critic score 0-100 at generation time; nil = none
+	MetacriticURL string    `gorm:"type:varchar(500)"`                                                                                     // metacritic.com page for this title; "" when no Metascore
+	Runtime       int       `gorm:"default:0"`                                                                                             // Runtime in minutes (for movies) or seasons (for TV shows)
+	MovieID       *uint     `gorm:"index:idx_recommendations_movie_id;constraint:OnDelete:CASCADE"`                                        // Reference to Movie if Type is "movie"
+	TVShowID      *uint     `gorm:"index:idx_recommendations_tvshow_id;constraint:OnDelete:CASCADE"`                                       // Reference to TVShow if Type is "tvshow"
+	TMDbID        int       `gorm:"not null;index:idx_recommendations_tmdb_id"`                                                            // The Movie Database ID
+	ViewCount     int       `gorm:"-"`                                                                                                     // Plex views when building prompts only (not stored)
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 
 	// Relationships
 	Movie  *Movie  `gorm:"foreignKey:MovieID"`
 	TVShow *TVShow `gorm:"foreignKey:TVShowID"`
+}
+
+// HasMetascore reports whether Metacritic scored this title. Templates use this
+// instead of a nil check so the score can be compared as a plain int.
+func (r Recommendation) HasMetascore() bool { return r.Metascore != nil }
+
+// MetascoreValue returns the Metacritic score, or 0 when there is none.
+// Templates cannot dereference a *int, so display goes through this.
+func (r Recommendation) MetascoreValue() int {
+	if r.Metascore == nil {
+		return 0
+	}
+	return *r.Metascore
 }
 
 // Run status values for GenerationRun.Status.
@@ -92,6 +111,7 @@ const (
 	SourcePlex          = "plex"
 	SourceTrakt         = "trakt"
 	SourceAniList       = "anilist"
+	SourceOMDb          = "omdb"
 	SignalKindWatched   = "watched"
 	SignalKindRated     = "rated"
 	SignalKindScore     = "score"

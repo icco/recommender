@@ -25,6 +25,7 @@ type candidate struct {
 	TMDbID      *int
 	Affinity    float64 // taste-profile boost (Phase 2); 0 otherwise
 	Watchlisted bool    // present on an external watchlist (Trakt)
+	Metascore   *int    // Metacritic critic score 0-100; nil when unknown
 }
 
 // dateSeed derives a stable per-UTC-day seed so shortlists are reproducible.
@@ -36,8 +37,25 @@ func dateSeed(date time.Time) int64 {
 // watchlistBoost lifts titles the user has explicitly watchlisted externally.
 const watchlistBoost = 1.5
 
+// Kept below watchlistBoost so critics nudge rather than dominate.
+const metascoreWeight = 1.0
+
+// The "no opinion" score. Centering here keeps unscored titles neutral
+// instead of penalized.
+const metascoreNeutral = 55.0
+
+// metascoreBoost maps 0-100 onto [-1.0, +0.82] × weight, or 0 if unknown. The
+// range is asymmetric because neutral sits above the midpoint: a panned title
+// loses more than an acclaimed one gains.
+func metascoreBoost(score *int) float64 {
+	if score == nil {
+		return 0
+	}
+	return (float64(*score) - metascoreNeutral) / metascoreNeutral * metascoreWeight
+}
+
 // scoreCandidate ranks a title: rating drives it, unwatched gets a novelty
-// boost, taste affinity and watchlist membership add on top.
+// boost, taste affinity, watchlist membership, and critic reception add on top.
 func scoreCandidate(c candidate) float64 {
 	s := c.Rating / 10.0 * 2.0
 	if c.ViewCount == 0 {
@@ -47,6 +65,7 @@ func scoreCandidate(c candidate) float64 {
 	if c.Watchlisted {
 		s += watchlistBoost
 	}
+	s += metascoreBoost(c.Metascore)
 	return s
 }
 
@@ -82,8 +101,13 @@ func formatShortlist(cands []candidate) string {
 		if c.ViewCount > 0 {
 			watched = "watched"
 		}
-		fmt.Fprintf(&b, "[id=%d] %s (%d) — Rating: %.1f — Genres: %s — %s\n",
-			c.ID, c.Title, c.Year, c.Rating, strings.Join(c.Genres, ", "), watched)
+		// Omitted when absent, so a coverage gap doesn't read as a bad review.
+		metacritic := ""
+		if c.Metascore != nil {
+			metacritic = fmt.Sprintf(" — Metacritic: %d", *c.Metascore)
+		}
+		fmt.Fprintf(&b, "[id=%d] %s (%d) — Rating: %.1f%s — Genres: %s — %s\n",
+			c.ID, c.Title, c.Year, c.Rating, metacritic, strings.Join(c.Genres, ", "), watched)
 	}
 	return b.String()
 }
@@ -119,6 +143,17 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 		return nil, nil, err
 	}
 
+	metaMovies, metaTV, err := r.metascoreMaps(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	metascoreFor := func(scores map[uint]int, id uint) *int {
+		if v, ok := scores[id]; ok {
+			return &v
+		}
+		return nil
+	}
+
 	var dbMovies []models.Movie
 	if err := r.db.WithContext(ctx).Find(&dbMovies).Error; err != nil {
 		return nil, nil, fmt.Errorf("load movies: %w", err)
@@ -138,6 +173,7 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 			Rating: m.Rating, Genres: genres, PosterURL: m.PosterURL,
 			Runtime: m.Runtime, ViewCount: vc, TMDbID: m.TMDbID,
 			Affinity: affinityFor(genres), Watchlisted: wl,
+			Metascore: metascoreFor(metaMovies, m.ID),
 		})
 	}
 
@@ -159,6 +195,7 @@ func (r *Recommender) loadCandidates(ctx context.Context, date time.Time) (movie
 			Rating: s.Rating, Genres: genres, PosterURL: s.PosterURL,
 			Runtime: s.Seasons, ViewCount: s.ViewCount, TMDbID: s.TMDbID,
 			Affinity: affinityFor(genres), Watchlisted: wl,
+			Metascore: metascoreFor(metaTV, s.ID),
 		})
 	}
 	return movies, tvshows, nil

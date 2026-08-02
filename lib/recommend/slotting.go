@@ -6,9 +6,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/icco/recommender/lib/metacritic"
 	"github.com/icco/recommender/models"
 	"google.golang.org/genai"
 )
+
+// metacriticSection maps a recommendation type to the metacritic.com URL section.
+func metacriticSection(recType string) string {
+	if recType == models.TypeTVShow {
+		return metacritic.SectionTV
+	}
+	return metacritic.SectionMovie
+}
 
 type pick struct {
 	ID          uint   `json:"id"`
@@ -61,7 +70,11 @@ func toRec(c candidate, explanation string, date time.Time) models.Recommendatio
 	rec := models.Recommendation{
 		Title: c.Title, Type: c.Type, Year: c.Year, Rating: c.Rating,
 		Genre: strings.Join(c.Genres, ", "), PosterURL: c.PosterURL, Runtime: c.Runtime,
-		Explanation: explanation, Date: date,
+		Explanation: explanation, Date: date, Metascore: c.Metascore,
+	}
+	// Only link titles Metacritic scored: best proxy for the slug resolving.
+	if c.Metascore != nil {
+		rec.MetacriticURL = metacritic.URLFor(metacriticSection(c.Type), c.Title)
 	}
 	if c.TMDbID != nil {
 		rec.TMDbID = *c.TMDbID
