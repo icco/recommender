@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a personalized content recommendation service that uses Gemini (on Vertex AI) to generate daily recommendations for movies, TV shows, and books. The service integrates with Plex (for library data + GUIDs), TMDb (for fallback posters), and generates recommendations based on watch history, ratings, and a Plex-derived taste profile. Movie and TV recommendations are titles already in the Plex library; book recommendations come from the user's Goodreads want-to-read shelf.
+This is a personalized content recommendation service that uses Gemini (on Vertex AI) to generate daily recommendations for movies, TV shows, and books. The service integrates with Plex (for library data + GUIDs) and generates recommendations based on watch history, ratings, and a Plex-derived taste profile. Movie and TV recommendations are titles already in the Plex library; book recommendations come from the user's Goodreads want-to-read shelf.
 
 ## Architecture
 
@@ -18,15 +18,14 @@ This is a personalized content recommendation service that uses Gemini (on Verte
 - `lib/recommend/`: Gemini-powered recommendation generation — candidate scoring/shortlisting (`candidates.go`), ID-based slotting (`slotting.go`), the Gemini client (`llm.go`), the taste profile (`profile.go`), and the pipeline (`generate.go`)
 - `lib/goodreads/`: Goodreads shelf client over the per-shelf RSS feed. The official API was retired in Dec 2020 and issues no new keys, so RSS is the only supported public route; it needs no key or auth for a public profile. **The user id is from `/user/show/<id>`, a different namespace from `/author/show/<id>`** — passing an author id returns a different person's shelves with no error
 - `lib/plex/`: Plex API client for fetching library data
-- `lib/tmdb/`: TMDb API client with rate limiting and circuit breaker
-- `lib/omdb/`: OMDb API client (Metacritic Metascores) — same rate limit / circuit breaker / key-safe-URL shape as `lib/tmdb`
+- `lib/omdb/`: OMDb API client (Metacritic Metascores) — sliding-window rate limit, circuit breaker, and a key-safe URL
 - `lib/metacritic/`: builds metacritic.com links from title slugs (Metacritic exposes no joinable ID)
 - `lib/db/`: Database utilities, migrations, and custom GORM JSON logger
 - `lib/lock/`: File-based locking system for concurrency control
 - `lib/validation/`: JSON validation for external API responses
 
 **Data Flow:**
-1. Cron endpoints (`/cron/recommend`, `/cron/cache`) trigger data collection from Plex/TMDb
+1. Cron endpoints (`/cron/recommend`, `/cron/cache`) trigger data collection from Plex
 2. Recommendation engine scores cached titles, shortlists them (date-seeded), and uses Gemini to pick 4 movies + 3 TV shows + 3 books daily by ID
 3. Web interface serves recommendations with posters, ratings, and metadata
 
@@ -41,7 +40,7 @@ go run main.go
 go build -o recommender
 
 # Run with environment variables
-PLEX_URL=<url> PLEX_TOKEN=<token> TMDB_API_KEY=<key> \
+PLEX_URL=<url> PLEX_TOKEN=<token> \
   GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT=<proj> GOOGLE_CLOUD_LOCATION=us-central1 \
   go run main.go   # requires ADC: `gcloud auth application-default login`
 ```
@@ -62,7 +61,6 @@ docker compose down
 - `DATABASE_URL`: Postgres connection string
 - `PLEX_URL`: Plex server URL
 - `PLEX_TOKEN`: Plex authentication token
-- `TMDB_API_KEY`: The Movie Database API key
 - `GOOGLE_CLOUD_PROJECT`: GCP project ID (Vertex AI API enabled)
 - `GOOGLE_CLOUD_LOCATION`: Vertex AI region (e.g. `us-central1`)
 
@@ -351,7 +349,7 @@ Any raw SQL must be Postgres dialect (e.g. `to_char()` for date formatting, not 
 - `GET /date/{date}`: Recommendations for specific date (YYYY-MM-DD)
 - `GET /dates`: List all available recommendation dates
 - `GET /cron/recommend`: Generate new recommendations (runs hourly) - uses file-based locking
-- `GET /cron/cache`: Update Plex/TMDb cache - uses file-based locking
+- `GET /cron/cache`: Update the Plex cache - uses file-based locking
 - `GET /stats`: View recommendation statistics
 - `GET /health`: Health check endpoint
 - `GET /static/*`: Static file serving (favicon, CSS, JS)
@@ -377,13 +375,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 - **Movies only.** OMDb has no Metacritic data for TV — verified against a real key: 0 of 12 series returned a Metascore by title or by IMDb id, and the season/episode endpoints have no score field. Do not re-add TV lookups; they spend quota to store nothing. TV ratings come from Plex `audienceRating`
 - `Metascore` arrives as a *string* and can be `"N/A"`. Parse defensively into `*int` so missing stays distinguishable from zero
 - Free tier is 1000 requests/day, hence the per-run batch cap rather than a full-library sweep
-- Same rate limiting, circuit breaker, retry, and key-safe-URL handling as the TMDb client
-
-**TMDb Client:**
-- Rate limiting (40 requests per 10 seconds)
-- Circuit breaker pattern for resilience
-- Exponential backoff retry logic
-- Comprehensive error handling with status codes
+- Sliding-window rate limiting, a circuit breaker, bounded retries, and a URL that never carries the api key
 
 **Gemini Client (`lib/recommend/llm.go`):**
 - Vertex AI backend via `google.golang.org/genai`, auth by ADC
@@ -435,7 +427,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 
 **API Integration Reliability:**
 - Added OpenAI API key validation in startup
-- Implemented TMDb rate limiting (40 requests per 10 seconds) with sliding window
+- Implemented sliding-window rate limiting on outbound API clients
 - Added exponential backoff retry logic for failed API requests
 - Implemented circuit breaker pattern for external service resilience
 - Added comprehensive error handling with proper status codes
@@ -470,7 +462,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 
 **Runtime Issues:**
 - Check logs for API rate limiting errors
-- Verify external API connectivity (Plex, TMDb, OpenAI)
+- Verify external API connectivity (Plex, OMDb, Vertex AI)
 - Monitor file lock status for cron job coordination in `/tmp/recommender-locks/`
 - Check cache cleanup logs every 30 minutes
 
@@ -503,7 +495,7 @@ All logging uses `log/slog` with JSON output format. Custom GORM logger in `lib/
 - "Circuit breaker opened" - external API service degradation
 - "JSON validation failed" - malformed OpenAI responses
 - "Cache cleanup completed" - normal maintenance (every 30min)
-- "Rate limit exceeded" - TMDb API quota issues
+- "Rate limit exceeded" - OMDb API quota issues
 - "Removing stale lock file" - cleanup of old lock files
 
 ## Testing and Validation
@@ -516,7 +508,7 @@ All logging uses `log/slog` with JSON output format. Custom GORM logger in `lib/
 - ✅ Stale lock cleanup functioning properly
 
 **API Rate Limiting:**
-- ✅ TMDb API rate limiting verified (40 requests per 10 seconds)
+- ✅ OMDb API rate limiting verified (20 requests per 10 seconds)
 - ✅ Exponential backoff retry logic working correctly
 - ✅ Circuit breaker pattern prevents service overload
 
@@ -608,7 +600,6 @@ All file operations use restrictive permissions (0600 for files, 0750 for direct
 **Environment Variables Required:**
 - `PLEX_URL`: Plex server URL
 - `PLEX_TOKEN`: Plex authentication token
-- `TMDB_API_KEY`: The Movie Database API key
 - `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`: Vertex AI project + region (auth via ADC)
 - Optional signals: `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET`/`TRAKT_CONNECT_TOKEN`, `ANILIST_USERNAME`
 - `PORT`: HTTP server port (defaults to 8080)
