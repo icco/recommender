@@ -382,7 +382,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 - Sliding-window rate limiting, a circuit breaker, bounded retries, and a URL that never carries the api key
 
 **Gemini Client (`lib/recommend/llm.go`):**
-- Vertex AI backend via `google.golang.org/genai`, auth by ADC
+- Vertex AI backend via `github.com/icco/gutil/vertex`, auth by ADC
 - JSON-constrained output via `ResponseMIMEType` + `ResponseSchema`
 - Isolated behind the `Chatter` interface so tests use a fake
 
