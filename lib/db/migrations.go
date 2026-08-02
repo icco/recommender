@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/models"
@@ -38,6 +39,7 @@ var (
 		"idx_plex_animes_title",
 		"idx_plex_tv_shows_title",
 		"idx_recommendations_date",
+		"idx_recommendations_date_title", // superseded by (date, type, title): a book and a film can share a title
 		"idx_tv_shows_title",
 		"idx_tvshows_title_year", // same as movies
 	}
@@ -45,8 +47,15 @@ var (
 
 // RunMigrations runs all database migrations.
 func RunMigrations(ctx context.Context, db *gorm.DB) error {
+	// The `type` CHECK constraint must be widened before AutoMigrate, not after:
+	// AutoMigrate does not alter an existing CHECK on Postgres, so a database
+	// created before books existed would keep rejecting every book insert.
+	if err := widenRecommendationTypeCheck(ctx, db); err != nil {
+		return fmt.Errorf("widen recommendation type check: %w", err)
+	}
+
 	if err := db.WithContext(ctx).AutoMigrate(
-		&models.Movie{}, &models.TVShow{}, &models.Recommendation{},
+		&models.Movie{}, &models.TVShow{}, &models.Book{}, &models.Recommendation{},
 		&models.GenerationRun{}, &models.ExternalSignal{}, &models.OAuthToken{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
@@ -70,6 +79,57 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 	createAdditionalIndexes(ctx, db)
 
 	return nil
+}
+
+// recommendationTypeCheck is the widened CHECK constraint allowing the book tier.
+const recommendationTypeCheck = `CHECK (type IN ('movie', 'tvshow', 'book'))`
+
+// widenRecommendationTypeCheck replaces any pre-existing CHECK constraint on
+// recommendations.type with one that also permits 'book'.
+//
+// GORM emits the CHECK from the model tag only when it creates the column, and
+// never reconciles a changed one, so a database migrated when the tag still read
+// IN ('movie','tvshow') would reject every book insert at the DB layer. The
+// constraint is found by scanning pg_constraint rather than by name, because the
+// generated name is not guaranteed. No-op on a database where the table does not
+// exist yet — AutoMigrate then creates the column with the current tag.
+func widenRecommendationTypeCheck(ctx context.Context, db *gorm.DB) error {
+	l := logging.FromContext(ctx)
+	if !db.WithContext(ctx).Migrator().HasTable(&models.Recommendation{}) {
+		return nil
+	}
+
+	var names []string
+	if err := db.WithContext(ctx).Raw(`
+		SELECT conname FROM pg_constraint
+		WHERE conrelid = 'recommendations'::regclass
+		  AND contype = 'c'
+		  AND pg_get_constraintdef(oid) ILIKE '%type%'`).Scan(&names).Error; err != nil {
+		return fmt.Errorf("find type check constraints: %w", err)
+	}
+
+	for _, name := range names {
+		// Constraint names come from pg_constraint, not user input, but they are
+		// still identifiers and must be quoted rather than bound as parameters.
+		if err := db.WithContext(ctx).Exec(
+			`ALTER TABLE recommendations DROP CONSTRAINT IF EXISTS ` + quoteIdent(name)).Error; err != nil {
+			return fmt.Errorf("drop constraint %s: %w", name, err)
+		}
+		l.Infow("Dropped recommendations type check constraint", "constraint", name)
+	}
+
+	if err := db.WithContext(ctx).Exec(
+		`ALTER TABLE recommendations ADD CONSTRAINT chk_recommendations_type ` + recommendationTypeCheck).Error; err != nil {
+		return fmt.Errorf("add widened type check: %w", err)
+	}
+	l.Infow("Added widened recommendations type check constraint", "types", "movie, tvshow, book")
+	return nil
+}
+
+// quoteIdent renders a Postgres identifier safely for interpolation, doubling
+// any embedded quotes.
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func backfillPlexRatingKeys(ctx context.Context, db *gorm.DB) error {

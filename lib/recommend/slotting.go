@@ -27,6 +27,7 @@ type pick struct {
 type pickResponse struct {
 	Movies  []pick `json:"movies"`
 	TVShows []pick `json:"tvshows"`
+	Books   []pick `json:"books"`
 }
 
 // parsePickResponse decodes the model's JSON. Unknown fields are ignored.
@@ -53,8 +54,9 @@ func pickSchema() *genai.Schema {
 		Properties: map[string]*genai.Schema{
 			"movies":  {Type: genai.TypeArray, Items: item},
 			"tvshows": {Type: genai.TypeArray, Items: item},
+			"books":   {Type: genai.TypeArray, Items: item},
 		},
-		Required: []string{"movies", "tvshows"},
+		Required: []string{"movies", "tvshows", "books"},
 	}
 }
 
@@ -71,9 +73,12 @@ func toRec(c candidate, explanation string, date time.Time) models.Recommendatio
 		Title: c.Title, Type: c.Type, Year: c.Year, Rating: c.Rating,
 		Genre: strings.Join(c.Genres, ", "), PosterURL: c.PosterURL, Runtime: c.Runtime,
 		Explanation: explanation, Date: date, Metascore: c.Metascore,
+		Author: c.Author, SourceURL: c.SourceURL,
 	}
 	// Only link titles Metacritic scored: best proxy for the slug resolving.
-	if c.Metascore != nil {
+	// Books are excluded outright — Metacritic has no book section, so a slug
+	// built from a book title would resolve to an unrelated film.
+	if c.Metascore != nil && c.Type != models.TypeBook {
 		rec.MetacriticURL = metacritic.URLFor(metacriticSection(c.Type), c.Title)
 	}
 	if c.TMDbID != nil {
@@ -86,6 +91,9 @@ func toRec(c candidate, explanation string, date time.Time) models.Recommendatio
 	case models.TypeTVShow:
 		id := c.ID
 		rec.TVShowID = &id
+	case models.TypeBook:
+		id := c.ID
+		rec.BookID = &id
 	}
 	return rec
 }
@@ -167,9 +175,13 @@ func selectMovies(picks []pick, shortlist []candidate, target int) []models.Reco
 	return out
 }
 
-// selectTVShows fills up to `target` TV slots from valid picks, padding from the
-// shortlist. All candidates here are already unwatched (loadCandidates filters).
-func selectTVShows(picks []pick, shortlist []candidate, target int) []models.Recommendation {
+// selectByType fills up to `target` slots of one type from valid picks, in the
+// order the model returned them, then pads from the ranked shortlist if the model
+// returned too few. Unknown or wrong-type IDs are ignored. Caller sets Date.
+//
+// Neither TV shows nor books use role slots the way movies do: TV candidates are
+// already filtered to unwatched, and books have no rewatch or genre roles to fill.
+func selectByType(picks []pick, shortlist []candidate, recType string, target int) []models.Recommendation {
 	byID := candByID(shortlist)
 	used := make(map[uint]bool)
 	var out []models.Recommendation
@@ -178,7 +190,7 @@ func selectTVShows(picks []pick, shortlist []candidate, target int) []models.Rec
 			break
 		}
 		c, ok := byID[p.ID]
-		if !ok || c.Type != models.TypeTVShow || used[c.ID] {
+		if !ok || c.Type != recType || used[c.ID] {
 			continue
 		}
 		used[c.ID] = true
@@ -188,11 +200,22 @@ func selectTVShows(picks []pick, shortlist []candidate, target int) []models.Rec
 		if len(out) >= target {
 			break
 		}
-		if c.Type != models.TypeTVShow || used[c.ID] {
+		if c.Type != recType || used[c.ID] {
 			continue
 		}
 		used[c.ID] = true
 		out = append(out, toRec(c, "", time.Time{}))
 	}
 	return out
+}
+
+// selectTVShows fills up to `target` TV slots. All candidates here are already
+// unwatched (loadCandidates filters).
+func selectTVShows(picks []pick, shortlist []candidate, target int) []models.Recommendation {
+	return selectByType(picks, shortlist, models.TypeTVShow, target)
+}
+
+// selectBooks fills up to `target` book slots from the Goodreads to-read shelf.
+func selectBooks(picks []pick, shortlist []candidate, target int) []models.Recommendation {
+	return selectByType(picks, shortlist, models.TypeBook, target)
 }

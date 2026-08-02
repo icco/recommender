@@ -10,6 +10,7 @@ import (
 
 	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/lib/anilist"
+	"github.com/icco/recommender/lib/goodreads"
 	"github.com/icco/recommender/lib/omdb"
 	"github.com/icco/recommender/lib/trakt"
 	"github.com/icco/recommender/models"
@@ -250,6 +251,8 @@ type SignalConfig struct {
 	OMDbAPIKey        string
 	// OMDbBatchSize caps OMDb lookups per cache run; <= 0 uses the default.
 	OMDbBatchSize int
+	// GoodreadsUserID is the numeric id from the profile URL; enables the books tier.
+	GoodreadsUserID string
 }
 
 // traktClient returns a Trakt client if credentials are configured, else nil.
@@ -275,6 +278,11 @@ func (r *Recommender) configuredSources() []SignalSource {
 			batch = defaultMetascoreBatch
 		}
 		out = append(out, &metascoreSource{db: r.db, client: omdb.NewClient(r.sigCfg.OMDbAPIKey), batch: batch})
+	}
+	if r.sigCfg.GoodreadsUserID != "" {
+		out = append(out, &goodreadsSource{
+			db: r.db, client: goodreads.NewClient(), userID: r.sigCfg.GoodreadsUserID,
+		})
 	}
 	return out
 }
