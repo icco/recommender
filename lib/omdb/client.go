@@ -300,10 +300,19 @@ func (c *Client) GetByIMDbID(ctx context.Context, imdbID string) (*Title, error)
 		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrCircuitOpen) {
 			return nil, err
 		}
+		// Callers bound enrichment with a deadline; backing off past it would
+		// overrun that budget to reach a request that cannot succeed anyway.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 
 		l.Warnw("Retrying OMDb lookup", "attempt", attempt+1, "imdb_id", imdbID, zap.Error(err))
 		if attempt < 2 {
-			time.Sleep(time.Duration(attempt+1) * time.Second)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt+1) * time.Second):
+			}
 		}
 	}
 	return nil, lastErr

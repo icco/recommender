@@ -19,9 +19,20 @@ const (
 	// a full library backfill inside the quota. Override with OMDB_BATCH_SIZE.
 	defaultMetascoreBatch = 40
 
-	// metascoreTTL is how long a lookup stays fresh. Critic scores are final
-	// once a title is released, so re-checks are about catching late scores.
+	// metascoreTTL is how long a *miss* stays fresh. A title that came back with
+	// a score is never re-checked: critic scores are final once a title is
+	// released. Only unscored titles are retried, to catch a score that landed
+	// after we first looked -- which also keeps the steady-state cost near zero
+	// instead of re-sweeping the whole library every TTL.
 	metascoreTTL = 90 * 24 * time.Hour
+
+	// metascoreBudget bounds a single enrichment run. /cron/cache and
+	// /cron/recommend share one lock and cron.sh only sleeps 120s between them,
+	// so a slow OMDb must not hold the lock long enough to starve the day's
+	// recommendation run -- one hard-failing lookup alone can burn ~93s in
+	// timeouts and retries. Enrichment is resumable, so giving up early just
+	// defers those titles to the next run.
+	metascoreBudget = 60 * time.Second
 )
 
 // metascoreSource fills Metacritic scores on owned Plex titles via OMDb, keyed
@@ -41,6 +52,10 @@ func (s *metascoreSource) Name() string { return models.SourceOMDb }
 // came back with a Metascore.
 func (s *metascoreSource) Sync(ctx context.Context) (int, error) {
 	l := logging.FromContext(ctx)
+
+	ctx, cancel := context.WithTimeout(ctx, metascoreBudget)
+	defer cancel()
+
 	cutoff := time.Now().Add(-metascoreTTL)
 
 	movies, err := staleMetascoreRows[models.Movie](ctx, s.db, cutoff, s.batch)
@@ -122,8 +137,10 @@ type metascoreRow struct {
 	IMDbID string `gorm:"column:im_db_id"`
 }
 
-// staleMetascoreRows returns up to limit owned titles with an IMDb ID whose
-// Metascore has never been fetched or has aged past cutoff, never-fetched first.
+// staleMetascoreRows returns up to limit owned titles with an IMDb ID that need
+// a lookup: never checked, or checked but unscored and older than cutoff.
+// Never-checked rows come first, so a backfill finishes before any re-checking
+// starts. A title that already has a score is never returned -- see metascoreTTL.
 func staleMetascoreRows[T models.Movie | models.TVShow](ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) ([]metascoreRow, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -132,7 +149,7 @@ func staleMetascoreRows[T models.Movie | models.TVShow](ctx context.Context, db 
 	var model T
 	err := db.WithContext(ctx).Model(&model).
 		Select("id", "title", "im_db_id").
-		Where("im_db_id <> '' AND (metascore_at IS NULL OR metascore_at < ?)", cutoff).
+		Where(`im_db_id <> '' AND metascore IS NULL AND (metascore_at IS NULL OR metascore_at < ?)`, cutoff).
 		Order("metascore_at ASC NULLS FIRST").
 		Limit(limit).
 		Find(&rows).Error

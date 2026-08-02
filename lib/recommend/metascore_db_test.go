@@ -150,10 +150,14 @@ func TestStaleMetascoreRows_prioritizesNeverChecked(t *testing.T) {
 
 	old := time.Now().Add(-metascoreTTL - time.Hour)
 	fresh := time.Now()
+	score := 73
 	rows := []models.Movie{
 		{Title: "Stale", Year: 1990, IMDbID: "tt1", PlexRatingKey: "m1", MetascoreAt: &old},
 		{Title: "Never", Year: 1991, IMDbID: "tt2", PlexRatingKey: "m2"},
 		{Title: "Fresh", Year: 1992, IMDbID: "tt3", PlexRatingKey: "m3", MetascoreAt: &fresh},
+		// Already scored and long past the TTL: a critic score is final, so
+		// re-fetching it would just re-spend the quota for the same answer.
+		{Title: "Scored", Year: 1993, IMDbID: "tt4", PlexRatingKey: "m4", MetascoreAt: &old, Metascore: &score},
 	}
 	for i := range rows {
 		if err := db.Create(&rows[i]).Error; err != nil {
@@ -166,13 +170,64 @@ func TestStaleMetascoreRows_prioritizesNeverChecked(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("got %d rows, want 2 (stale + never, not fresh)", len(got))
+		t.Fatalf("got %d rows, want 2 (stale + never; not fresh, not already-scored)", len(got))
 	}
 	if got[0].Title != "Never" {
 		t.Errorf("first row = %q, want %q (never-checked first)", got[0].Title, "Never")
 	}
 	if got[0].IMDbID != "tt2" {
 		t.Errorf("IMDbID = %q, want tt2 — the im_db_id column mapping is wrong", got[0].IMDbID)
+	}
+	for _, r := range got {
+		if r.Title == "Scored" {
+			t.Error("an already-scored title was queued for re-fetch; scores are final")
+		}
+	}
+}
+
+// A slow OMDb must not hold the shared cron lock past the 120s gap cron.sh
+// leaves before /cron/recommend, or the day's recommendations never generate.
+func TestMetascoreSource_Sync_stopsAtBudget(t *testing.T) {
+	db := testDB(t)
+
+	for i := range 3 {
+		m := models.Movie{
+			Title:         "Slow",
+			Year:          2000 + i,
+			IMDbID:        "tt000000" + string(rune('1'+i)),
+			PlexRatingKey: "m" + string(rune('1'+i)),
+		}
+		if err := db.Create(&m).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Serve slower than the budget the run is given.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+		_, _ = w.Write([]byte(`{"Response":"False","Error":"slow"}`))
+	}))
+	defer srv.Close()
+
+	client := omdb.NewClient("k")
+	client.BaseURL = srv.URL
+	s := &metascoreSource{db: db, client: client, batch: 10}
+
+	// Shrink the budget for the test by cancelling the parent instead.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	if _, err := s.Sync(ctx); err != nil {
+		t.Fatalf("Sync should end quietly on budget exhaustion, got: %v", err)
+	}
+	// Well under 3 × the 2s server delay: the run bailed rather than grinding on,
+	// and did not sleep through its retry backoff after the deadline passed.
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("Sync took %s; it should abandon the run when its context expires", elapsed)
 	}
 }
 
