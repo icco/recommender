@@ -19,7 +19,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 
 - **Plex** — library scan, watch counts, and GUIDs (imdb/tmdb/tvdb) + full genres during cache update
 - **TMDb** — fallback poster fill for the day's finalists when Plex has no poster
-- **Metacritic (via OMDb)** — critic Metascores joined by IMDb ID; feeds ranking, prompt context, and a score badge + link on each card
+- **Metacritic (via OMDb)** — critic Metascores for movies *and* TV, joined by IMDb ID; feeds ranking, prompt context, and a score badge + link on each card. Coverage is thinner for TV: Metacritic scores seasons rather than series, so many shows have no series-level Metascore and simply render without a badge
 - **Gemini (Vertex AI)** — picks recommendations by ID from a scored shortlist via JSON-constrained output
 
 ### Not implemented (possible future work)
@@ -72,7 +72,7 @@ External sources only **re-rank titles you already own in Plex** — they never 
 
 - **Trakt** (watched / ratings / watchlist): register a Trakt API app, set `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` and a `TRAKT_CONNECT_TOKEN`, then authorize once — `curl "http://localhost:8080/trakt/connect?token=$TRAKT_CONNECT_TOKEN"` and enter the returned code at the Trakt URL. Tokens persist in the DB and auto-refresh.
 - **AniList** (anime scores): set `ANILIST_USERNAME` (public list; no auth). Matched to owned anime by title + year.
-- **Metacritic** (critic Metascores): set `OMDB_API_KEY`. Metacritic has no public API, so scores come from [OMDb](https://www.omdbapi.com/), joined on the IMDb ID Plex already provides. Enrichment is incremental: each cache run looks up `OMDB_BATCH_SIZE` titles that have never been checked, so a full library backfills over a few days inside the free tier. A title that comes back with a score is never re-fetched — critic scores are final once a title is released. Titles Metacritic doesn't cover are stamped too and retried only after 90 days, to catch a late score without re-spending the quota every run. A run is also time-boxed, so a slow OMDb defers titles to the next run rather than holding the shared cron lock past the point where `/cron/recommend` can acquire it.
+- **Metacritic** (critic Metascores): set `OMDB_API_KEY`. Metacritic has no public API, so scores come from [OMDb](https://www.omdbapi.com/), joined on the IMDb ID Plex already provides. Enrichment is incremental: each cache run looks up `OMDB_BATCH_SIZE` titles that have never been checked, split evenly between movies and TV shows (either side takes the other's unused slots), so both backfill together over a few days inside the free tier. A title that comes back with a score is never re-fetched — critic scores are final once a title is released. Titles Metacritic doesn't cover are stamped too and retried only after 90 days, to catch a late score without re-spending the quota every run. A run is also time-boxed, so a slow OMDb defers titles to the next run rather than holding the shared cron lock past the point where `/cron/recommend` can acquire it.
 
 Signals feed genre affinity, a watchlist score boost, watched-elsewhere handling, and a short "recently loved" line in the prompt.
 

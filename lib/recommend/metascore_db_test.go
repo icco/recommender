@@ -2,8 +2,10 @@ package recommend
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -313,5 +315,63 @@ func tableModel(table string) any {
 		return &models.TVShow{}
 	default:
 		return &models.Recommendation{}
+	}
+}
+
+// With a large movie backlog, TV must still make progress: a Plex library has
+// far more movies than shows, so letting movies claim the whole batch would
+// starve TV for days.
+func TestMetascoreSource_Sync_doesNotStarveTV(t *testing.T) {
+	db := testDB(t)
+
+	for i := range 50 {
+		m := models.Movie{
+			Title:         fmt.Sprintf("Movie %d", i),
+			Year:          2000,
+			IMDbID:        fmt.Sprintf("ttm%05d", i),
+			PlexRatingKey: fmt.Sprintf("m%d", i),
+		}
+		if err := db.Create(&m).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range 10 {
+		s := models.TVShow{
+			Title:         fmt.Sprintf("Show %d", i),
+			Year:          2020,
+			IMDbID:        fmt.Sprintf("tts%05d", i),
+			PlexRatingKey: fmt.Sprintf("s%d", i),
+		}
+		if err := db.Create(&s).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Query().Get("i"))
+		_, _ = w.Write([]byte(`{"Title":"T","Year":"2000","Type":"movie","Metascore":"70","Response":"True"}`))
+	}))
+	defer srv.Close()
+
+	client := omdb.NewClient("k")
+	client.BaseURL = srv.URL
+	s := &metascoreSource{db: db, client: client, batch: 10}
+
+	if _, err := s.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	tvCalls := 0
+	for _, id := range seen {
+		if strings.HasPrefix(id, "tts") {
+			tvCalls++
+		}
+	}
+	if tvCalls == 0 {
+		t.Fatalf("no TV lookups in a batch of %d; movies starved TV entirely", len(seen))
+	}
+	if len(seen) != 10 {
+		t.Errorf("total lookups = %d, want 10 (the batch cap)", len(seen))
 	}
 }

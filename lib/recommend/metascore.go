@@ -58,18 +58,20 @@ func (s *metascoreSource) Sync(ctx context.Context) (int, error) {
 
 	cutoff := time.Now().Add(-metascoreTTL)
 
-	movies, err := staleMetascoreRows[models.Movie](ctx, s.db, cutoff, s.batch)
+	// Each side is queried for the whole batch, then the budget is split. A Plex
+	// library holds far more movies than shows, so letting movies claim the
+	// batch first would starve TV for the entire movie backfill -- days of runs
+	// during which no show gets a score at all.
+	movieCands, err := staleMetascoreRows[models.Movie](ctx, s.db, cutoff, s.batch)
 	if err != nil {
 		return 0, fmt.Errorf("load movies needing metascore: %w", err)
 	}
-	remaining := s.batch - len(movies)
-	if remaining < 0 {
-		remaining = 0
-	}
-	shows, err := staleMetascoreRows[models.TVShow](ctx, s.db, cutoff, remaining)
+	showCands, err := staleMetascoreRows[models.TVShow](ctx, s.db, cutoff, s.batch)
 	if err != nil {
 		return 0, fmt.Errorf("load tv shows needing metascore: %w", err)
 	}
+	movieTake, showTake := splitBatch(len(movieCands), len(showCands), s.batch)
+	movies, shows := movieCands[:movieTake], showCands[:showTake]
 
 	scored := 0
 	for _, m := range movies {
@@ -128,6 +130,30 @@ func (s *metascoreSource) stamp(ctx context.Context, table string, id uint, scor
 	now := time.Now()
 	return s.db.WithContext(ctx).Table(table).Where("id = ?", id).
 		Updates(map[string]any{"metascore": score, "metascore_at": now}).Error
+}
+
+// splitBatch divides a run's lookup budget between pending movies and TV shows.
+// Each gets roughly half so both backfill together, and whatever one side leaves
+// unused goes to the other so no quota is wasted. Movies win the odd slot,
+// since they are the larger share of a library.
+func splitBatch(movies, shows, batch int) (movieTake, showTake int) {
+	if batch <= 0 {
+		return 0, 0
+	}
+	half := batch / 2
+	movieTake = min(movies, batch-half)
+	showTake = min(shows, half)
+
+	if rem := batch - movieTake - showTake; rem > 0 {
+		if add := min(rem, movies-movieTake); add > 0 {
+			movieTake += add
+			rem -= add
+		}
+		if add := min(rem, shows-showTake); add > 0 {
+			showTake += add
+		}
+	}
+	return movieTake, showTake
 }
 
 // metascoreRow is the projection needed to look a title up and update it.
