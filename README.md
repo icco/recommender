@@ -17,15 +17,15 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 
 ## Data sources (implemented)
 
-- **Plex** — library scan, watch counts, and GUIDs (imdb/tmdb/tvdb) + full genres during cache update
+- **Plex** — library scan, watch counts, GUIDs (imdb/tmdb/tvdb), full genres, and ratings during cache update. Ratings prefer Plex's critic `rating` and fall back to `audienceRating`, which is the only score Plex sets on TV shows
 - **TMDb** — fallback poster fill for the day's finalists when Plex has no poster
-- **Metacritic (via OMDb)** — critic Metascores for movies *and* TV, joined by IMDb ID; feeds ranking, prompt context, and a score badge + link on each card. Coverage is thinner for TV: Metacritic scores seasons rather than series, so many shows have no series-level Metascore and simply render without a badge
+- **Metacritic (via OMDb)** — critic Metascores for **movies only**, joined by IMDb ID; feeds ranking, prompt context, and a score badge + link on each card. OMDb carries no Metacritic data for TV at all (verified: 0 of 12 series scored, by title or IMDb id; the season and episode endpoints expose no score field), so shows are never looked up
 - **Gemini (Vertex AI)** — picks recommendations by ID from a scored shortlist via JSON-constrained output
 
 ### Not implemented (possible future work)
 
 - Letterboxd and other catalogs mentioned in earlier notes
-- Per-season Metacritic scores for TV (Metacritic rates seasons, not series, so many shows have no series-level Metascore)
+- Metacritic scores for TV. Metacritic rates seasons, not series, and exposes them only on its own site — reaching them means scraping `metacritic.com/tv/<show>/season-N/`
 - Incremental “fill missing slots only” runs (each successful run replaces the whole day’s rows when incomplete)
 
 ## API endpoints
@@ -72,7 +72,7 @@ External sources only **re-rank titles you already own in Plex** — they never 
 
 - **Trakt** (watched / ratings / watchlist): register a Trakt API app, set `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` and a `TRAKT_CONNECT_TOKEN`, then authorize once — `curl "http://localhost:8080/trakt/connect?token=$TRAKT_CONNECT_TOKEN"` and enter the returned code at the Trakt URL. Tokens persist in the DB and auto-refresh.
 - **AniList** (anime scores): set `ANILIST_USERNAME` (public list; no auth). Matched to owned anime by title + year.
-- **Metacritic** (critic Metascores): set `OMDB_API_KEY`. Metacritic has no public API, so scores come from [OMDb](https://www.omdbapi.com/), joined on the IMDb ID Plex already provides. Enrichment is incremental: each cache run looks up `OMDB_BATCH_SIZE` titles that have never been checked, split evenly between movies and TV shows (either side takes the other's unused slots), so both backfill together over a few days inside the free tier. A title that comes back with a score is never re-fetched — critic scores are final once a title is released. Titles Metacritic doesn't cover are stamped too and retried only after 90 days, to catch a late score without re-spending the quota every run. A run is also time-boxed, so a slow OMDb defers titles to the next run rather than holding the shared cron lock past the point where `/cron/recommend` can acquire it.
+- **Metacritic** (critic Metascores): set `OMDB_API_KEY`. Metacritic has no public API, so scores come from [OMDb](https://www.omdbapi.com/), joined on the IMDb ID Plex already provides. Enrichment is incremental: each cache run looks up `OMDB_BATCH_SIZE` titles that have never been checked, so the library backfills over a few days inside the free tier. A title that comes back with a score is never re-fetched — critic scores are final once a title is released. Titles Metacritic doesn't cover are stamped too and retried only after 90 days, to catch a late score without re-spending the quota every run. A run is also time-boxed, so a slow OMDb defers titles to the next run rather than holding the shared cron lock past the point where `/cron/recommend` can acquire it.
 
 Signals feed genre affinity, a watchlist score boost, watched-elsewhere handling, and a short "recently loved" line in the prompt.
 

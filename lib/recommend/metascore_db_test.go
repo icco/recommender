@@ -2,10 +2,8 @@ package recommend
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -46,15 +44,9 @@ func TestMetascoreSource_Sync_stampsScoresAndMisses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	show := models.TVShow{Title: "Severance", Year: 2022, IMDbID: "tt11280740", PlexRatingKey: "s1"}
-	if err := db.Create(&show).Error; err != nil {
-		t.Fatal(err)
-	}
-
 	calls := 0
 	client := omdbStub(t, map[string]string{
-		"tt0133093":  `{"Title":"The Matrix","Year":"1999","Type":"movie","Metascore":"73","Response":"True"}`,
-		"tt11280740": `{"Title":"Severance","Year":"2022–","Type":"series","Metascore":"N/A","Response":"True"}`,
+		"tt0133093": `{"Title":"The Matrix","Year":"1999","Type":"movie","Metascore":"73","Response":"True"}`,
 	}, &calls)
 
 	s := &metascoreSource{db: db, client: client, batch: 10}
@@ -65,9 +57,9 @@ func TestMetascoreSource_Sync_stampsScoresAndMisses(t *testing.T) {
 	if scored != 1 {
 		t.Errorf("scored = %d, want 1 (only The Matrix has a Metascore)", scored)
 	}
-	// Three lookups: two movies with ids plus the show. The GUID-less movie is skipped.
-	if calls != 3 {
-		t.Errorf("omdb calls = %d, want 3", calls)
+	// Two movies with ids; the GUID-less one is skipped.
+	if calls != 2 {
+		t.Errorf("omdb calls = %d, want 2", calls)
 	}
 
 	var matrix models.Movie
@@ -92,18 +84,6 @@ func TestMetascoreSource_Sync_stampsScoresAndMisses(t *testing.T) {
 	}
 	if missing.MetascoreAt == nil {
 		t.Error("unknown title MetascoreAt not stamped; it would be retried forever")
-	}
-
-	// Same for a series Metacritic does not score at the series level.
-	var severance models.TVShow
-	if err := db.Where("plex_rating_key = ?", "s1").First(&severance).Error; err != nil {
-		t.Fatal(err)
-	}
-	if severance.Metascore != nil {
-		t.Errorf("severance Metascore = %d, want nil", *severance.Metascore)
-	}
-	if severance.MetascoreAt == nil {
-		t.Error("severance MetascoreAt not stamped")
 	}
 
 	// A second run must find nothing left to do.
@@ -318,60 +298,20 @@ func tableModel(table string) any {
 	}
 }
 
-// With a large movie backlog, TV must still make progress: a Plex library has
-// far more movies than shows, so letting movies claim the whole batch would
-// starve TV for days.
-func TestMetascoreSource_Sync_doesNotStarveTV(t *testing.T) {
+// OMDb has no Metacritic data for TV, so shows must not consume the budget.
+func TestMetascoreSource_Sync_skipsTVShows(t *testing.T) {
 	db := testDB(t)
 
-	for i := range 50 {
-		m := models.Movie{
-			Title:         fmt.Sprintf("Movie %d", i),
-			Year:          2000,
-			IMDbID:        fmt.Sprintf("ttm%05d", i),
-			PlexRatingKey: fmt.Sprintf("m%d", i),
-		}
-		if err := db.Create(&m).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	for i := range 10 {
-		s := models.TVShow{
-			Title:         fmt.Sprintf("Show %d", i),
-			Year:          2020,
-			IMDbID:        fmt.Sprintf("tts%05d", i),
-			PlexRatingKey: fmt.Sprintf("s%d", i),
-		}
-		if err := db.Create(&s).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	var seen []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.URL.Query().Get("i"))
-		_, _ = w.Write([]byte(`{"Title":"T","Year":"2000","Type":"movie","Metascore":"70","Response":"True"}`))
-	}))
-	defer srv.Close()
-
-	client := omdb.NewClient("k")
-	client.BaseURL = srv.URL
-	s := &metascoreSource{db: db, client: client, batch: 10}
-
-	if _, err := s.Sync(context.Background()); err != nil {
+	if err := db.Create(&models.TVShow{Title: "Severance", Year: 2022, IMDbID: "tt11280740", PlexRatingKey: "s1"}).Error; err != nil {
 		t.Fatal(err)
 	}
 
-	tvCalls := 0
-	for _, id := range seen {
-		if strings.HasPrefix(id, "tts") {
-			tvCalls++
-		}
+	calls := 0
+	s := &metascoreSource{db: db, client: omdbStub(t, map[string]string{}, &calls), batch: 10}
+	if _, err := s.Sync(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	if tvCalls == 0 {
-		t.Fatalf("no TV lookups in a batch of %d; movies starved TV entirely", len(seen))
-	}
-	if len(seen) != 10 {
-		t.Errorf("total lookups = %d, want 10 (the batch cap)", len(seen))
+	if calls != 0 {
+		t.Errorf("omdb calls = %d, want 0; TV lookups always return N/A", calls)
 	}
 }

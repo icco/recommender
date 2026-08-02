@@ -37,18 +37,14 @@ func dateSeed(date time.Time) int64 {
 // watchlistBoost lifts titles the user has explicitly watchlisted externally.
 const watchlistBoost = 1.5
 
-// metascoreWeight scales the Metacritic term. Kept below watchlistBoost so
-// critics nudge the ranking rather than dominate the user's own signals.
+// Kept below watchlistBoost so critics nudge rather than dominate.
 const metascoreWeight = 1.0
 
-// metascoreNeutral is the Metascore treated as "no opinion". The term is
-// centered here so a title Metacritic never scored ranks the same as a merely
-// average one — otherwise every unscored title (most TV, since Metacritic rates
-// seasons rather than series) would be pushed down for lack of data.
+// The "no opinion" score. Centering here keeps unscored titles neutral
+// instead of penalized.
 const metascoreNeutral = 55.0
 
-// metascoreBoost maps a 0-100 Metascore onto roughly [-1, +1] × weight, or 0
-// when unknown.
+// metascoreBoost maps 0-100 onto roughly [-1, +1] × weight, or 0 if unknown.
 func metascoreBoost(score *int) float64 {
 	if score == nil {
 		return 0
@@ -103,8 +99,7 @@ func formatShortlist(cands []candidate) string {
 		if c.ViewCount > 0 {
 			watched = "watched"
 		}
-		// Metacritic is omitted rather than sent as "unknown", so the model does
-		// not read a gap in coverage as a poor review.
+		// Omitted when absent, so a coverage gap doesn't read as a bad review.
 		metacritic := ""
 		if c.Metascore != nil {
 			metacritic = fmt.Sprintf(" — Metacritic: %d", *c.Metascore)

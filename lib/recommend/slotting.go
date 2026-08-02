@@ -72,8 +72,7 @@ func toRec(c candidate, explanation string, date time.Time) models.Recommendatio
 		Genre: strings.Join(c.Genres, ", "), PosterURL: c.PosterURL, Runtime: c.Runtime,
 		Explanation: explanation, Date: date, Metascore: c.Metascore,
 	}
-	// Only link out for titles Metacritic actually scored — that is the closest
-	// thing to a confirmation the derived slug resolves to a real page.
+	// Only link titles Metacritic scored: best proxy for the slug resolving.
 	if c.Metascore != nil {
 		rec.MetacriticURL = metacritic.URLFor(metacriticSection(c.Type), c.Title)
 	}

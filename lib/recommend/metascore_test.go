@@ -109,32 +109,3 @@ func TestToRecOmitsLinkWithoutMetascore(t *testing.T) {
 		t.Errorf("MetacriticURL = %q, want empty", rec.MetacriticURL)
 	}
 }
-
-func TestSplitBatch(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name                  string
-		movies, shows, batch  int
-		wantMovies, wantShows int
-	}{
-		// The case that matters: a huge movie backlog must not shut TV out.
-		{"large movie backlog", 3860, 590, 40, 20, 20},
-		{"no shows pending", 100, 0, 40, 40, 0},
-		{"no movies pending", 0, 100, 40, 0, 40},
-		{"shows nearly done", 100, 3, 40, 37, 3},
-		{"both under budget", 5, 4, 40, 5, 4},
-		{"nothing pending", 0, 0, 40, 0, 0},
-		{"odd batch favors movies", 10, 10, 5, 3, 2},
-		{"zero batch", 10, 10, 0, 0, 0},
-	}
-	for _, c := range cases {
-		gotM, gotS := splitBatch(c.movies, c.shows, c.batch)
-		if gotM != c.wantMovies || gotS != c.wantShows {
-			t.Errorf("%s: splitBatch(%d, %d, %d) = (%d, %d), want (%d, %d)",
-				c.name, c.movies, c.shows, c.batch, gotM, gotS, c.wantMovies, c.wantShows)
-		}
-		if total := gotM + gotS; total > c.batch {
-			t.Errorf("%s: took %d, over the batch cap of %d", c.name, total, c.batch)
-		}
-	}
-}

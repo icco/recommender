@@ -77,7 +77,7 @@ docker compose down
 - `PORT`: HTTP server port (defaults to 8080)
 - `POSTER_DIR`: Directory for locally cached Plex posters (defaults to `posters`)
 
-External signals (Trakt watched/ratings/watchlist, AniList scores) are synced during `/cron/cache` into `ExternalSignal` and only re-rank owned Plex titles: they feed genre affinity, a watchlist score boost, watched-elsewhere handling, and prompt context. Sources are optional and skipped when their env vars are unset. Metacritic enrichment (`lib/recommend/metascore.go`) rides the same `SignalSource` interface but writes `Metascore`/`MetascoreAt` onto `Movie`/`TVShow` rather than `ExternalSignal`, because a critic score is title metadata, not a per-user signal. It is incremental, batch-capped, and time-boxed: a run splits its budget evenly between movies and TV (each side reclaims the other's unused slots, so the much larger movie table can't starve TV during the backfill), takes the oldest never-checked rows first, stamps `MetascoreAt` even on a miss so uncovered titles aren't retried every hour, and never re-fetches a title that already has a score. The time box matters — `/cron/cache` and `/cron/recommend` share `cronBackgroundLockKey` and `cron.sh` only sleeps 120s between them, so enrichment that overran its budget would starve the day's recommendation run of the lock and silently skip the day. Trakt OAuth (device flow) tokens live in `OAuthToken`; authorize via `GET /trakt/connect?token=…`.
+External signals (Trakt watched/ratings/watchlist, AniList scores) are synced during `/cron/cache` into `ExternalSignal` and only re-rank owned Plex titles: they feed genre affinity, a watchlist score boost, watched-elsewhere handling, and prompt context. Sources are optional and skipped when their env vars are unset. Metacritic enrichment (`lib/recommend/metascore.go`) rides the same `SignalSource` interface but writes `Metascore`/`MetascoreAt` onto `Movie`/`TVShow` rather than `ExternalSignal`, because a critic score is title metadata, not a per-user signal. It is incremental, batch-capped, and time-boxed: a run takes the oldest never-checked rows first, stamps `MetascoreAt` even on a miss so uncovered titles aren't retried every hour, and never re-fetches a title that already has a score. The time box matters — `/cron/cache` and `/cron/recommend` share `cronBackgroundLockKey` and `cron.sh` only sleeps 120s between them, so enrichment that overran its budget would starve the day's recommendation run of the lock and silently skip the day. Trakt OAuth (device flow) tokens live in `OAuthToken`; authorize via `GET /trakt/connect?token=…`.
 
 Auth to Vertex AI uses Application Default Credentials — no API key.
 
@@ -366,7 +366,8 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 
 **OMDb Client (`lib/omdb/client.go`):**
 - Metacritic has no public API; OMDb exposes the Metascore keyed by IMDb ID, which Plex GUIDs already give us
-- `Metascore` arrives as a *string* and is frequently `"N/A"` — especially for TV, since Metacritic rates seasons rather than series. Parse defensively into `*int` so missing stays distinguishable from zero
+- **Movies only.** OMDb has no Metacritic data for TV — verified against a real key: 0 of 12 series returned a Metascore by title or by IMDb id, and the season/episode endpoints have no score field. Do not re-add TV lookups; they spend quota to store nothing. TV ratings come from Plex `audienceRating`
+- `Metascore` arrives as a *string* and can be `"N/A"`. Parse defensively into `*int` so missing stays distinguishable from zero
 - Free tier is 1000 requests/day, hence the per-run batch cap rather than a full-library sweep
 - Same rate limiting, circuit breaker, retry, and key-safe-URL handling as the TMDb client
 
@@ -382,6 +383,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 - Isolated behind the `Chatter` interface so tests use a fake
 
 **Plex Client:**
+- Ratings prefer `rating`, falling back to `audienceRating`. Plex sets `rating` on movies but **never** on shows (measured: 0 of 1408 shows had `rating`, 1397 had `audienceRating`), so decoding only `rating` rendered every TV card as 0.0
 - Batch processing for large library updates
 - Transaction management to reduce lock contention
 - Comprehensive metadata caching
