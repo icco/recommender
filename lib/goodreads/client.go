@@ -6,6 +6,7 @@ package goodreads
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,10 @@ const (
 	// in case a feed stops advancing.
 	maxPages = 40
 )
+
+// ErrTruncated reports that a shelf is larger than maxPages covers. The books
+// read so far are still returned, so callers can use a partial pool knowingly.
+var ErrTruncated = errors.New("goodreads: shelf truncated")
 
 // Client fetches shelves from Goodreads. URL is overridable for tests.
 type Client struct {
@@ -81,18 +86,23 @@ type rssFeed struct {
 // Shelf returns every book on one shelf, walking pages until one comes back
 // empty. userID is from the profile URL (goodreads.com/user/show/<id>-name) —
 // a different namespace from the author id on /author/show/<id>.
+//
+// Returns ErrTruncated alongside the books it did collect if the shelf is larger
+// than maxPages can cover, so a capped pool is never mistaken for a complete one.
 func (c *Client) Shelf(ctx context.Context, userID, shelf string) ([]Book, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("goodreads: empty user id")
 	}
 	var out []Book
 	seen := make(map[string]struct{})
+	complete := false
 	for page := 1; page <= maxPages; page++ {
 		items, err := c.page(ctx, userID, shelf, page)
 		if err != nil {
 			return nil, err
 		}
 		if len(items) == 0 {
+			complete = true
 			break
 		}
 		fresh := 0
@@ -110,8 +120,13 @@ func (c *Client) Shelf(ctx context.Context, userID, shelf string) ([]Book, error
 		}
 		// An all-duplicate page means the feed stopped advancing.
 		if fresh == 0 {
+			complete = true
 			break
 		}
+	}
+	if !complete {
+		return out, fmt.Errorf("%w: shelf %q exceeds %d pages (%d books read)",
+			ErrTruncated, shelf, maxPages, len(out))
 	}
 	return out, nil
 }

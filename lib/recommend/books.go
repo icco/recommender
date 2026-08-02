@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -39,13 +40,18 @@ func (s *goodreadsSource) Sync(ctx context.Context) (int, error) {
 	count := 0
 	for _, shelf := range []string{goodreads.ShelfRead, goodreads.ShelfToRead} {
 		books, err := s.client.Shelf(ctx, s.userID, shelf)
-		if err != nil {
+		switch {
+		case errors.Is(err, goodreads.ErrTruncated):
+			// A capped shelf still gives a usable pool; log rather than drop it.
+			l.Warnw("goodreads shelf truncated", "shelf", shelf, "books", len(books), zap.Error(err))
+		case err != nil:
 			// One unreachable shelf shouldn't discard the other.
 			l.Warnw("goodreads shelf fetch failed", "shelf", shelf, zap.Error(err))
 			continue
 		}
+		rows := make([]models.Book, 0, len(books))
 		for _, b := range books {
-			row := models.Book{
+			rows = append(rows, models.Book{
 				GoodreadsID: b.GoodreadsID,
 				Title:       b.Title,
 				Author:      b.Author,
@@ -60,14 +66,14 @@ func (s *goodreadsSource) Sync(ctx context.Context) (int, error) {
 				ReadAt:      b.ReadAt,
 				AddedAt:     b.AddedAt,
 				SyncedAt:    now,
-			}
-			if err := s.upsert(ctx, row); err != nil {
-				l.Warnw("upsert book failed", "goodreads_id", b.GoodreadsID, zap.Error(err))
-				continue
-			}
-			count++
+			})
 		}
-		l.Infow("goodreads shelf synced", "shelf", shelf, "books", len(books))
+		if err := s.upsert(ctx, rows); err != nil {
+			l.Warnw("goodreads shelf upsert failed", "shelf", shelf, zap.Error(err))
+			continue
+		}
+		count += len(rows)
+		l.Infow("goodreads shelf synced", "shelf", shelf, "books", len(rows))
 	}
 	if count == 0 {
 		return 0, fmt.Errorf("goodreads: no books synced for user %q", s.userID)
@@ -75,8 +81,16 @@ func (s *goodreadsSource) Sync(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// upsert inserts or refreshes one book on its Goodreads id.
-func (s *goodreadsSource) upsert(ctx context.Context, b models.Book) error {
+// upsertBatch caps rows per statement. Shelves run to thousands of books and
+// this sync shares a time-boxed cron lock with the Plex cache refresh, so
+// per-row round trips to Postgres would dominate the run.
+const upsertBatch = 200
+
+// upsert inserts or refreshes books on their Goodreads ids.
+func (s *goodreadsSource) upsert(ctx context.Context, books []models.Book) error {
+	if len(books) == 0 {
+		return nil
+	}
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "goodreads_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
@@ -84,7 +98,7 @@ func (s *goodreadsSource) upsert(ctx context.Context, b models.Book) error {
 			"genre", "cover_url", "isbn", "pages", "read_at", "added_at",
 			"synced_at", "updated_at",
 		}),
-	}).Create(&b).Error
+	}).CreateInBatches(&books, upsertBatch).Error
 }
 
 // authorAffinity computes a normalized (0..1) taste weight per author from the

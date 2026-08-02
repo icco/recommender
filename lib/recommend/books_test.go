@@ -310,3 +310,51 @@ func TestBookPromptFragments_emptyWithoutBooks(t *testing.T) {
 		t.Errorf("favoriteAuthors = %q, %v; want empty, nil", authors, err)
 	}
 }
+
+// Real shelves run to thousands of books, so the upsert must batch rather than
+// make a round trip per row.
+func TestGoodreadsSync_batchesLargeShelf(t *testing.T) {
+	db := bookDB(t)
+	const total = upsertBatch*2 + 37
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page, body := r.URL.Query().Get("page"), ""
+		if r.URL.Query().Get("shelf") == goodreads.ShelfToRead && page == "1" {
+			var b strings.Builder
+			for i := range total {
+				b.WriteString(item(fmt.Sprint(i), fmt.Sprintf("Book %d", i), "An Author",
+					`<average_rating>4.00</average_rating>`))
+			}
+			body = b.String()
+		}
+		_, _ = fmt.Fprintf(w, `<rss version="2.0"><channel>%s</channel></rss>`, body)
+	}))
+	defer srv.Close()
+
+	src := &goodreadsSource{db: db, client: &goodreads.Client{URL: srv.URL}, userID: "12680"}
+	n, err := src.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if n != total {
+		t.Errorf("synced %d, want %d", n, total)
+	}
+	var count int64
+	if err := db.Model(&models.Book{}).Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != total {
+		t.Errorf("stored %d rows, want %d across batches", count, total)
+	}
+
+	// A second sync must upsert, not duplicate.
+	if _, err := src.Sync(context.Background()); err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	if err := db.Model(&models.Book{}).Count(&count).Error; err != nil {
+		t.Fatalf("recount: %v", err)
+	}
+	if count != total {
+		t.Errorf("after re-sync got %d rows, want %d", count, total)
+	}
+}

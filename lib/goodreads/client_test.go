@@ -2,6 +2,7 @@ package goodreads
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -242,5 +243,25 @@ func TestBookURL(t *testing.T) {
 	}
 	if got := BookURL(""); got != "" {
 		t.Errorf("BookURL(\"\") = %q, want empty", got)
+	}
+}
+
+// A shelf larger than maxPages must report ErrTruncated with the books it did
+// read, so a capped pool is never mistaken for a complete one.
+func TestShelf_reportsTruncation(t *testing.T) {
+	id := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		id++
+		_, _ = fmt.Fprint(w, feed(feedItem(fmt.Sprint(id), fmt.Sprintf("Book %d", id), "A", "")))
+	}))
+	defer srv.Close()
+
+	c := &Client{URL: srv.URL, httpClient: srv.Client()}
+	books, err := c.Shelf(context.Background(), "12680", ShelfToRead)
+	if !errors.Is(err, ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated", err)
+	}
+	if len(books) != maxPages {
+		t.Errorf("got %d books, want the %d pages read before the cap", len(books), maxPages)
 	}
 }

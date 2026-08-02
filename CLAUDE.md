@@ -398,6 +398,7 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 - Goodreads covers are public on `i.gr-assets.com`, so `cachePoster` skips books rather than routing them through the Plex downloader
 - Books never get a `MetacriticURL`: Metacritic has no book section, so the slug would resolve to an unrelated film
 - Everything book-related fails soft. An unset `GOODREADS_USER_ID` or an unreachable Goodreads costs the books tier only; `TargetBooks` collapses to 0 and the prompt drops its books section
+- Shelves are large — Nat's are 1749 to-read and 1131 read (1112 rated) as of Aug 2026 — so the sync batches upserts (`upsertBatch`) rather than one round trip per row. It shares `cronBackgroundLockKey` with the Plex refresh, so per-row writes to `rope.local` would eat the budget. A shelf past `maxPages` returns `goodreads.ErrTruncated` *with* the partial results, so a capped pool is logged, not silently mistaken for a complete one
 
 **Plex Client:**
 - Ratings prefer `rating`, falling back to `audienceRating`. Plex sets `rating` on movies but **never** on shows (measured: 0 of 1408 shows had `rating`, 1397 had `audienceRating`), so decoding only `rating` rendered every TV card as 0.0
