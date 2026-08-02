@@ -1,19 +1,29 @@
-Pick recommendations for the user from ONLY the shortlist below, using the id values.
+Pick recommendations for the user from ONLY the shortlists below, using the id values.
 
 Movies: choose up to {{.TargetMovies}} — ideally one comedy, one action/drama,
 one worth rewatching, and the rest your best picks.
 TV shows: choose up to {{.TargetTVShows}}.
-
+{{if .TargetBooks}}Books: choose up to {{.TargetBooks}} from the user's want-to-read shelf.
+Favor variety over the shelf's most obvious picks, and weigh the authors and
+books they already rated highly.
+{{end}}
 Rules:
-- Use only ids present in the shortlist. Do not repeat an id.
+- Use only ids present in the shortlists. Do not repeat an id.
 - Give a short, specific reason per pick.
-
+{{if not .TargetBooks}}- Return an empty books array.
+{{end}}
 {{if .Profile}}User taste profile:
 {{.Profile}}
 {{end}}{{if .Loved}}{{.Loved}}
+{{end}}{{if .Authors}}{{.Authors}}
+{{end}}{{if .LovedBooks}}{{.LovedBooks}}
 {{end}}
 Movie shortlist:
 {{.Movies}}
 
 TV shortlist:
 {{.TVShows}}
+{{if .TargetBooks}}
+Book shortlist:
+{{.Books}}
+{{end}}

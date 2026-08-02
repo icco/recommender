@@ -20,6 +20,7 @@ type StatsData struct {
 	TotalRecommendations        int64
 	TotalMovies                 int64
 	TotalTVShows                int64
+	TotalBooks                  int64
 	FirstDate                   time.Time
 	LastDate                    time.Time
 	AverageDailyRecommendations float64
@@ -29,7 +30,10 @@ type StatsData struct {
 	}
 	TotalCachedMovies  int64
 	TotalCachedTVShows int64
-	LastCacheUpdate    time.Time
+	// TotalShelvedBooks is the want-to-read pool; TotalReadBooks is the taste signal.
+	TotalShelvedBooks int64
+	TotalReadBooks    int64
+	LastCacheUpdate   time.Time
 }
 
 // Recommender produces and serves daily Plex/TMDb recommendations using
@@ -151,6 +155,9 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", models.TypeTVShow).Count(&stats.TotalTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total TV shows: %w", err)
 	}
+	if err := r.db.WithContext(ctx).Model(&models.Recommendation{}).Where("type = ?", models.TypeBook).Count(&stats.TotalBooks).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total books: %w", err)
+	}
 
 	// Get date range
 	var firstDate, lastDate time.Time
@@ -210,6 +217,12 @@ func (r *Recommender) GetStats(ctx context.Context) (*StatsData, error) {
 	}
 	if err := r.db.WithContext(ctx).Model(&models.TVShow{}).Count(&stats.TotalCachedTVShows).Error; err != nil {
 		return nil, fmt.Errorf("failed to get total cached TV shows: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Book{}).Where("shelf = ?", models.ShelfToRead).Count(&stats.TotalShelvedBooks).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total shelved books: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&models.Book{}).Where("shelf = ?", models.ShelfRead).Count(&stats.TotalReadBooks).Error; err != nil {
+		return nil, fmt.Errorf("failed to get total read books: %w", err)
 	}
 
 	// Get last cache update time from the most recent movie or TV show update

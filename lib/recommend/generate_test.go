@@ -75,3 +75,95 @@ func TestGenerateRecommendations_endToEnd(t *testing.T) {
 		t.Fatalf("rerun changed rec count to %d", len(recs2))
 	}
 }
+
+func TestGenerateRecommendations_includesBookTier(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	date := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+
+	movie := models.Movie{Title: "Funny", Year: 2000, Rating: 8, Genre: "Comedy", PlexRatingKey: "m1"}
+	if err := db.Create(&movie).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Same title as the movie, to prove (date, type, title) keeps both.
+	book := models.Book{GoodreadsID: "gr1", Title: "Funny", Author: "Susanna Clarke",
+		Shelf: models.ShelfToRead, Rating: 8.4, Pages: 245}
+	if err := db.Create(&book).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	reply := fmt.Sprintf(`{"movies":[{"id":%d,"explanation":"lol"}],"tvshows":[],"books":[{"id":%d,"explanation":"strange and lovely"}]}`,
+		movie.ID, book.ID)
+	r := &Recommender{db: db, chat: fakeChatter{reply: reply}, model: "test"}
+
+	if err := r.GenerateRecommendations(ctx, date); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	recs, err := r.GetRecommendationsForDate(ctx, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("got %d recs, want a movie and a book sharing the title", len(recs))
+	}
+
+	var bookRec *models.Recommendation
+	for i := range recs {
+		if recs[i].Type == models.TypeBook {
+			bookRec = &recs[i]
+		}
+	}
+	if bookRec == nil {
+		t.Fatal("no book recommendation stored")
+	}
+	if bookRec.BookID == nil || *bookRec.BookID != book.ID {
+		t.Errorf("BookID = %v, want %d", bookRec.BookID, book.ID)
+	}
+	if bookRec.Author != "Susanna Clarke" {
+		t.Errorf("Author = %q, want Susanna Clarke", bookRec.Author)
+	}
+	if bookRec.Runtime != 245 {
+		t.Errorf("Runtime = %d, want the page count 245", bookRec.Runtime)
+	}
+	if bookRec.Explanation != "strange and lovely" {
+		t.Errorf("Explanation = %q", bookRec.Explanation)
+	}
+	if got := bookRec.GoodreadsRating(); got != 4.2 {
+		t.Errorf("GoodreadsRating = %v, want 4.2", got)
+	}
+
+	var run models.GenerationRun
+	if err := db.Where("status = ?", models.RunStatusOK).First(&run).Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.BookCount != 1 || run.MovieCount != 1 || run.TVShowCount != 0 {
+		t.Errorf("counts = movies %d, tv %d, books %d; want 1, 0, 1",
+			run.MovieCount, run.TVShowCount, run.BookCount)
+	}
+}
+
+// With no books shelved, the run still produces the screen tiers.
+func TestGenerateRecommendations_withoutBooks(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	date := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+
+	movie := models.Movie{Title: "Solo", Year: 2000, Rating: 8, Genre: "Comedy", PlexRatingKey: "m1"}
+	if err := db.Create(&movie).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	reply := fmt.Sprintf(`{"movies":[{"id":%d,"explanation":"lol"}],"tvshows":[],"books":[]}`, movie.ID)
+	r := &Recommender{db: db, chat: fakeChatter{reply: reply}, model: "test"}
+	if err := r.GenerateRecommendations(ctx, date); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	recs, err := r.GetRecommendationsForDate(ctx, date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || recs[0].Type != models.TypeMovie {
+		t.Fatalf("got %+v, want just the movie", recs)
+	}
+}

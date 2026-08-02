@@ -145,6 +145,7 @@ func main() {
 		TraktClientSecret: os.Getenv("TRAKT_CLIENT_SECRET"),
 		AniListUsername:   os.Getenv("ANILIST_USERNAME"),
 		OMDbAPIKey:        os.Getenv("OMDB_API_KEY"),
+		GoodreadsUserID:   os.Getenv("GOODREADS_USER_ID"),
 	}
 	// OMDB_BATCH_SIZE caps Metacritic lookups per cache run; unset uses the
 	// default sized for OMDb's free daily quota.

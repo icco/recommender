@@ -22,12 +22,17 @@
   {{if .}}
   <h1 class="text-3xl font-bold mb-8">Recommendations for {{(index . 0).Date.Format "January 2, 2006"}}</h1>
 
+  {{/* Tiers are gated on having items; books are absent unless Goodreads is set. */}}
+  {{$movies := ofType "movie" .}}
+  {{$tvshows := ofType "tvshow" .}}
+  {{$books := ofType "book" .}}
+
   <!-- Movies Section -->
+  {{if $movies}}
   <section class="mb-12">
     <h2 class="text-2xl font-semibold mb-4">Movies</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      {{range .}}
-      {{if eq .Type "movie"}}
+      {{range $movies}}
       <div class="bg-white rounded-lg shadow-md overflow-hidden">
         <img src="{{.PosterURL}}" alt="{{.Title}}" class="w-full h-64 object-cover">
         <div class="p-4">
@@ -41,16 +46,16 @@
         </div>
       </div>
       {{end}}
-      {{end}}
     </div>
   </section>
+  {{end}}
 
   <!-- TV Shows Section -->
+  {{if $tvshows}}
   <section class="mb-12">
     <h2 class="text-2xl font-semibold mb-4">TV Shows</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {{range .}}
-      {{if eq .Type "tvshow"}}
+      {{range $tvshows}}
       <div class="bg-white rounded-lg shadow-md overflow-hidden">
         <img src="{{.PosterURL}}" alt="{{.Title}}" class="w-full h-64 object-cover">
         <div class="p-4">
@@ -64,9 +69,41 @@
         </div>
       </div>
       {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{/* Books, from the Goodreads want-to-read shelf. Covers get object-contain
+       rather than the crop above: aspect ratios vary far more than film posters.
+       Year, shelves, pages, and cover are all routinely absent from the feed, so
+       each is conditional — an unconditional row would render "0". */}}
+  {{if $books}}
+  <section class="mb-12">
+    <h2 class="text-2xl font-semibold mb-4">Books</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {{range $books}}
+      <div class="bg-white rounded-lg shadow-md overflow-hidden">
+        {{if .PosterURL}}
+        <img src="{{.PosterURL}}" alt="{{.Title}}" class="w-full h-64 object-contain bg-gray-100" loading="lazy" referrerpolicy="no-referrer">
+        {{end}}
+        <div class="p-4">
+          <h3 class="text-lg font-semibold">
+            {{if .SourceURL}}
+            <a href="{{.SourceURL}}" rel="noopener noreferrer" target="_blank" class="text-blue-600 hover:text-blue-800">{{.Title}}</a>
+            {{else}}{{.Title}}{{end}}
+          </h3>
+          {{if .Author}}<p class="text-gray-600">by {{.Author}}</p>{{end}}
+          {{if .Year}}<p class="text-gray-600">{{.Year}}</p>{{end}}
+          {{if .Rating}}<p class="text-gray-600">Goodreads: {{printf "%.2f" .GoodreadsRating}}/5</p>{{end}}
+          {{if .Genre}}<p class="text-gray-600">Shelves: {{.Genre}}</p>{{end}}
+          {{if .Runtime}}<p class="text-gray-600">{{.Runtime}} pages</p>{{end}}
+          {{if .Explanation}}<p class="text-gray-500 italic mt-2">{{.Explanation}}</p>{{end}}
+        </div>
+      </div>
       {{end}}
     </div>
   </section>
+  {{end}}
   {{else}}
   <div class="text-center py-12">
     <h1 class="text-3xl font-bold mb-4">No Recommendations Available</h1>

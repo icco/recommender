@@ -105,3 +105,69 @@ func TestHomeRendersScoreWithoutLink(t *testing.T) {
 		t.Error("no link should be emitted when MetacriticURL is empty")
 	}
 }
+
+func TestHomeRendersBookCard(t *testing.T) {
+	t.Parallel()
+	out := renderHome(t, []models.Recommendation{{
+		Title: "Piranesi", Type: models.TypeBook, Year: 2020, Rating: 8.4,
+		Author: "Susanna Clarke", Runtime: 245, Date: time.Now(),
+		PosterURL: "https://i.gr-assets.com/books/1.jpg",
+		SourceURL: "https://www.goodreads.com/book/show/50202953",
+		Genre:     "fiction", Explanation: "strange and lovely",
+	}})
+
+	for _, want := range []string{
+		"Books", "Piranesi", "by Susanna Clarke", "245 pages",
+		"Shelves: fiction", "strange and lovely",
+		`href="https://www.goodreads.com/book/show/50202953"`,
+		`src="https://i.gr-assets.com/books/1.jpg"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in book card:\n%s", want, out)
+		}
+	}
+	// Stored on the 0-10 scale, shown on Goodreads' native 5-star scale.
+	if !strings.Contains(out, "Goodreads: 4.20/5") {
+		t.Errorf("want the rescaled 5-star rating:\n%s", out)
+	}
+	// Books have no Metascore, so no badge.
+	if strings.Contains(out, "Metacritic") {
+		t.Error("book card should not render a Metacritic badge")
+	}
+	// Screen tiers are absent, so their headings must be too.
+	if strings.Contains(out, ">Movies<") || strings.Contains(out, ">TV Shows<") {
+		t.Errorf("empty screen tiers should not render headings:\n%s", out)
+	}
+}
+
+// The books heading must not appear when Goodreads is unconfigured.
+func TestHomeOmitsBooksSectionWhenEmpty(t *testing.T) {
+	t.Parallel()
+	out := renderHome(t, []models.Recommendation{{
+		Title: "The Matrix", Type: models.TypeMovie, Year: 1999, Rating: 8.7,
+		Genre: "Action", Runtime: 136, Date: time.Now(),
+	}})
+	if strings.Contains(out, ">Books<") {
+		t.Errorf("Books heading rendered with no books:\n%s", out)
+	}
+	if !strings.Contains(out, ">Movies<") {
+		t.Error("Movies heading should render when movies are present")
+	}
+}
+
+// Books routinely lack year, cover, shelves, and page count. None of those may
+// render as a bare "0".
+func TestHomeBookCardOmitsMissingFields(t *testing.T) {
+	t.Parallel()
+	out := renderHome(t, []models.Recommendation{{
+		Title: "Goodbye Chinatown", Type: models.TypeBook, Author: "Kit Fan", Date: time.Now(),
+	}})
+	if !strings.Contains(out, "Goodbye Chinatown") {
+		t.Fatalf("title missing:\n%s", out)
+	}
+	for _, unwanted := range []string{"0 pages", "Shelves:", "Goodreads:", "<img"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("rendered %q for an absent field:\n%s", unwanted, out)
+		}
+	}
+}

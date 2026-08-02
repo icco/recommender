@@ -11,7 +11,8 @@ import (
 	"github.com/icco/recommender/models"
 )
 
-// candidate is a Plex-owned title eligible for recommendation, with a computed score.
+// candidate is a title eligible for recommendation, with a computed score.
+// Movies and TV are Plex-owned; books come from the Goodreads to-read shelf.
 type candidate struct {
 	ID          uint
 	Type        string
@@ -20,12 +21,14 @@ type candidate struct {
 	Rating      float64
 	Genres      []string
 	PosterURL   string
-	Runtime     int // minutes (movie) or seasons (tv)
+	Runtime     int // minutes (movie), seasons (tv), or pages (book)
 	ViewCount   int
 	TMDbID      *int
-	Affinity    float64 // taste-profile boost (Phase 2); 0 otherwise
+	Affinity    float64 // genre affinity for screen titles, author affinity for books
 	Watchlisted bool    // present on an external watchlist (Trakt)
 	Metascore   *int    // Metacritic critic score 0-100; nil when unknown
+	Author      string  // books only
+	SourceURL   string  // canonical page for the title (goodreads.com for books)
 }
 
 // dateSeed derives a stable per-UTC-day seed so shortlists are reproducible.
@@ -108,6 +111,40 @@ func formatShortlist(cands []candidate) string {
 		}
 		fmt.Fprintf(&b, "[id=%d] %s (%d) — Rating: %.1f%s — Genres: %s — %s\n",
 			c.ID, c.Title, c.Year, c.Rating, metacritic, strings.Join(c.Genres, ", "), watched)
+	}
+	return b.String()
+}
+
+// formatBookShortlist renders book candidates for the prompt. Books need their own
+// line format: author instead of genre, pages instead of runtime, and no watched
+// state — every book here is unread by definition.
+func formatBookShortlist(cands []candidate) string {
+	var b strings.Builder
+	for _, c := range cands {
+		author := c.Author
+		if author == "" {
+			author = "unknown author"
+		}
+		// Year is often absent on to-read entries; omit rather than print 0.
+		year := ""
+		if c.Year > 0 {
+			year = fmt.Sprintf(" (%d)", c.Year)
+		}
+		// Back to the native 5-star scale the user recognizes.
+		rating := ""
+		if c.Rating > 0 {
+			rating = fmt.Sprintf(" — Goodreads: %.2f/5", c.Rating/goodreadsRatingScale)
+		}
+		pages := ""
+		if c.Runtime > 0 {
+			pages = fmt.Sprintf(" — %d pages", c.Runtime)
+		}
+		shelves := ""
+		if len(c.Genres) > 0 {
+			shelves = " — Shelves: " + strings.Join(c.Genres, ", ")
+		}
+		fmt.Fprintf(&b, "[id=%d] %s by %s%s%s%s%s\n",
+			c.ID, c.Title, author, year, rating, pages, shelves)
 	}
 	return b.String()
 }

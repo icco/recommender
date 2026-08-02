@@ -1,6 +1,10 @@
 package templates
 
-import "html/template"
+import (
+	"html/template"
+
+	"github.com/icco/recommender/models"
+)
 
 // ParseTemplates parses HTML templates from the embedded filesystem.
 // It takes a variadic list of template file paths and returns a parsed template
@@ -13,7 +17,20 @@ func ParseTemplates(files ...string) (*template.Template, error) {
 		"subtract": func(a, b int) int {
 			return a - b
 		},
+		"ofType": ofType,
 	}
 
 	return template.New("").Funcs(funcMap).ParseFS(FS, files...)
+}
+
+// ofType selects one tier's recommendations, so a page can skip an empty tier's
+// heading rather than render a bare "Books" over nothing when Goodreads is off.
+func ofType(recType string, recs []models.Recommendation) []models.Recommendation {
+	var out []models.Recommendation
+	for _, rec := range recs {
+		if rec.Type == recType {
+			out = append(out, rec)
+		}
+	}
+	return out
 }

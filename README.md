@@ -1,6 +1,6 @@
 # Recommender
 
-Daily movie and TV recommendations from your **Plex** library, enriched with **TMDb** metadata and chosen by **Gemini** (on Vertex AI). This is an experiment in building an app with generative AI.
+Daily movie, TV, and book recommendations — movies and TV from your **Plex** library, books from your **Goodreads** want-to-read shelf — enriched with **TMDb** metadata and chosen by **Gemini** (on Vertex AI). This is an experiment in building an app with generative AI.
 
 Stack: **Go**, **Chi** (routing), **GORM** (ORM), **Postgres**, **Gemini on Vertex AI** (`google.golang.org/genai`), **zap + gutil/logging** (JSON logs), **OpenTelemetry** (HTTP metrics on `/metrics`).
 
@@ -10,8 +10,9 @@ The home page shows one set of recommendations per calendar day:
 
 - Up to **four movies** (targets: comedy-leaning, action/drama, “rewatch” from titles marked watched in Plex, plus extras). Slot filling uses genre heuristics on the model output.
 - Up to **three TV shows**, drawn only from **unwatched** shows in the Plex cache (`ViewCount == 0`).
+- Up to **three books**, drawn from your Goodreads **want-to-read** shelf.
 
-Each card shows poster, title, year, rating, genre, and runtime (movies) or season count (TV).
+Each card shows poster, title, year, rating, genre, and runtime (movies), season count (TV), or author and page count (books). A tier's heading is omitted when it has no picks, so books simply don't appear unless Goodreads is configured.
 
 Past days are listed at `/dates` (one row per distinct day, paginated).
 
@@ -20,11 +21,13 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 - **Plex** — library scan, watch counts, GUIDs (imdb/tmdb/tvdb), full genres, and ratings during cache update. Ratings prefer Plex's critic `rating` and fall back to `audienceRating`, which is the only score Plex sets on TV shows
 - **TMDb** — fallback poster fill for the day's finalists when Plex has no poster
 - **Metacritic (via OMDb)** — critic Metascores for **movies only**, joined by IMDb ID; feeds ranking, prompt context, and a score badge + link on each card. OMDb carries no Metacritic data for TV at all (verified: 0 of 12 series scored, by title or IMDb id; the season and episode endpoints expose no score field), so shows are never looked up
+- **Goodreads** — the want-to-read shelf is the book pool; the read shelf's star ratings drive author affinity and prompt context. Read via the per-shelf RSS feed (`/review/list_rss/{userID}`), since the official API was retired in December 2020 and issues no new keys
 - **Gemini (Vertex AI)** — picks recommendations by ID from a scored shortlist via JSON-constrained output
 
 ### Not implemented (possible future work)
 
 - Letterboxd and other catalogs mentioned in earlier notes
+- Book genres. The shelf feed carries no genre field, only the user's own shelf names, which most accounts leave largely empty; books use author affinity instead
 - Metacritic scores for TV. Metacritic rates seasons, not series, and exposes them only on its own site — reaching them means scraping `metacritic.com/tv/<show>/season-N/`
 - Incremental “fill missing slots only” runs (each successful run replaces the whole day’s rows when incomplete)
 
@@ -61,6 +64,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | `ANILIST_USERNAME` | no | AniList username (public list); enables AniList signals |
 | `OMDB_API_KEY` | no | [OMDb](https://www.omdbapi.com/apikey.aspx) key; enables Metacritic Metascores |
 | `OMDB_BATCH_SIZE` | no | OMDb lookups per cache run (default `40`, sized for OMDb's free 1000/day quota) |
+| `GOODREADS_USER_ID` | no | Goodreads numeric user id; enables the books tier |
 | `PORT` | no | HTTP port (default `8080`) |
 | `POSTER_DIR` | no | Directory for locally cached Plex posters (default `posters`; Docker Compose uses `/data/posters`) |
 
@@ -72,6 +76,7 @@ External sources only **re-rank titles you already own in Plex** — they never 
 
 - **Trakt** (watched / ratings / watchlist): register a Trakt API app, set `TRAKT_CLIENT_ID`/`TRAKT_CLIENT_SECRET` and a `TRAKT_CONNECT_TOKEN`, then authorize once — `curl "http://localhost:8080/trakt/connect?token=$TRAKT_CONNECT_TOKEN"` and enter the returned code at the Trakt URL. Tokens persist in the DB and auto-refresh.
 - **AniList** (anime scores): set `ANILIST_USERNAME` (public list; no auth). Matched to owned anime by title + year.
+- **Goodreads** (books): set `GOODREADS_USER_ID` to the number in your profile URL — `goodreads.com/user/show/12680-nat` → `12680`. This is a *different* namespace from the author id on `/author/show/<id>`, which will silently return someone else's shelves. The profile must be public; no auth or key is needed. Unlike the other sources, Goodreads doesn't just re-rank — the want-to-read shelf is the book candidate pool.
 - **Metacritic** (critic Metascores): set `OMDB_API_KEY`. Metacritic has no public API, so scores come from [OMDb](https://www.omdbapi.com/), joined on the IMDb ID Plex already provides. Enrichment is incremental: each cache run looks up `OMDB_BATCH_SIZE` titles that have never been checked, so the library backfills over a few days inside the free tier. A title that comes back with a score is never re-fetched — critic scores are final once a title is released. Titles Metacritic doesn't cover are stamped too and retried only after 90 days, to catch a late score without re-spending the quota every run. A run is also time-boxed, so a slow OMDb defers titles to the next run rather than holding the shared cron lock past the point where `/cron/recommend` can acquire it.
 
 Signals feed genre affinity, a watchlist score boost, watched-elsewhere handling, and a short "recently loved" line in the prompt.
@@ -85,6 +90,7 @@ recommender/
 ├── handlers/          # HTTP handlers and HTML templates (embedded)
 ├── lib/
 │   ├── db/           # Migrations and GORM logger
+│   ├── goodreads/    # Goodreads shelf client (RSS)
 │   ├── health/       # Health check
 │   ├── lock/         # File locks for cron endpoints
 │   ├── metacritic/   # metacritic.com link building
