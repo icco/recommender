@@ -47,9 +47,8 @@ var (
 
 // RunMigrations runs all database migrations.
 func RunMigrations(ctx context.Context, db *gorm.DB) error {
-	// The `type` CHECK constraint must be widened before AutoMigrate, not after:
-	// AutoMigrate does not alter an existing CHECK on Postgres, so a database
-	// created before books existed would keep rejecting every book insert.
+	// Must run before AutoMigrate: AutoMigrate never alters an existing CHECK, so
+	// a pre-books database would keep rejecting every book insert.
 	if err := widenRecommendationTypeCheck(ctx, db); err != nil {
 		return fmt.Errorf("widen recommendation type check: %w", err)
 	}
@@ -84,15 +83,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 // recommendationTypeCheck is the widened CHECK constraint allowing the book tier.
 const recommendationTypeCheck = `CHECK (type IN ('movie', 'tvshow', 'book'))`
 
-// widenRecommendationTypeCheck replaces any pre-existing CHECK constraint on
-// recommendations.type with one that also permits 'book'.
-//
-// GORM emits the CHECK from the model tag only when it creates the column, and
-// never reconciles a changed one, so a database migrated when the tag still read
-// IN ('movie','tvshow') would reject every book insert at the DB layer. The
-// constraint is found by scanning pg_constraint rather than by name, because the
-// generated name is not guaranteed. No-op on a database where the table does not
-// exist yet — AutoMigrate then creates the column with the current tag.
+// widenRecommendationTypeCheck replaces any existing CHECK on
+// recommendations.type with one that also permits 'book'. Found by scanning
+// pg_constraint rather than by name, since GORM's generated name isn't
+// guaranteed. No-op before the table exists; AutoMigrate then uses the current tag.
 func widenRecommendationTypeCheck(ctx context.Context, db *gorm.DB) error {
 	l := logging.FromContext(ctx)
 	if !db.WithContext(ctx).Migrator().HasTable(&models.Recommendation{}) {
@@ -109,8 +103,7 @@ func widenRecommendationTypeCheck(ctx context.Context, db *gorm.DB) error {
 	}
 
 	for _, name := range names {
-		// Constraint names come from pg_constraint, not user input, but they are
-		// still identifiers and must be quoted rather than bound as parameters.
+		// Identifiers can't be bound as parameters, so quote instead.
 		if err := db.WithContext(ctx).Exec(
 			`ALTER TABLE recommendations DROP CONSTRAINT IF EXISTS ` + quoteIdent(name)).Error; err != nil {
 			return fmt.Errorf("drop constraint %s: %w", name, err)
@@ -126,8 +119,7 @@ func widenRecommendationTypeCheck(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// quoteIdent renders a Postgres identifier safely for interpolation, doubling
-// any embedded quotes.
+// quoteIdent quotes a Postgres identifier, doubling embedded quotes.
 func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

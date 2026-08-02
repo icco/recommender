@@ -39,7 +39,7 @@ func parsePickResponse(raw string) (pickResponse, error) {
 	return pr, nil
 }
 
-// pickSchema is the Gemini response schema: two arrays of {id, explanation}.
+// pickSchema is the Gemini response schema: three arrays of {id, explanation}.
 func pickSchema() *genai.Schema {
 	item := &genai.Schema{
 		Type: genai.TypeObject,
@@ -76,8 +76,8 @@ func toRec(c candidate, explanation string, date time.Time) models.Recommendatio
 		Author: c.Author, SourceURL: c.SourceURL,
 	}
 	// Only link titles Metacritic scored: best proxy for the slug resolving.
-	// Books are excluded outright — Metacritic has no book section, so a slug
-	// built from a book title would resolve to an unrelated film.
+	// Books are excluded — Metacritic has no book section, so the slug would
+	// resolve to an unrelated film.
 	if c.Metascore != nil && c.Type != models.TypeBook {
 		rec.MetacriticURL = metacritic.URLFor(metacriticSection(c.Type), c.Title)
 	}
@@ -175,12 +175,10 @@ func selectMovies(picks []pick, shortlist []candidate, target int) []models.Reco
 	return out
 }
 
-// selectByType fills up to `target` slots of one type from valid picks, in the
-// order the model returned them, then pads from the ranked shortlist if the model
-// returned too few. Unknown or wrong-type IDs are ignored. Caller sets Date.
-//
-// Neither TV shows nor books use role slots the way movies do: TV candidates are
-// already filtered to unwatched, and books have no rewatch or genre roles to fill.
+// selectByType fills up to `target` slots of one type from valid picks in model
+// order, padding from the ranked shortlist if the model returned too few. Unknown
+// or wrong-type IDs are ignored. Caller sets Date. Neither TV nor books use the
+// role slots movies do.
 func selectByType(picks []pick, shortlist []candidate, recType string, target int) []models.Recommendation {
 	byID := candByID(shortlist)
 	used := make(map[uint]bool)

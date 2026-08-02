@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a personalized content recommendation service that uses Gemini (on Vertex AI) to generate daily recommendations for movies and TV shows. The service integrates with Plex (for library data + GUIDs), TMDb (for fallback posters), and generates recommendations based on watch history, ratings, and a Plex-derived taste profile. All recommendations are titles already in the Plex library.
+This is a personalized content recommendation service that uses Gemini (on Vertex AI) to generate daily recommendations for movies, TV shows, and books. The service integrates with Plex (for library data + GUIDs), TMDb (for fallback posters), and generates recommendations based on watch history, ratings, and a Plex-derived taste profile. Movie and TV recommendations are titles already in the Plex library; book recommendations come from the user's Goodreads want-to-read shelf.
 
 ## Architecture
 
@@ -16,6 +16,7 @@ This is a personalized content recommendation service that uses Gemini (on Verte
 
 **Key Libraries:**
 - `lib/recommend/`: Gemini-powered recommendation generation — candidate scoring/shortlisting (`candidates.go`), ID-based slotting (`slotting.go`), the Gemini client (`llm.go`), the taste profile (`profile.go`), and the pipeline (`generate.go`)
+- `lib/goodreads/`: Goodreads shelf client over the per-shelf RSS feed. The official API was retired in Dec 2020 and issues no new keys, so RSS is the only supported public route; it needs no key or auth for a public profile. **The user id is from `/user/show/<id>`, a different namespace from `/author/show/<id>`** — passing an author id returns a different person's shelves with no error
 - `lib/plex/`: Plex API client for fetching library data
 - `lib/tmdb/`: TMDb API client with rate limiting and circuit breaker
 - `lib/omdb/`: OMDb API client (Metacritic Metascores) — same rate limit / circuit breaker / key-safe-URL shape as `lib/tmdb`
@@ -26,7 +27,7 @@ This is a personalized content recommendation service that uses Gemini (on Verte
 
 **Data Flow:**
 1. Cron endpoints (`/cron/recommend`, `/cron/cache`) trigger data collection from Plex/TMDb
-2. Recommendation engine scores cached titles, shortlists them (date-seeded), and uses Gemini to pick 4 movies + 3 TV shows daily by ID
+2. Recommendation engine scores cached titles, shortlists them (date-seeded), and uses Gemini to pick 4 movies + 3 TV shows + 3 books daily by ID
 3. Web interface serves recommendations with posters, ratings, and metadata
 
 ## Development Commands
@@ -74,6 +75,7 @@ docker compose down
 - `ANILIST_USERNAME`: enable AniList (public list) signals
 - `OMDB_API_KEY`: enable Metacritic Metascores (fetched via OMDb, joined on IMDb ID)
 - `OMDB_BATCH_SIZE`: OMDb lookups per cache run (defaults to 40, sized for OMDb's free 1000/day quota)
+- `GOODREADS_USER_ID`: Goodreads numeric user id; enables the books tier
 - `PORT`: HTTP server port (defaults to 8080)
 - `POSTER_DIR`: Directory for locally cached Plex posters (defaults to `posters`)
 
@@ -325,6 +327,11 @@ This workflow ensures code quality, prevents integration issues, and maintains a
 
 ## Database
 
+Two schema notes that bite silently:
+
+- **`recommendations.type` has a CHECK constraint.** GORM emits it only when it *creates* the column and never reconciles a changed one, so widening the allowed values requires an explicit `ALTER TABLE` **before** `AutoMigrate` (see `widenRecommendationTypeCheck`). Otherwise a pre-existing database rejects every row of a newly added type. The constraint is found by scanning `pg_constraint`, since GORM's generated name isn't guaranteed.
+- **Recommendation uniqueness is `(date, type, title)`, not `(date, title)`.** A book and a film routinely share a title (Dune), and the narrower key silently dropped one of the two.
+
 Uses Postgres with GORM ORM. Connection string comes from `DATABASE_URL`. Docker Compose runs a bundled `postgres:17` service; tests use an isolated schema per test on the Postgres named by `DATABASE_URL` (see `lib/dbtest`).
 
 **Schema Features:**
@@ -354,6 +361,7 @@ Any raw SQL must be Postgres dialect (e.g. `to_char()` for date formatting, not 
 The system generates exactly:
 - 4 movies: funny unwatched, action/drama unwatched, rewatchable, additional
 - 3 unwatched TV shows (with anime preference)
+- 3 books from the Goodreads want-to-read shelf (no role slots)
 
 **Concurrency Control:**
 - File-based locking prevents concurrent cron job execution
@@ -381,6 +389,15 @@ Gemini prompts are in `lib/recommend/prompts/` and use Go templates with the sco
 - Vertex AI backend via `google.golang.org/genai`, auth by ADC
 - JSON-constrained output via `ResponseMIMEType` + `ResponseSchema`
 - Isolated behind the `Chatter` interface so tests use a fake
+
+**Books (`lib/recommend/books.go`, `lib/goodreads`):**
+- Books are the one source that owns its candidate pool. Trakt/AniList/OMDb only re-rank owned Plex titles via `ExternalSignal`, which can join to a Movie or TVShow but not a Book; the want-to-read shelf *is* the recommendable set, so books get their own table
+- **Author affinity, not genre affinity.** The shelf feed has no genre field — only `user_shelves`, the user's own shelf names, which are near-empty on real accounts (measured on Nat's profile: 4 "fiction", 3 "digital-owned", 1 "top-ten" out of 100 read books). Read-shelf star ratings are rich by contrast (40× 5-star, 30× 4-star), so affinity keys on author
+- `Book.Rating` stores the Goodreads community average **rescaled ×2 to 0-10**, so one scoring path serves all three tiers. Cards divide back for display via `Recommendation.GoodreadsRating()`
+- `Shelf` is refreshed on every sync: a finished book moves from to-read to read, and a stale row would recommend it forever
+- Goodreads covers are public on `i.gr-assets.com`, so `cachePoster` skips books rather than routing them through the Plex downloader
+- Books never get a `MetacriticURL`: Metacritic has no book section, so the slug would resolve to an unrelated film
+- Everything book-related fails soft. An unset `GOODREADS_USER_ID` or an unreachable Goodreads costs the books tier only; `TargetBooks` collapses to 0 and the prompt drops its books section
 
 **Plex Client:**
 - Ratings prefer `rating`, falling back to `audienceRating`. Plex sets `rating` on movies but **never** on shows (measured: 0 of 1408 shows had `rating`, 1397 had `audienceRating`), so decoding only `rating` rendered every TV card as 0.0

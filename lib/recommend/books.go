@@ -16,12 +16,9 @@ import (
 )
 
 // goodreadsSource mirrors the user's Goodreads shelves into the books table.
-//
-// Unlike the other SignalSources, which write ExternalSignal rows to re-rank
-// owned Plex titles, this one owns its candidate pool: the to-read shelf *is*
-// the recommendable set, and the read shelf carries the taste signal in its star
-// ratings. Books therefore live in their own table rather than in ExternalSignal,
-// which can only join to a Movie or TVShow.
+// Unlike the other SignalSources, which only re-rank owned Plex titles, this one
+// owns its candidate pool. Books get their own table because ExternalSignal can
+// only join to a Movie or TVShow.
 type goodreadsSource struct {
 	db     *gorm.DB
 	client *goodreads.Client
@@ -30,13 +27,12 @@ type goodreadsSource struct {
 
 func (s *goodreadsSource) Name() string { return models.SourceGoodreads }
 
-// goodreadsRatingScale converts Goodreads' 0-5 stars to the 0-10 scale Movie and
-// TVShow ratings use, so book candidates score and render on the same axis.
+// goodreadsRatingScale maps Goodreads' 0-5 stars onto the 0-10 scale Movie and
+// TVShow use, so all three tiers score on one axis.
 const goodreadsRatingScale = 2.0
 
-// Sync refreshes both shelves. Shelf membership is refreshed on every run
-// because a book moves from to-read to read once finished, and a stale row would
-// keep recommending a book the user has already read.
+// Sync refreshes both shelves, including Shelf itself: a finished book moves from
+// to-read to read, and a stale row would keep recommending it.
 func (s *goodreadsSource) Sync(ctx context.Context) (int, error) {
 	l := logging.FromContext(ctx)
 	now := time.Now()
@@ -44,8 +40,7 @@ func (s *goodreadsSource) Sync(ctx context.Context) (int, error) {
 	for _, shelf := range []string{goodreads.ShelfRead, goodreads.ShelfToRead} {
 		books, err := s.client.Shelf(ctx, s.userID, shelf)
 		if err != nil {
-			// One unreachable shelf shouldn't discard the other: the to-read pool
-			// is still usable without a refreshed read shelf, and vice versa.
+			// One unreachable shelf shouldn't discard the other.
 			l.Warnw("goodreads shelf fetch failed", "shelf", shelf, zap.Error(err))
 			continue
 		}
@@ -93,12 +88,9 @@ func (s *goodreadsSource) upsert(ctx context.Context, b models.Book) error {
 }
 
 // authorAffinity computes a normalized (0..1) taste weight per author from the
-// read shelf's star ratings.
-//
-// Books get author affinity where movies and TV get genre affinity, because the
-// Goodreads feed carries no genre field — only the user's own shelf names, which
-// most accounts leave empty. An author the user rated highly is both available
-// and a stronger signal for books than a genre would be.
+// read shelf's star ratings. Books use author affinity where screen titles use
+// genre affinity: the feed has no genre field, only the user's own shelf names,
+// which most accounts leave empty.
 func (r *Recommender) authorAffinity(ctx context.Context) (map[string]float64, error) {
 	var read []models.Book
 	if err := r.db.WithContext(ctx).
@@ -107,8 +99,7 @@ func (r *Recommender) authorAffinity(ctx context.Context) (map[string]float64, e
 		return nil, fmt.Errorf("affinity books: %w", err)
 	}
 
-	// Center on 3 stars so a book the user actively disliked pushes its author
-	// down instead of merely failing to push them up.
+	// Centered on 3 stars, so a disliked book pushes its author down.
 	raw := make(map[string]float64)
 	for _, b := range read {
 		author := normalizeAuthor(b.Author)
@@ -190,9 +181,8 @@ func (r *Recommender) recentlyRecommendedBookIDs(ctx context.Context, date time.
 	return out, nil
 }
 
-// lovedBooks summarizes up to 5 of the user's highest-rated finished books for
-// prompt context. Titles and authors let the model reason about literary taste,
-// which the empty genre column cannot.
+// lovedBooks summarizes up to 5 highest-rated finished books for prompt context.
+// Titles and authors carry the literary taste the empty genre column cannot.
 func (r *Recommender) lovedBooks(ctx context.Context) (string, error) {
 	var books []models.Book
 	if err := r.db.WithContext(ctx).
@@ -231,7 +221,7 @@ func (r *Recommender) favoriteAuthors(ctx context.Context) (string, error) {
 		Find(&books).Error; err != nil {
 		return "", fmt.Errorf("favorite authors: %w", err)
 	}
-	// Affinity keys are normalized for matching; recover a display spelling.
+	// Affinity keys are normalized; recover a display spelling.
 	display := make(map[string]string, len(aff))
 	for _, b := range books {
 		if k := normalizeAuthor(b.Author); k != "" {
@@ -246,7 +236,7 @@ func (r *Recommender) favoriteAuthors(ctx context.Context) (string, error) {
 	avs := make([]av, 0, len(aff))
 	for a, v := range aff {
 		if v <= 0 {
-			continue // only surface authors the user actually liked
+			continue // only authors the user actually liked
 		}
 		avs = append(avs, av{a, v})
 	}

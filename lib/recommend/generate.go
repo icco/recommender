@@ -23,8 +23,7 @@ const (
 	targetTVShows = 3
 	targetBooks   = 3
 
-	// recentExclusionDays keeps a title out of the pool for this many days after
-	// it was last recommended.
+	// recentExclusionDays keeps a title out of the pool after being recommended.
 	recentExclusionDays = 30
 )
 
@@ -61,9 +60,7 @@ func (r *Recommender) GenerateRecommendations(ctx context.Context, date time.Tim
 	if err != nil {
 		return r.recordRun(ctx, date, counts{}, err)
 	}
-	// Books are optional: the tier stays empty unless GOODREADS_USER_ID is set and
-	// a shelf sync has run, and an unreachable Goodreads must not sink the day's
-	// movie and TV recommendations.
+	// Books are optional; a Goodreads problem must not sink movies and TV.
 	books, err := r.loadBookCandidates(ctx, date, recentExclusionDays)
 	if err != nil {
 		l.Warnw("book candidates failed; continuing without books", zap.Error(err))
@@ -129,8 +126,8 @@ type counts struct {
 	books   int
 }
 
-// tally counts recommendations by tier. It switches on Type explicitly rather
-// than treating "not a movie" as TV, which would silently file books as TV shows.
+// tally counts by tier. Switching on Type explicitly matters: treating
+// "not a movie" as TV would file books as TV shows.
 func tally(recs []models.Recommendation) counts {
 	var c counts
 	for _, rec := range recs {
@@ -169,8 +166,6 @@ func (r *Recommender) renderPrompts(ctx context.Context, movies, tvshows, books 
 		logging.FromContext(ctx).Warnw("loved titles failed; continuing without", zap.Error(err))
 		loved = ""
 	}
-	// Book taste context is best-effort for the same reason the book pool is:
-	// a Goodreads problem should cost the books tier, not the whole run.
 	authors, err := r.favoriteAuthors(ctx)
 	if err != nil {
 		logging.FromContext(ctx).Warnw("favorite authors failed; continuing without", zap.Error(err))
@@ -183,8 +178,7 @@ func (r *Recommender) renderPrompts(ctx context.Context, movies, tvshows, books 
 	}
 	var b strings.Builder
 	if err := userTmpl.Execute(&b, promptData{
-		// TargetBooks collapses to 0 with an empty shelf, which drops the books
-		// section from the prompt rather than asking for picks from nothing.
+		// TargetBooks of 0 drops the books section from the prompt entirely.
 		TargetMovies: targetMovies, TargetTVShows: targetTVShows, TargetBooks: min(len(books), targetBooks),
 		Profile: profile, Loved: loved, Authors: authors, LovedBooks: lovedBooks,
 		Movies: formatShortlist(movies), TVShows: formatShortlist(tvshows),
@@ -200,10 +194,9 @@ func (r *Recommender) renderPrompts(ctx context.Context, movies, tvshows, books 
 // URLs point at a private, token-gated host browsers can't reach. Bounded to the
 // finalist set, so at most a handful of downloads per run.
 //
-// Books are skipped: Goodreads cover URLs are already public on i.gr-assets.com,
-// so the browser loads them directly. Routing them through the Plex downloader
-// would fetch every cover only to have the host check reject it, logging a
-// warning per book.
+// Books are skipped: Goodreads covers are already public, so the browser loads
+// them directly. The Plex downloader's host check would reject each one anyway,
+// logging a warning per book.
 func (r *Recommender) cachePoster(ctx context.Context, rec *models.Recommendation) {
 	if r.posterDir == "" || rec.PosterURL == "" || r.plex == nil || rec.Type == models.TypeBook {
 		return
@@ -233,10 +226,9 @@ func (r *Recommender) saveRecommendations(ctx context.Context, date time.Time, r
 		if err := tx.Where(`"date" = ?`, date).Delete(&models.Recommendation{}).Error; err != nil {
 			return fmt.Errorf("clear existing recs: %w", err)
 		}
-		// The (date, type, title) unique index rejects two items of the same type
-		// sharing a title on one day; skip in-batch collisions rather than fail the
-		// run. Type is part of the key so a book and a film of the same name — Dune,
-		// say — can both appear.
+		// The (date, type, title) index rejects same-type title collisions on one
+		// day; skip them rather than fail the run. Type is in the key so a book and
+		// a film named Dune can both appear.
 		type key struct{ recType, title string }
 		seen := make(map[key]bool, len(recs))
 		for i := range recs {

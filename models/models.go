@@ -68,13 +68,10 @@ type TVShow struct {
 	Recommendations []Recommendation `gorm:"foreignKey:TVShowID"`
 }
 
-// Book represents a book on one of the user's Goodreads shelves.
-//
-// Unlike Movie and TVShow, which mirror an owned Plex library, books come from
-// Goodreads shelves: Shelf == ShelfToRead is the recommendable pool (books the
-// user already decided they want), and Shelf == ShelfRead carries the taste
-// signal in UserRating. A book moves between shelves over time, so Shelf is
-// refreshed on every sync rather than treated as immutable.
+// Book represents a book on one of the user's Goodreads shelves. ShelfToRead is
+// the recommendable pool (the books analogue of an owned Plex library);
+// ShelfRead carries the taste signal in UserRating. Shelf is refreshed on every
+// sync, since a finished book moves between the two.
 type Book struct {
 	ID          uint    `gorm:"primarykey"`
 	GoodreadsID string  `gorm:"type:varchar(32);not null;uniqueIndex:idx_books_goodreads_id"` // Goodreads book id from the shelf feed
@@ -102,9 +99,8 @@ type Book struct {
 // Recommendation represents a single recommendation item with its metadata.
 type Recommendation struct {
 	ID uint `gorm:"primarykey"`
-	// Uniqueness is per (date, type, title) rather than (date, title): a book and
-	// a film routinely share a title, and the narrower key silently dropped one
-	// of the two.
+	// Keyed on (date, type, title), not (date, title): a book and a film share a
+	// title often enough that the narrow key dropped one of them.
 	Date          time.Time `gorm:"not null;index:idx_recommendations_date;uniqueIndex:idx_recommendations_date_type_title"`                                                            // The date this recommendation was generated
 	Title         string    `gorm:"type:varchar(500);not null;index:idx_recommendations_title;uniqueIndex:idx_recommendations_date_type_title"`                                         // Title of the content
 	Type          string    `gorm:"type:varchar(20);not null;index:idx_recommendations_type;uniqueIndex:idx_recommendations_date_type_title;check:type IN ('movie', 'tvshow', 'book')"` // "movie", "tvshow", or "book"
@@ -145,10 +141,9 @@ func (r Recommendation) MetascoreValue() int {
 	return *r.Metascore
 }
 
-// GoodreadsRating converts a book's stored Rating back to Goodreads' native
-// 5-star scale. Rating is persisted on the 0-10 scale shared with movies and TV
-// so one scoring path serves all three tiers, but readers recognize the 5-star
-// number, so that is what the book cards show.
+// GoodreadsRating converts a book's Rating back to the native 5-star scale.
+// Rating persists on the 0-10 scale so one scoring path serves all three tiers,
+// but book cards show the number readers recognize.
 func (r Recommendation) GoodreadsRating() float64 {
 	return r.Rating / 2.0
 }

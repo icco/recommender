@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"testing"
+	"time"
 
 	"github.com/icco/recommender/models"
 )
@@ -74,4 +75,61 @@ func findCand(cs []candidate, id uint) candidate {
 		}
 	}
 	return candidate{}
+}
+
+func TestSelectBooks_ignoresOtherTypesAndPads(t *testing.T) {
+	shortlist := []candidate{
+		{ID: 1, Type: models.TypeMovie, Title: "A Movie"},
+		{ID: 2, Type: models.TypeBook, Title: "Piranesi", Author: "Susanna Clarke", Runtime: 245},
+		{ID: 3, Type: models.TypeBook, Title: "Babel", Author: "R.F. Kuang"},
+		{ID: 4, Type: models.TypeBook, Title: "Padded In"},
+	}
+	// The movie id and an unknown id are both ignored; the third slot pads.
+	picks := []pick{{ID: 1, Explanation: "wrong type"}, {ID: 99}, {ID: 3, Explanation: "picked"}}
+
+	got := selectBooks(picks, shortlist, 3)
+	if len(got) != 3 {
+		t.Fatalf("got %d books, want 3", len(got))
+	}
+	if got[0].Title != "Babel" || got[0].Explanation != "picked" {
+		t.Errorf("first = %q/%q, want Babel/picked", got[0].Title, got[0].Explanation)
+	}
+	for _, rec := range got {
+		if rec.Type != models.TypeBook {
+			t.Errorf("%q has type %q, want book", rec.Title, rec.Type)
+		}
+		if rec.BookID == nil {
+			t.Errorf("%q has nil BookID", rec.Title)
+		}
+		if rec.MovieID != nil || rec.TVShowID != nil {
+			t.Errorf("%q set a screen-tier FK", rec.Title)
+		}
+	}
+	if got[0].Author != "R.F. Kuang" {
+		t.Errorf("Author = %q, want R.F. Kuang", got[0].Author)
+	}
+}
+
+// Metacritic has no book section, so a book must never get a metacritic.com link
+// even if a Metascore somehow reaches it.
+func TestToRec_bookNeverGetsMetacriticURL(t *testing.T) {
+	score := 90
+	rec := toRec(candidate{ID: 1, Type: models.TypeBook, Title: "Dune", Metascore: &score}, "", time.Time{})
+	if rec.MetacriticURL != "" {
+		t.Errorf("MetacriticURL = %q, want empty for a book", rec.MetacriticURL)
+	}
+	movie := toRec(candidate{ID: 2, Type: models.TypeMovie, Title: "Dune", Metascore: &score}, "", time.Time{})
+	if movie.MetacriticURL == "" {
+		t.Error("movie with a Metascore should still get a MetacriticURL")
+	}
+}
+
+func TestParsePickResponse_books(t *testing.T) {
+	pr, err := parsePickResponse(`{"movies":[],"tvshows":[],"books":[{"id":7,"explanation":"why"}]}`)
+	if err != nil {
+		t.Fatalf("parsePickResponse: %v", err)
+	}
+	if len(pr.Books) != 1 || pr.Books[0].ID != 7 || pr.Books[0].Explanation != "why" {
+		t.Errorf("Books = %+v", pr.Books)
+	}
 }

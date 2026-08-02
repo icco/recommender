@@ -1,10 +1,6 @@
-// Package goodreads reads a user's public bookshelves from Goodreads.
-//
-// Goodreads retired its official API in December 2020 and issues no new keys, so
-// the per-shelf RSS feed at /review/list_rss/{userID} is the only supported
-// public route. It needs no key and no auth for a public profile, and carries
-// everything we need: book id, title, author, ISBN, community average rating,
-// the user's own star rating, page count, publication year, and cover URLs.
+// Package goodreads reads a user's public bookshelves via the per-shelf RSS
+// feed. The official API was retired in December 2020 and issues no new keys;
+// the feed needs neither key nor auth for a public profile.
 package goodreads
 
 import (
@@ -22,15 +18,13 @@ import (
 const (
 	defaultURL = "https://www.goodreads.com"
 
-	// ShelfRead is the shelf of books the user has finished; the source of taste
-	// signal (their star ratings).
+	// ShelfRead carries the taste signal (the user's star ratings).
 	ShelfRead = "read"
-	// ShelfToRead is the "want to read" shelf, used as the recommendable pool.
+	// ShelfToRead is the recommendable pool.
 	ShelfToRead = "to-read"
 
-	// Goodreads serves 100 items per RSS page and returns an empty channel past
-	// the last page. maxPages bounds the walk so a feed that never empties (a
-	// server-side change repeating page 1, say) can't spin forever.
+	// 100 items per page; an empty channel follows the last one. Bounds the walk
+	// in case a feed stops advancing.
 	maxPages = 40
 )
 
@@ -47,22 +41,18 @@ func NewClient() *Client {
 
 // Book is one shelved book as the RSS feed reports it.
 type Book struct {
-	GoodreadsID string
-	Title       string
-	Author      string
-	ISBN        string
-	// AverageRating is the Goodreads community average on its native 0-5 scale.
-	AverageRating float64
-	// UserRating is the user's own stars, 1-5; 0 means unrated.
-	UserRating int
-	Year       int
-	Pages      int
-	CoverURL   string
-	// Shelves are the user's own shelf names for this book, which double as
-	// coarse genres when someone actually shelves by genre. Often empty.
-	Shelves []string
-	ReadAt  *time.Time
-	AddedAt *time.Time
+	GoodreadsID   string
+	Title         string
+	Author        string
+	ISBN          string
+	AverageRating float64 // community average, native 0-5 scale
+	UserRating    int     // the user's own stars 1-5; 0 = unrated
+	Year          int
+	Pages         int
+	CoverURL      string
+	Shelves       []string // the user's own shelf names; often empty
+	ReadAt        *time.Time
+	AddedAt       *time.Time
 }
 
 // rssItem mirrors the fields we consume from one <item> in the shelf feed.
@@ -77,9 +67,8 @@ type rssItem struct {
 	UserShelves   string `xml:"user_shelves"`
 	UserReadAt    string `xml:"user_read_at"`
 	UserDateAdded string `xml:"user_date_added"`
-	// The feed nests page count one level down, as <book id=…><num_pages>.
-	NumPages string `xml:"book>num_pages"`
-	// Largest cover the feed offers; the others are thumbnails.
+	NumPages      string `xml:"book>num_pages"` // nested one level down
+	// Largest cover offered; the others are thumbnails.
 	LargeImageURL  string `xml:"book_large_image_url"`
 	MediumImageURL string `xml:"book_medium_image_url"`
 	ImageURL       string `xml:"book_image_url"`
@@ -89,10 +78,9 @@ type rssFeed struct {
 	Items []rssItem `xml:"channel>item"`
 }
 
-// Shelf returns every book on one shelf, walking the feed's pages until one
-// comes back empty. userID is the numeric id from the profile URL
-// (goodreads.com/user/show/<id>-name), which is a different namespace from the
-// author id on /author/show/<id>.
+// Shelf returns every book on one shelf, walking pages until one comes back
+// empty. userID is from the profile URL (goodreads.com/user/show/<id>-name) —
+// a different namespace from the author id on /author/show/<id>.
 func (c *Client) Shelf(ctx context.Context, userID, shelf string) ([]Book, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("goodreads: empty user id")
@@ -120,8 +108,7 @@ func (c *Client) Shelf(ctx context.Context, userID, shelf string) ([]Book, error
 			out = append(out, b)
 			fresh++
 		}
-		// A page whose every book we already have means the feed stopped
-		// advancing; stop rather than request the same rows for maxPages.
+		// An all-duplicate page means the feed stopped advancing.
 		if fresh == 0 {
 			break
 		}
@@ -141,7 +128,11 @@ func (c *Client) page(ctx context.Context, userID, shelf string, page int) ([]rs
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(req)
+	hc := c.httpClient
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("goodreads fetch %s page %d: %w", shelf, page, err)
 	}
@@ -152,8 +143,7 @@ func (c *Client) page(ctx context.Context, userID, shelf string, page int) ([]rs
 		return nil, fmt.Errorf("goodreads read %s page %d: %w", shelf, page, err)
 	}
 	if resp.StatusCode >= 400 {
-		// A private or missing profile answers 404, so surface the status rather
-		// than treating it as an empty shelf.
+		// A private or missing profile 404s; that must not read as an empty shelf.
 		return nil, fmt.Errorf("goodreads: HTTP %d for shelf %q page %d", resp.StatusCode, shelf, page)
 	}
 
@@ -164,9 +154,8 @@ func (c *Client) page(ctx context.Context, userID, shelf string, page int) ([]rs
 	return feed.Items, nil
 }
 
-// convert maps a feed item to a Book, reporting false for rows too incomplete to
-// use. A book with no id can't be deduped or joined, and one with no title can't
-// be shown.
+// convert maps a feed item to a Book, reporting false for rows with no id (can't
+// dedupe) or no title (can't display).
 func convert(it rssItem) (Book, bool) {
 	id := strings.TrimSpace(it.BookID)
 	title := strings.TrimSpace(it.Title)
@@ -198,9 +187,8 @@ func BookURL(goodreadsID string) string {
 	return defaultURL + "/book/show/" + goodreadsID
 }
 
-// parseFloat reads a numeric feed field, yielding 0 for the empty or
-// unparseable values the feed regularly returns (missing year, page count, or
-// rating all arrive as "").
+// parseFloat reads a numeric feed field. Missing year, page count, and rating
+// all arrive as "", so unparseable yields 0.
 func parseFloat(s string) float64 {
 	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	if err != nil {
@@ -209,13 +197,10 @@ func parseFloat(s string) float64 {
 	return f
 }
 
-// rssTimeLayouts are the formats the feed uses for its date fields. RFC1123Z
-// covers the usual "Mon, 02 Jan 2006 15:04:05 -0700"; the +0000 variant appears
-// on user_read_at.
 var rssTimeLayouts = []string{time.RFC1123Z, time.RFC1123}
 
-// parseTime reads a feed date, yielding nil when absent or unrecognized —
-// user_read_at is empty for most books.
+// parseTime yields nil when absent or unrecognized; user_read_at is empty for
+// most books.
 func parseTime(s string) *time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -229,8 +214,7 @@ func parseTime(s string) *time.Time {
 	return nil
 }
 
-// splitShelves parses the comma-joined user_shelves field, dropping the shelf
-// bookkeeping names that carry no taste information.
+// splitShelves parses user_shelves, dropping bookkeeping names.
 func splitShelves(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {

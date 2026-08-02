@@ -23,10 +23,8 @@ func ParseTemplates(files ...string) (*template.Template, error) {
 	return template.New("").Funcs(funcMap).ParseFS(FS, files...)
 }
 
-// ofType selects the recommendations of one tier, so a page can both skip an
-// empty tier's heading and range over just that tier. The books tier is empty
-// whenever Goodreads is unconfigured, which would otherwise render a bare
-// "Books" heading over nothing.
+// ofType selects one tier's recommendations, so a page can skip an empty tier's
+// heading rather than render a bare "Books" over nothing when Goodreads is off.
 func ofType(recType string, recs []models.Recommendation) []models.Recommendation {
 	var out []models.Recommendation
 	for _, rec := range recs {

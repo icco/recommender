@@ -22,8 +22,7 @@
   {{if .}}
   <h1 class="text-3xl font-bold mb-8">Recommendations for {{(index . 0).Date.Format "January 2, 2006"}}</h1>
 
-  {{/* Each tier is gated on having items rather than rendering an empty heading:
-       books are absent entirely unless Goodreads is configured. */}}
+  {{/* Tiers are gated on having items; books are absent unless Goodreads is set. */}}
   {{$movies := ofType "movie" .}}
   {{$tvshows := ofType "tvshow" .}}
   {{$books := ofType "book" .}}
@@ -74,11 +73,10 @@
   </section>
   {{end}}
 
-  {{/* Books, from the Goodreads want-to-read shelf. Covers are portrait and vary
-       in aspect ratio far more than film posters, so they get object-contain on a
-       neutral field rather than the object-cover crop used above. Year, shelves,
-       page count, and even the cover are all routinely missing from the shelf
-       feed, so each is conditional — an unconditional row would render "0". */}}
+  {{/* Books, from the Goodreads want-to-read shelf. Covers get object-contain
+       rather than the crop above: aspect ratios vary far more than film posters.
+       Year, shelves, pages, and cover are all routinely absent from the feed, so
+       each is conditional — an unconditional row would render "0". */}}
   {{if $books}}
   <section class="mb-12">
     <h2 class="text-2xl font-semibold mb-4">Books</h2>
