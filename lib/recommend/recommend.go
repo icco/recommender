@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/icco/recommender/lib/plex"
-	"github.com/icco/recommender/lib/tmdb"
 	"github.com/icco/recommender/models"
 	"gorm.io/gorm"
 )
@@ -41,7 +40,6 @@ type StatsData struct {
 type Recommender struct {
 	db        *gorm.DB
 	plex      *plex.Client
-	tmdb      *tmdb.Client
 	chat      Chatter
 	model     string
 	sigCfg    SignalConfig
@@ -51,11 +49,10 @@ type Recommender struct {
 // New creates a new Recommender instance with the provided dependencies.
 // posterDir is where finalist posters are cached for public serving.
 // Loggers are sourced from per-call ctx via gutil/logging.
-func New(db *gorm.DB, plexClient *plex.Client, tmdbClient *tmdb.Client, chat Chatter, model string, sigCfg SignalConfig, posterDir string) (*Recommender, error) {
+func New(db *gorm.DB, plexClient *plex.Client, chat Chatter, model string, sigCfg SignalConfig, posterDir string) (*Recommender, error) {
 	return &Recommender{
 		db:        db,
 		plex:      plexClient,
-		tmdb:      tmdbClient,
 		chat:      chat,
 		model:     model,
 		sigCfg:    sigCfg,

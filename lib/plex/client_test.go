@@ -11,7 +11,7 @@ import (
 
 func testPlexClient(t *testing.T, srvURL string) *Client {
 	t.Helper()
-	return NewClient(srvURL, "tok", nil, nil)
+	return NewClient(srvURL, "tok", nil)
 }
 
 func TestClient_resolvePosterURL(t *testing.T) {
