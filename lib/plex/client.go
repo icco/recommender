@@ -5,6 +5,7 @@ package plex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/LukeHagar/plexgo/models/components"
 	"github.com/icco/gutil/logging"
 	"github.com/icco/recommender/models"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -620,6 +622,16 @@ var tvUpsertColumns = []string{
 	"tm_db_id", "im_db_id", "tv_db_id", "enriched_at", "view_count", "updated_at",
 }
 
+// isUniqueViolation reports whether err is a Postgres unique-violation on the
+// named constraint.
+func isUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "23505" && pgErr.ConstraintName == constraint
+}
+
 // upsertMovieBatch upserts movies by plex_rating_key in a single transaction.
 func (c *Client) upsertMovieBatch(ctx context.Context, movies []Item) error {
 	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -675,10 +687,37 @@ func (c *Client) upsertMovieBatch(ctx context.Context, movies []Item) error {
 				UpdatedAt:     now,
 			}
 
+			if err := tx.SavePoint("upsert_movie").Error; err != nil {
+				return fmt.Errorf("failed to create savepoint for movie %q: %w", item.Title, err)
+			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "plex_rating_key"}},
 				DoUpdates: clause.AssignmentColumns(movieUpsertColumns),
 			}).Create(&movie).Error; err != nil {
+				// A reused tmdb_id (Plex reassigned the rating key) hits
+				// idx_movies_tmdb_id since ON CONFLICT only covers
+				// plex_rating_key; roll back to the savepoint (Postgres
+				// aborts the transaction on error) and update by tmdb_id.
+				if tmdbID != nil && isUniqueViolation(err, "idx_movies_tmdb_id") &&
+					tx.RollbackTo("upsert_movie").Error == nil {
+					res := tx.Model(&models.Movie{}).Where("tm_db_id = ?", *tmdbID).Updates(map[string]any{
+						"plex_rating_key": movie.PlexRatingKey,
+						titleKey:          movie.Title,
+						"year":            movie.Year,
+						"rating":          movie.Rating,
+						"genre":           movie.Genre,
+						"poster_url":      movie.PosterURL,
+						"runtime":         movie.Runtime,
+						"im_db_id":        movie.IMDbID,
+						"tv_db_id":        movie.TVDbID,
+						"enriched_at":     movie.EnrichedAt,
+						"view_count":      movie.ViewCount,
+						"updated_at":      movie.UpdatedAt,
+					})
+					if res.Error == nil && res.RowsAffected > 0 {
+						continue
+					}
+				}
 				return fmt.Errorf("failed to upsert movie %q: %w", item.Title, err)
 			}
 		}
@@ -741,10 +780,34 @@ func (c *Client) upsertTVShowBatch(ctx context.Context, shows []Item) error {
 				UpdatedAt:     now,
 			}
 
+			if err := tx.SavePoint("upsert_tvshow").Error; err != nil {
+				return fmt.Errorf("failed to create savepoint for TV show %q: %w", item.Title, err)
+			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "plex_rating_key"}},
 				DoUpdates: clause.AssignmentColumns(tvUpsertColumns),
 			}).Create(&tvShow).Error; err != nil {
+				// See the matching comment in upsertMovieBatch.
+				if tmdbID != nil && isUniqueViolation(err, "idx_tvshows_tmdb_id") &&
+					tx.RollbackTo("upsert_tvshow").Error == nil {
+					res := tx.Model(&models.TVShow{}).Where("tm_db_id = ?", *tmdbID).Updates(map[string]any{
+						"plex_rating_key": tvShow.PlexRatingKey,
+						titleKey:          tvShow.Title,
+						"year":            tvShow.Year,
+						"rating":          tvShow.Rating,
+						"genre":           tvShow.Genre,
+						"poster_url":      tvShow.PosterURL,
+						"seasons":         tvShow.Seasons,
+						"im_db_id":        tvShow.IMDbID,
+						"tv_db_id":        tvShow.TVDbID,
+						"enriched_at":     tvShow.EnrichedAt,
+						"view_count":      tvShow.ViewCount,
+						"updated_at":      tvShow.UpdatedAt,
+					})
+					if res.Error == nil && res.RowsAffected > 0 {
+						continue
+					}
+				}
 				return fmt.Errorf("failed to upsert TV show %q: %w", item.Title, err)
 			}
 		}
