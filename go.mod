@@ -7,9 +7,10 @@ require (
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/icco/anilist v1.0.4
 	github.com/icco/goodreads v1.0.4
-	github.com/icco/gutil v1.0.6
+	github.com/icco/gutil v1.0.7
 	github.com/icco/omdb v1.0.4
 	github.com/icco/trakt v1.0.4
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/unrolled/secure v1.17.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0
@@ -39,7 +40,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
