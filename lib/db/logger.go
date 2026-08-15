@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/icco/gutil/logging"
@@ -70,7 +71,9 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql 
 	sql, rows := fc()
 	scoped := l.loggerFor(ctx)
 
-	if err != nil {
+	// A miss is the expected path for lookup probes like matchByTitleYear, so
+	// logging one costs a stacktrace and buries real failures.
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		scoped.Errorw("GORM error",
 			zap.Error(err),
 			"sql", sql,
@@ -81,6 +84,7 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql 
 	}
 
 	scoped.Debugw("GORM query",
+		zap.Error(err),
 		"sql", sql,
 		"rows", rows,
 		"elapsed", elapsed,
