@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/icco/anilist v1.0.4
 	github.com/icco/goodreads v1.0.4
-	github.com/icco/gutil v1.0.7
+	github.com/icco/gutil v1.0.9
 	github.com/icco/omdb v1.0.4
 	github.com/icco/trakt v1.0.4
 	github.com/jackc/pgx/v5 v5.10.0
