@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/icco/anilist v1.0.4
 	github.com/icco/goodreads v1.0.4
-	github.com/icco/gutil v1.0.11
+	github.com/icco/gutil v1.0.15
 	github.com/icco/omdb v1.0.4
 	github.com/icco/trakt v1.0.4
 	github.com/jackc/pgx/v5 v5.10.0
@@ -18,7 +18,7 @@ require (
 	go.opentelemetry.io/otel/exporters/prometheus v0.67.0
 	go.opentelemetry.io/otel/sdk/metric v1.45.0
 	go.uber.org/zap v1.28.0
-	google.golang.org/genai v1.68.0
+	google.golang.org/genai v1.69.0
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
 )
