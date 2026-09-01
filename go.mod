@@ -3,7 +3,7 @@ module github.com/icco/recommender
 go 1.26.2
 
 require (
-	github.com/LukeHagar/plexgo v0.29.1
+	github.com/LukeHagar/plexgo v0.29.2
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/icco/anilist v1.0.4
 	github.com/icco/goodreads v1.0.4
