@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/icco/recommender/lib/metacritic"
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/lib/metacritic"
+	"go.icco.me/recommender/models"
 	"google.golang.org/genai"
 )
 

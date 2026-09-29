@@ -8,7 +8,7 @@ import (
 
 	"github.com/icco/gutil/logging"
 	"github.com/icco/omdb"
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

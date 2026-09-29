@@ -14,12 +14,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/icco/gutil/logging"
-	"github.com/icco/recommender/handlers/templates"
-	"github.com/icco/recommender/lib/lock"
-	"github.com/icco/recommender/lib/plex"
-	"github.com/icco/recommender/lib/recommend"
-	"github.com/icco/recommender/lib/sanitize"
-	"github.com/icco/recommender/lib/validation"
+	"go.icco.me/recommender/handlers/templates"
+	"go.icco.me/recommender/lib/lock"
+	"go.icco.me/recommender/lib/plex"
+	"go.icco.me/recommender/lib/recommend"
+	"go.icco.me/recommender/lib/sanitize"
+	"go.icco.me/recommender/lib/validation"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

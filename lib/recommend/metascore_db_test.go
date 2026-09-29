@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/icco/omdb"
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 // omdbStub serves canned OMDb payloads keyed by IMDb id, and counts lookups.

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 func mkCand(id uint, rating float64, view int) candidate {

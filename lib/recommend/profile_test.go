@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 func TestGenreAffinity_favorsWatchedAndRated(t *testing.T) {

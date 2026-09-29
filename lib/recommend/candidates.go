@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 // candidate is a title eligible for recommendation, with a computed score.

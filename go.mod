@@ -1,4 +1,4 @@
-module github.com/icco/recommender
+module go.icco.me/recommender
 
 go 1.26.2
 

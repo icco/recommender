@@ -10,7 +10,7 @@ import (
 
 	"github.com/icco/goodreads"
 	"github.com/icco/gutil/logging"
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

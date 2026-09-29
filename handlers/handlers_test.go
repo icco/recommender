@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/icco/recommender/lib/recommend"
+	"go.icco.me/recommender/lib/recommend"
 )
 
 func TestHandleTraktConnect_gate(t *testing.T) {

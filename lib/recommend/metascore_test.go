@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 func intPtr(n int) *int { return &n }

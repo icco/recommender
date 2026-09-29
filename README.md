@@ -101,7 +101,7 @@ recommender/
 └── data/             # Docker volume mount target for the DB (optional locally)
 ```
 
-Package docs: [pkg.go.dev/github.com/icco/recommender](https://pkg.go.dev/github.com/icco/recommender).
+Package docs: [pkg.go.dev/go.icco.me/recommender](https://pkg.go.dev/go.icco.me/recommender).
 
 ## Running
 

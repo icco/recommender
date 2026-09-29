@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/icco/anilist"
-	"github.com/icco/recommender/models"
 	"github.com/icco/trakt"
+	"go.icco.me/recommender/models"
 )
 
 func TestTraktSource_Sync_joinsAndUpserts(t *testing.T) {

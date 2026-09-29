@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/icco/recommender/lib/plex"
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/lib/plex"
+	"go.icco.me/recommender/models"
 	"gorm.io/gorm"
 )
 
