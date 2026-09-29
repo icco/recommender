@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/recommender/handlers/templates"
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/handlers/templates"
+	"go.icco.me/recommender/models"
 )
 
 // renderHome renders the home page the way the handler does, so template

@@ -3,7 +3,7 @@ package templates
 import (
 	"html/template"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 // ParseTemplates parses HTML templates from the embedded filesystem.

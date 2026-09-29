@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 func cand(id uint, view int, genres ...string) candidate {

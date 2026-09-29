@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/LukeHagar/plexgo/models/components"
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.uber.org/zap"
 )
 

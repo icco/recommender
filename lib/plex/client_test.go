@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 func testPlexClient(t *testing.T, srvURL string) *Client {

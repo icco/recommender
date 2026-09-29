@@ -9,9 +9,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/icco/gutil/logging"
-	"github.com/icco/recommender/lib/recommend/prompts"
-	"github.com/icco/recommender/models"
+	"go.icco.me/gutil/logging"
+	"go.icco.me/recommender/lib/recommend/prompts"
+	"go.icco.me/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )

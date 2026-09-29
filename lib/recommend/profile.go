@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 )
 
 // genreAffinity computes a normalized (0..1) taste weight per genre from watched

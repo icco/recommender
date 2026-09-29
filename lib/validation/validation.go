@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.uber.org/zap"
 )
 

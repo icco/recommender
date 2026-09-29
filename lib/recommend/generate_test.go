@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/recommender/models"
+	"go.icco.me/recommender/models"
 	"google.golang.org/genai"
 )
 
