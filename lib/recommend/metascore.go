@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/icco/gutil/logging"
-	"github.com/icco/omdb"
+	"go.icco.me/gutil/logging"
+	"go.icco.me/omdb"
 	"go.icco.me/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"

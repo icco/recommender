@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

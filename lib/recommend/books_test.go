@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/goodreads"
+	"go.icco.me/goodreads"
 	"go.icco.me/recommender/lib/dbtest"
 	"go.icco.me/recommender/models"
 	"gorm.io/gorm"

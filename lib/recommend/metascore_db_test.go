@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icco/omdb"
+	"go.icco.me/omdb"
 	"go.icco.me/recommender/models"
 )
 

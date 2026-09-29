@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 )
 
 // LogRecommendationCronStart logs the start of the recommendation cron handler.

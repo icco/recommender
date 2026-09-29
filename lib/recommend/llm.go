@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/icco/gutil/vertex"
+	"go.icco.me/gutil/vertex"
 	"google.golang.org/genai"
 )
 
@@ -16,7 +16,7 @@ type Chatter interface {
 	Complete(ctx context.Context, system, user string, schema *genai.Schema) (string, error)
 }
 
-// GeminiChatter calls Gemini on Vertex AI via github.com/icco/gutil/vertex.
+// GeminiChatter calls Gemini on Vertex AI via go.icco.me/gutil/vertex.
 type GeminiChatter struct {
 	v *vertex.Client
 }

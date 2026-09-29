@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.icco.me/recommender/handlers/templates"
 	"go.icco.me/recommender/lib/lock"
 	"go.icco.me/recommender/lib/plex"

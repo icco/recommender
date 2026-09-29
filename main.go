@@ -15,10 +15,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/icco/gutil/logging"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/unrolled/secure"
+	"go.icco.me/gutil/logging"
 	"go.icco.me/recommender/handlers"
 	"go.icco.me/recommender/lib/db"
 	"go.icco.me/recommender/lib/health"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/icco/gutil/logging"
+	"go.icco.me/gutil/logging"
 	"go.icco.me/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"

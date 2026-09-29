@@ -17,8 +17,8 @@ import (
 
 	"github.com/LukeHagar/plexgo"
 	"github.com/LukeHagar/plexgo/models/components"
-	"github.com/icco/gutil/logging"
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.icco.me/gutil/logging"
 	"go.icco.me/recommender/models"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
