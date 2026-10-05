@@ -76,8 +76,8 @@ go.icco.me/anilist v1.0.5-0.20260929110941-50997b1d9c33 h1:1IhkPTO6wJmmD7ZVvpmg/
 go.icco.me/anilist v1.0.5-0.20260929110941-50997b1d9c33/go.mod h1:Y7hkLHT3t3P8NXECqseurt2MFhGxfkjdjoRGNkgtorU=
 go.icco.me/goodreads v1.0.5-0.20260929111155-fdf73924083c h1:N4kaKPlHAF0izzVm6F0Dh46IeqBIDQc86LUVKh7iBqQ=
 go.icco.me/goodreads v1.0.5-0.20260929111155-fdf73924083c/go.mod h1:vgsN78ysQI/gAwJc1tWYLMbA9bQVMu0jTyvGsuHAJcc=
-go.icco.me/gutil v1.0.27-0.20260929105600-f3e11752b837 h1:TQwtkAHFixqTkPOFXDEVw1BCHbNwQS+GA8mUVRWh9DI=
-go.icco.me/gutil v1.0.27-0.20260929105600-f3e11752b837/go.mod h1:xDhTYI90/ZUFfxXGR2SNJUC2xM5raKf+4kIULGO7xZE=
+go.icco.me/gutil v1.0.27 h1:O/0p47hk/VvSHS3RjOjY9JMM9ODDWEBLYSa0gF8JHlU=
+go.icco.me/gutil v1.0.27/go.mod h1:xDhTYI90/ZUFfxXGR2SNJUC2xM5raKf+4kIULGO7xZE=
 go.icco.me/omdb v1.0.6-0.20260929111204-d5e57b8cdb77 h1:Kq7Ij99uyc1hI7d521M1DAyI7B/wAEtik8HG5Dz6Jqc=
 go.icco.me/omdb v1.0.6-0.20260929111204-d5e57b8cdb77/go.mod h1:9L1nM9jCA4DMbXWcuaULvoFu3GpSshaHcnAhRtBd8oQ=
 go.icco.me/trakt v1.0.6-0.20260929111213-911ef06b1246 h1:G9/yEb2RQUE0GqHVdCHmZ6pz+lO3hHVNyOrF5dUZzkE=
