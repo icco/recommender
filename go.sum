@@ -80,8 +80,8 @@ go.icco.me/gutil v1.0.27-0.20260929105600-f3e11752b837 h1:TQwtkAHFixqTkPOFXDEVw1
 go.icco.me/gutil v1.0.27-0.20260929105600-f3e11752b837/go.mod h1:xDhTYI90/ZUFfxXGR2SNJUC2xM5raKf+4kIULGO7xZE=
 go.icco.me/omdb v1.0.6-0.20260929111204-d5e57b8cdb77 h1:Kq7Ij99uyc1hI7d521M1DAyI7B/wAEtik8HG5Dz6Jqc=
 go.icco.me/omdb v1.0.6-0.20260929111204-d5e57b8cdb77/go.mod h1:9L1nM9jCA4DMbXWcuaULvoFu3GpSshaHcnAhRtBd8oQ=
-go.icco.me/trakt v1.0.6-0.20260929111213-911ef06b1246 h1:G9/yEb2RQUE0GqHVdCHmZ6pz+lO3hHVNyOrF5dUZzkE=
-go.icco.me/trakt v1.0.6-0.20260929111213-911ef06b1246/go.mod h1:Ps02uhv8GlKuFZ5sS3hyDXChpFP3D5SDEfpVIddMUwY=
+go.icco.me/trakt v1.0.6 h1:1ykNArCV9ELte8ozM9OL7Dxm/SFlMuSLipqx4ZLVZtg=
+go.icco.me/trakt v1.0.6/go.mod h1:Ps02uhv8GlKuFZ5sS3hyDXChpFP3D5SDEfpVIddMUwY=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 h1:3g7B90UzBltIDKq1/5mrTGxTnOFDV0ICOhLoxiZ8jlg=
