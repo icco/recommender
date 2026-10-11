@@ -9,7 +9,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/unrolled/secure v1.17.0
 	go.icco.me/anilist v1.0.5
-	go.icco.me/goodreads v1.0.5-0.20260929111155-fdf73924083c
+	go.icco.me/goodreads v1.0.5
 	go.icco.me/gutil v1.0.27
 	go.icco.me/omdb v1.0.6-0.20260929111204-d5e57b8cdb77
 	go.icco.me/trakt v1.0.6-0.20260929111213-911ef06b1246
