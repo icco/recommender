@@ -72,8 +72,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/unrolled/secure v1.17.0 h1:Io7ifFgo99Bnh0J7+Q+qcMzWM6kaDPCA5FroFZEdbWU=
 github.com/unrolled/secure v1.17.0/go.mod h1:BmF5hyM6tXczk3MpQkFf1hpKSRqCyhqcbiQtiAF7+40=
-go.icco.me/anilist v1.0.5-0.20260929110941-50997b1d9c33 h1:1IhkPTO6wJmmD7ZVvpmg/wQ6AosVG8bmrVRgyiVWL6c=
-go.icco.me/anilist v1.0.5-0.20260929110941-50997b1d9c33/go.mod h1:Y7hkLHT3t3P8NXECqseurt2MFhGxfkjdjoRGNkgtorU=
+go.icco.me/anilist v1.0.5 h1:MxlxNI2H91iuq3o7A9vry8yEyPsvGIVGR7RqgC1NOSA=
+go.icco.me/anilist v1.0.5/go.mod h1:Y7hkLHT3t3P8NXECqseurt2MFhGxfkjdjoRGNkgtorU=
 go.icco.me/goodreads v1.0.5-0.20260929111155-fdf73924083c h1:N4kaKPlHAF0izzVm6F0Dh46IeqBIDQc86LUVKh7iBqQ=
 go.icco.me/goodreads v1.0.5-0.20260929111155-fdf73924083c/go.mod h1:vgsN78ysQI/gAwJc1tWYLMbA9bQVMu0jTyvGsuHAJcc=
 go.icco.me/gutil v1.0.27-0.20260929105600-f3e11752b837 h1:TQwtkAHFixqTkPOFXDEVw1BCHbNwQS+GA8mUVRWh9DI=
