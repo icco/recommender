@@ -22,13 +22,18 @@ type GeminiChatter struct {
 }
 
 // NewGeminiChatter builds a Vertex AI-backed client from ADC. Project and
-// location come from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION.
+// location come from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION. A non-empty
+// GEMINI_API_KEY selects the Gemini API instead.
 func NewGeminiChatter(ctx context.Context, model string) (*GeminiChatter, error) {
-	v, err := vertex.New(ctx, vertex.Config{
+	cfg := vertex.Config{
 		Project:  os.Getenv("GOOGLE_CLOUD_PROJECT"),
 		Location: os.Getenv("GOOGLE_CLOUD_LOCATION"),
 		Model:    model,
-	})
+	}
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+		cfg = vertex.Config{APIKey: key, Model: model}
+	}
+	v, err := vertex.New(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create vertex client: %w", err)
 	}
