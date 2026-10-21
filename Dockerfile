@@ -26,7 +26,7 @@ LABEL org.opencontainers.image.description="Daily movie and TV recommendations f
 WORKDIR /app
 
 # Only install runtime dependencies.
-RUN apk add --no-cache ca-certificates
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk add --no-cache ca-certificates
 RUN adduser -D -u 1000 appuser && \
   mkdir -p /data && \
   chown -R appuser:appuser /data && \
