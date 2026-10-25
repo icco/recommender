@@ -55,6 +55,7 @@ Past days are listed at `/dates` (one row per distinct day, paginated).
 | `GOOGLE_CLOUD_LOCATION` | yes | Vertex AI region, e.g. `us-central1` |
 | `GOOGLE_GENAI_USE_VERTEXAI` | no | `true` to use Vertex AI (recommended); the SDK also supports the Gemini Developer API |
 | `GEMINI_MODEL` | no | Model ID (default `gemini-2.5-flash`) |
+| `GEMINI_API_KEY` | no | When set, call the Gemini API with this key instead of Vertex AI, e.g. through a LiteLLM proxy set by `GOOGLE_GEMINI_BASE_URL` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | no | Path to a service-account key for local dev; production uses ambient ADC (workload identity) |
 | `TRAKT_CLIENT_ID` | no | Trakt API app client id; enables Trakt signals |
 | `TRAKT_CLIENT_SECRET` | no | Trakt API app client secret |
