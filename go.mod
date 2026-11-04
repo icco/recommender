@@ -8,17 +8,17 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/unrolled/secure v1.17.0
-	go.icco.me/anilist v1.0.7
-	go.icco.me/goodreads v1.0.7
-	go.icco.me/gutil v1.0.35
-	go.icco.me/omdb v1.0.7
-	go.icco.me/trakt v1.0.7
+	go.icco.me/anilist v1.2.0
+	go.icco.me/goodreads v1.0.8
+	go.icco.me/gutil v1.0.36
+	go.icco.me/omdb v1.0.8
+	go.icco.me/trakt v1.1.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.69.0
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.uber.org/zap v1.28.0
-	google.golang.org/genai v1.75.0
+	google.golang.org/genai v1.76.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )
