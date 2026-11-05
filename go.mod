@@ -1,6 +1,6 @@
 module go.icco.me/recommender
 
-go 1.26.8
+go 1.27.3
 
 require (
 	github.com/LukeHagar/plexgo v0.30.2
