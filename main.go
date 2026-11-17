@@ -121,7 +121,10 @@ func main() {
 		log.Fatalw("Failed to connect to database", zap.Error(err))
 	}
 
-	if err := gormDB.Use(gormtracing.NewPlugin(gormtracing.WithoutMetrics())); err != nil {
+	if err := gormDB.Use(gormtracing.NewPlugin(
+		gormtracing.WithoutMetrics(),
+		gormtracing.WithoutQueryVariables(),
+	)); err != nil {
 		log.Fatalw("Failed to register gorm otel plugin", zap.Error(err))
 	}
 
