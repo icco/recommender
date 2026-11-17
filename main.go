@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/unrolled/secure"
 	"go.icco.me/gutil/logging"
+	"go.icco.me/gutil/tracing"
 	"go.icco.me/recommender/handlers"
 	"go.icco.me/recommender/lib/db"
 	"go.icco.me/recommender/lib/health"
@@ -34,6 +35,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormtracing "gorm.io/plugin/opentelemetry/tracing"
 )
 
 const service = "recommender"
@@ -57,6 +59,18 @@ func routeTag(next http.Handler) http.Handler {
 
 // main wires dependencies and blocks until SIGINT/SIGTERM.
 func main() {
+	shutdownTracer, err := tracing.Init(context.Background(), service)
+	if err != nil {
+		log.Fatalw("tracing init", zap.Error(err))
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracer(shutdownCtx); err != nil {
+			log.Warnw("tracing shutdown", zap.Error(err))
+		}
+	}()
+
 	ctx, stop := signal.NotifyContext(
 		logging.NewContext(context.Background(), log),
 		os.Interrupt, syscall.SIGTERM,
@@ -105,6 +119,13 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalw("Failed to connect to database", zap.Error(err))
+	}
+
+	if err := gormDB.Use(gormtracing.NewPlugin(
+		gormtracing.WithoutMetrics(),
+		gormtracing.WithoutQueryVariables(),
+	)); err != nil {
+		log.Fatalw("Failed to register gorm otel plugin", zap.Error(err))
 	}
 
 	sqlDB, err := gormDB.DB()
@@ -210,7 +231,7 @@ func main() {
 
 	handler := otelhttp.NewHandler(r, service,
 		otelhttp.WithFilter(func(req *http.Request) bool {
-			return req.URL.Path != "/metrics"
+			return req.URL.Path != "/metrics" && req.URL.Path != "/health"
 		}),
 	)
 
